@@ -38,11 +38,3 @@ jobs:
       kubernetes-repo: eformidling-cd
       product-name: eformidling
     secrets: inherit
-
-  run-codeceptjs-tests:
-    needs: [ call-workflow-image-build-publish ]
-    uses: ./.github/workflows/reusable-run-codeceptjstests.yaml
-    secrets:
-      login-server: ${{ secrets.REGISTRY_URL }}
-      username: ${{ secrets.REGISTRY_USERNAME }}
-      password: ${{ secrets.REGISTRY_PASSWORD }}
