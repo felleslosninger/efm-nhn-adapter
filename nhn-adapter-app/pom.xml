@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+   <parent>
+        <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
+        <artifactId>parent-pom</artifactId>
+        <version>3.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>nhn-adapter-app</artifactId>
+    <packaging>jar</packaging>
+    <name>Boot app for NHN adapter for meldingsutveksling</name>
+
+    <scm>
+        <connection>scm:git:https://github.com/felleslosninger/efm-nhn-adapter</connection>
+        <developerConnection>scm:git:https://github.com/felleslosninger/efm-nhn-adapter</developerConnection>
+        <url>https://github.com/felleslosninger/efm-nhn-adapter</url>
+    </scm>
+
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Digdir</name>
+            <email>servicedesk@digdir.no</email>
+            <organization>Digdir</organization>
+            <organizationUrl>https://www.digdir.no</organizationUrl>
+        </developer>
+    </developers>
+
+    <distributionManagement>
+        <snapshotRepository>
+            <id>ossrh</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+            <id>ossrh</id>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+    </distributionManagement>
+
+    <repositories>
+        <repository>
+            <id>ossrh</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+    	<dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+       
+    </dependencies>
+    <build>
+        <plugins>
+             <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <finalName>${project.artifactId}</finalName>
+                </configuration>
+     
+              </plugin>
+           
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>12.0.1</version>
+                <configuration>
+                    <format>ALL</format>
+                    <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                </configuration>
+            </plugin>
+           
+           
+        </plugins>
+    </build>
+
+</project>
