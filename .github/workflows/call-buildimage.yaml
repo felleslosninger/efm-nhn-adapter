@@ -32,7 +32,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: felleslosninger/github-workflows/.github/workflows/ci-call-update-image.yml@main
     with:
-      application-name: nhn-adapter
+      application-name: efm-nhn-adapter
       deployment-environment: dev
       image-digest: ${{ needs.call-workflow-image-build-publish.outputs.image-digest }}
       image-name: efm-nhn-adapter
