@@ -11,7 +11,7 @@
 
     <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
     <artifactId>parent-pom</artifactId>
-    <version>3.0.1-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>NHN adapter for meldingsutveksling</name>
 
@@ -38,32 +38,36 @@
     </developers>
 
     <distributionManagement>
-        <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository>
         <repository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+            <id>github</id>
+            <name>GitHub felleslosninger Apache Maven Packages</name>
+            <url>https://maven.pkg.github.com/felleslosninger/efm-nhn-adapter</url>
         </repository>
+        <snapshotRepository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/felleslosninger/efm-nhn-adapter</url>
+        </snapshotRepository>
     </distributionManagement>
 
-    <repositories>
+     <repositories>
         <repository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-            <releases>
+            <id>central</id>
+            <name>Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots>
                 <enabled>false</enabled>
-            </releases>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>github</id>
+            <name>GitHub felleslosninger Apache Maven Packages</name>
+            <url>https://maven.pkg.github.com/felleslosninger/*</url>
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
         </repository>
-        <repository>
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
     </repositories>
+
 
     <properties>
         <java.version>21</java.version>
@@ -72,7 +76,6 @@
     </properties>
     <modules>
         <module>nhn-adapter-app</module>
-        <module>nhn-adapter</module>
     </modules>
 
 </project>

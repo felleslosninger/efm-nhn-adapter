@@ -1,0 +1,42 @@
+name: CI Workflow
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [ ] # Empty list ensures PRs are not triggered. Trigger nytt bygg............
+
+jobs:
+  release-to-github-packages:
+    uses: felleslosninger/github-workflows/.github/workflows/ci-maven-install-deploy-lib.yml@main
+    with:
+      java-version: 21
+      sbom-path: nhn-adapter-app/target/
+    secrets: inherit
+
+  call-workflow-image-build-publish:
+    needs: [ release-to-github-packages ]
+    uses: felleslosninger/github-workflows/.github/workflows/ci-spring-boot-build-publish-image.yml@main
+    with:
+      application-path: nhn-adapter-app/
+      image-name: efm-nhn-adapter
+      java-version: 21
+      slack-channel-id: C05NLQCFR41
+      update-versions: "false"
+    secrets: inherit
+
+  call-update-image:
+    needs: [ call-workflow-image-build-publish ]
+    if: github.ref == 'refs/heads/main'
+    uses: felleslosninger/github-workflows/.github/workflows/ci-call-update-image.yml@main
+    with:
+      application-name: nhn-adapter-app
+      deployment-environment: dev
+      image-digest: ${{ needs.call-workflow-image-build-publish.outputs.image-digest }}
+      image-name: efm-nhn-adapter
+      image-version: ${{ needs.call-workflow-image-build-publish.outputs.image-version }}
+      kubernetes-repo: eformidling-cd
+      product-name: eformidling
+    secrets: inherit
