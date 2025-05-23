@@ -34,21 +34,42 @@
             <organizationUrl>https://www.digdir.no</organizationUrl>
         </developer>
     </developers>
+    <repositories>
+      <repository>
+        <id>helseid</id>
+        <name>GitHub Packages</name>
+        <url>https://maven.pkg.github.com/my-user/my-repo</url>
+      </repository>
+    </repositories>
 
     <properties>
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <helseid.version>1.0.0-SNAPSHOT</helseid.version>
     </properties>
 
     <dependencies>
-    	<dependency>
+    	 <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
-		    <groupId>org.springframework.boot</groupId>
-		    <artifactId>spring-boot-starter-actuator</artifactId>
-		</dependency>
+    		    <groupId>org.springframework.boot</groupId>
+    		    <artifactId>spring-boot-starter-actuator</artifactId>
+    		</dependency>
+    		<dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>no.ks.fiks</groupId>
+            <artifactId>helseid-client</artifactId>
+            <version>${helseid.version}</version>
+         </dependency>
+         <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+         </dependency>
     </dependencies>
     <build>
         <plugins>

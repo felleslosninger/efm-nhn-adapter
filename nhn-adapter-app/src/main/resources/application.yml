@@ -20,5 +20,12 @@ management:
       exposure:
         include: "info,env,prometheus,health"
     enabled-by-default: true
+    
+oauth2:
+  helse-id:
+    client-id: ${NHN_CLIENT_ID}
+    private-key: $(NHN_PRIVATE_KEY)
+
+
 
     
