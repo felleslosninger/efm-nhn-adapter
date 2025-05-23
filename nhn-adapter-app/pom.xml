@@ -34,13 +34,6 @@
             <organizationUrl>https://www.digdir.no</organizationUrl>
         </developer>
     </developers>
-    <repositories>
-      <repository>
-        <id>helseid</id>
-        <name>GitHub Packages</name>
-        <url>https://maven.pkg.github.com/my-user/my-repo</url>
-      </repository>
-    </repositories>
 
     <properties>
         <java.version>21</java.version>
