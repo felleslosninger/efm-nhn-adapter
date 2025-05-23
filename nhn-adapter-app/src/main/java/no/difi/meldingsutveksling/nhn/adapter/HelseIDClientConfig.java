@@ -31,14 +31,19 @@ public class HelseIDClientConfig {
     public HttpClient httpClient() {
         return HttpClients.createDefault();
     }
-
+    
     @Bean
-    public HelseIdClient helseIdClient(@Autowired HttpClient httpClient) {
-        return new HelseIdClient(new no.ks.fiks.helseid.Configuration(clientID, 
+    public no.ks.fiks.helseid.Configuration helseIdConfiguration() {
+        return new no.ks.fiks.helseid.Configuration(clientID, 
                 jwkKey, 
                 Environment.Companion.getTEST(), 
                 Duration.of(60, ChronoUnit.SECONDS), 
-                Duration.of(10, ChronoUnit.SECONDS)), 
+                Duration.of(10, ChronoUnit.SECONDS));
+    }
+
+    @Bean
+    public HelseIdClient helseIdClient(@Autowired HttpClient httpClient,@Autowired no.ks.fiks.helseid.Configuration helseIdConfiguration) {
+        return new HelseIdClient(helseIdConfiguration, 
                                  httpClient, 
                                  new CachedHttpDiscoveryOpenIdConfiguration(Environment.Companion.getTEST().getIssuer()));
 
