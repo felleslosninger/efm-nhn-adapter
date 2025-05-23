@@ -24,7 +24,7 @@ management:
 oauth2:
   helse-id:
     client-id: ${NHN_CLIENT_ID}
-    private-key: $(NHN_PRIVATE_KEY)
+    private-key: ${NHN_PRIVATE_KEY}
 
 
 
