@@ -12,6 +12,7 @@ public class TestController {
     @Autowired
     private HelseIDClientConfig config;
     
+    @Autowired
     private HelseIdClient helseIdClient;
 
 	@GetMapping(path = "/hello")
