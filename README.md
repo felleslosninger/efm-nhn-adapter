@@ -1,5 +1,8 @@
 # efm-nhn-adapter
 
+
+# Dette er ein test
+
 efm-nhn-adapter er eit adapter for sending og mottak av meldingar via Norsk Helsenett si meldingsteneste (DPH) frå [eFormidling](https://github.com/digdir/efm-integrasjonspunkt).
 
 Adapteret skal handtere blant anna:
