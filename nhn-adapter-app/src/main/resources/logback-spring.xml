@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration>
+    <springProperty name="APP-NAME" source="spring.application.name" defaultValue="-"/>
+    <springProperty name="APP-ENV" source="spring.application.environment" defaultValue="-"/>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <appender name="APPLICATION" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdc>true</includeMdc>
+                <customFields>{"application":"${APP-NAME}","environment":"${APP-ENV}","logtype":"application"}</customFields>
+        </encoder>
+    </appender>
+
+        <logger name="no.difi" level="INFO" additivity="false">
+            <appender-ref ref="APPLICATION"/>
+        </logger>
+
+        <root level="WARN">
+            <appender-ref ref="APPLICATION"/>
+        </root>
+</configuration>
