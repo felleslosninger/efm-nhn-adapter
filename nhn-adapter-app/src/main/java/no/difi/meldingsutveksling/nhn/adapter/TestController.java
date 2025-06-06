@@ -34,7 +34,7 @@ public class TestController {
 
     @GetMapping(path = "/testHelseId")
     public String testHelseId() {
-        return helseIdClient.getAccessToken().getAccessToken();
+        return helseIdClient.getAccessToken(null,null).getAccessToken();
     }
 
     @GetMapping(path = "/testFlr")
