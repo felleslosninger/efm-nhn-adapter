@@ -16,6 +16,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import no.ks.fiks.helseid.CachedHttpDiscoveryOpenIdConfiguration;
 import no.ks.fiks.helseid.Environment;
 import no.ks.fiks.helseid.HelseIdClient;
+import no.ks.fiks.nhn.msh.Client;
+import no.ks.fiks.nhn.msh.Credentials;
+import no.ks.fiks.nhn.msh.Environments;
+import no.ks.fiks.nhn.msh.HelseIdConfiguration;
 
 @Configuration
 public class HelseIDClientConfig {
@@ -47,6 +51,13 @@ public class HelseIDClientConfig {
                                  httpClient, 
                                  new CachedHttpDiscoveryOpenIdConfiguration(Environment.Companion.getTEST().getIssuer()));
 
+    }
+    
+    @Bean
+    public Client nhnClient(@Autowired no.ks.fiks.helseid.Configuration helseIdConfiguration) {
+    	 return new Client(new no.ks.fiks.nhn.msh.Configuration(Environments.Companion.getTEST(), 
+					"eFormidling", new HelseIdConfiguration(helseIdConfiguration.getClientId(), helseIdConfiguration.getJwk()), 
+					new Credentials("dummy-flr-user", "dummy-flr-password"), new Credentials("dummy-ar-user", "dummy-ar-password")));
     }
 
     public String getClientID() {
