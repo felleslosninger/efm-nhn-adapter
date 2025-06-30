@@ -1,0 +1,34 @@
+server:
+  servlet:
+    context-path: /nhn-adapter
+management:
+  server:
+    port: 8090
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: "info,env,prometheus,health"
+    enabled-by-default: true
+    
+oauth2:
+  helse-id:
+    client-id: ${NHN_CLIENT_ID}
+    private-key: ${NHN_PRIVATE_KEY}
+logging:
+  level:
+    org.springframework.http.codec.json: TRACE
+    org.springframework.core.codec: TRACE
+
+
+
