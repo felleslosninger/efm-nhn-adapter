@@ -102,7 +102,7 @@
     </properties>
     <modules>
         <module>nhn-adapter-kt-app-4</module>
-        <module>nhn-adapter-kt-app-3</module>
+        <!--module>nhn-adapter-kt-app-3</module-->
     </modules>
 
 </project>

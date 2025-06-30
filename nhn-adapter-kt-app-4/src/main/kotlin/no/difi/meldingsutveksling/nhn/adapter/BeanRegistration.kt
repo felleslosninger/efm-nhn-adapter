@@ -1,6 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import kotlinx.serialization.Serializable
 import org.springframework.beans.factory.BeanRegistrarDsl
+import org.springframework.http.codec.KotlinSerializationSupport
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.ServerResponse
@@ -12,13 +14,21 @@ import org.springframework.web.reactive.function.server.coRouter
 
 class BeanRegistration : BeanRegistrarDsl ({
     registerBean<RouterFunction<*>> {
+
         coRouter {
             GET("/helloWorld") {
                 it.awaitBody<String>()
                 ServerResponse.ok().bodyValueAndAwait("Hello World")
+            }
+            POST("/kotlinx") {
+                val kotlinX = it.awaitBody<TestKotlinX>()
+                ServerResponse.ok().bodyValueAndAwait(kotlinX.copy(value = "Got you"))
             }
         }
 
     }
 
 })
+
+@Serializable
+data class TestKotlinX(val name: String, val value:String)
