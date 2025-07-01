@@ -22,7 +22,7 @@ class BeanRegistration : BeanRegistrarDsl ({
             }
             POST("/kotlinx") {
                 val kotlinX = it.awaitBody<TestKotlinX>()
-                ServerResponse.ok().bodyValueAndAwait(kotlinX.copy(value = "Got you"))
+                ServerResponse.ok().bodyValueAndAwait(kotlinX.copy(name = "Test2"))
             }
         }
 
