@@ -2,8 +2,6 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.equals.shouldBeEqual
-import io.kotest.matchers.should
-import io.kotest.mpp.newInstanceNoArgConstructor
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient
 import org.springframework.boot.test.context.SpringBootTest
@@ -12,7 +10,6 @@ import org.springframework.http.codec.json.Jackson2JsonDecoder
 import org.springframework.http.codec.json.Jackson2JsonEncoder
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.test.web.reactive.server.returnResult
-import org.springframework.web.reactive.function.client.awaitBody
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
@@ -27,24 +24,27 @@ class TestKotlinXSerialization(@Autowired val webTestClient: WebTestClient,@Auto
         }.build()
         // alternative 1
         val response = webtestClient.post()
-            .uri("http://localhost:8080/kotlinx")
-            .bodyValue(TestKotlinX("Alexander","Test"))
-            .exchange().expectBody(TestKotlinX::class.java)
+            .uri("http://localhost:8080/kotlinxsealedclass")
+            .bodyValue(ClientCommunicationParty("Reciever","testHerId1","testHerId2"))
+            .exchange().expectBody(ClientCommunicationParty::class.java)
         response.returnResult().responseBody!!.run {
-            println("$this.name  ${this.value}")
+            println("${this.herid1}  ${this.herid2}")
         }
         // alternative 2
         val response2 = webtestClient.post()
-            .uri("http://localhost:8080/kotlinx")
-            .bodyValue(TestKotlinX("Alexander","Test"))
+            .uri("http://localhost:8080/kotlinxsealedclass")
+            .bodyValue(ClientCommunicationParty("Sender","testHerId1","testHerId2"))
             .exchange()
 
 
 
-        response2.returnResult<TestKotlinX>().responseBody.blockFirst().run {
-            println("${this?.name}  ${this?.value}")
+        response2.returnResult<ClientCommunicationParty>().responseBody.blockFirst().run {
+            println("${this?.herid1}  ${this?.herid2}")
         }
         1 shouldBeEqual 1
     }
 
 })
+
+
+data class ClientCommunicationParty(var type:String, val herid1:String, val herid2:String)

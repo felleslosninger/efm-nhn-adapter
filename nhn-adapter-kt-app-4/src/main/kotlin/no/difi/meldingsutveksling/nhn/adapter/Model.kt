@@ -1,16 +1,20 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+@Serializable
 sealed interface CommunicationParty {
      val herid1:String
-     val herId2:String
+     val herid2:String
 }
 
 @Serializable
-data class Sender(override val herid1:String, override val herId2:String) : CommunicationParty
+@SerialName("Sender")
+data class Sender(override val herid1:String, override val herid2:String) : CommunicationParty
 @Serializable
-data class Reciever(override val herid1: String, override val herId2: String) : CommunicationParty
+@SerialName("Reciever")
+data class Reciever(override val herid1: String, override val herid2: String) : CommunicationParty
 
 
 @Serializable
