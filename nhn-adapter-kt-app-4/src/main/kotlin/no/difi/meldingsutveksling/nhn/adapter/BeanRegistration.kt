@@ -33,6 +33,14 @@ class BeanRegistration : BeanRegistrarDsl ({
                 ServerResponse.ok().bodyValueAndAwait(messageOut)
             }
 
+            GET("/arlookup/fastlege/{fnr}") {
+                ServerResponse.ok().buildAndAwait()
+            }
+
+            GET("/arlookup/organisasjonellernoe/{herId2}") {
+                ServerResponse.ok().buildAndAwait()
+            }
+
             POST("/dph/out") {
                 val messageOut = it.awaitBody<MessageOut>()
                 println("MessageOut recieved ${messageOut.conversationId}")
