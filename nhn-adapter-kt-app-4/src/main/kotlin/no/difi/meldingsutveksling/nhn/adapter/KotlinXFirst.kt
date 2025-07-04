@@ -1,7 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import kotlinx.serialization.json.Json
-import org.springframework.boot.web.codec.CodecCustomizer
+import org.springframework.boot.http.codec.CodecCustomizer
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
