@@ -2,6 +2,8 @@ server:
   port: 9080
   servlet:
     context-path: /nhn-adapter
+  error:
+    include-message: always
 management:
   server:
     port: 9090
@@ -21,6 +23,12 @@ management:
       exposure:
         include: "info,env,prometheus,health"
     enabled-by-default: true
+nhn:
+  services:
+    username: ${NHN_SERVICES_USERNAME}
+    password: ${NHN_SERVICES_PASSWORD}
+
+
     
 oauth2:
   helse-id:

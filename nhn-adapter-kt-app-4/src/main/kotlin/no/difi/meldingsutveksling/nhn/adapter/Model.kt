@@ -25,7 +25,7 @@ data class MessageOut(val messageId:String,
                       val fagmelding:String,
                       )
 @Serializable
-data class ArDetails(val herid1:String, val herid2:String,val ediAdress:String)
+data class ArDetails(val herid1:Int, val herid2:Int,val ediAdress:String,val pemDigdirSertifikat:String)
 
 
 
