@@ -14,61 +14,66 @@ import org.springframework.security.core.userdetails.MapReactiveUserDetailsServi
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
-import org.springframework.security.web.server.SecurityWebFilterChain
 import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.coRouter
 import org.springframework.web.server.ResponseStatusException
 
 
-fun  BeanRegistrarDsl.registerProperties()  =
-     registerBean<NhnConfig>() {
-         Binder.get(env).bind("nhn.services", NhnConfig::class.java).get()
-     }
+
+private fun properties() =
+    BeanRegistrarDsl {
+        registerBean<NhnConfig> { Binder.get(env).bind("nhn.services", NhnConfig::class.java).get() }
+        registerBean<HelseId> { Binder.get(env).bind("oauth2.helse-id", HelseId::class.java).get() }
+    }
+
+
+private  fun security() =
+    BeanRegistrarDsl {
+        registerBean<PasswordEncoder>() {
+            BCryptPasswordEncoder()
+        }
+        registerBean {
+            val passwordEncoder = bean<PasswordEncoder>()
+            val user = User.builder().passwordEncoder { passwordEncoder.encode(it) }
+                .username("testUser")
+                .password("testPassword")
+                .roles()
+                .build()
+            MapReactiveUserDetailsService(user)
+        }
+        registerBean {
+            UserDetailsRepositoryReactiveAuthenticationManager(this.bean<MapReactiveUserDetailsService>()).apply {
+                setPasswordEncoder(bean<PasswordEncoder>())
+            }
+        }
+        registerBean {
+            val serverHttpSecurity = this.bean<ServerHttpSecurity>()
+            securityFilterChain(serverHttpSecurity)
+        }
+    }
 
 
 
 class BeanRegistration : BeanRegistrarDsl ({
-    registerProperties()
+    this.register(properties())
+    this.register(security())
 
-    registerBean<PasswordEncoder>() {
-        BCryptPasswordEncoder()
-    }
-    registerBean<MapReactiveUserDetailsService>() {
-        val passwordEncoder = bean<PasswordEncoder>()
-        val user = User.builder().passwordEncoder { passwordEncoder.encode(it) }
-            .username("testUser")           
-            .password("testPassword")
-            .roles()
-            .build()
-        MapReactiveUserDetailsService(user)
-    }
-    registerBean<UserDetailsRepositoryReactiveAuthenticationManager>() {
-        UserDetailsRepositoryReactiveAuthenticationManager(this.bean<MapReactiveUserDetailsService>()).apply {
-            setPasswordEncoder(bean<PasswordEncoder>())
-        }
-    }
-    registerBean<SecurityWebFilterChain>() {
-        val serverHttpSecurity = this.bean<ServerHttpSecurity>()
-        securityFilterChain(serverHttpSecurity)
-    }
-    registerBean<FastlegeregisteretClient> {
+    registerBean {
         val nhnConfig = this.bean<NhnConfig>()
         FastlegeregisteretClient(Environment.TEST,Credentials(nhnConfig.username,nhnConfig.password))
     }
-    registerBean<AdresseregisteretClient>{
+    registerBean {
         val nhnConfig = this.bean<NhnConfig>()
         AdresseregisteretClient(no.ks.fiks.nhn.ar.Environment.TEST, no.ks.fiks.nhn.ar.Credentials(nhnConfig.username,nhnConfig.password))
     }
     registerBean<RouterFunction<*>> {
-        val flrClient = this.bean<FastlegeregisteretClient>()
-        val arClient = this.bean<AdresseregisteretClient>()
         coRouter {
             testHelloWorld()
             testKotlinX()
             testKotlinxSealedclass()
-            testFlr(flrClient)
-            testAr(arClient)
-            arLookupByFnr(flrClient,arClient)
+            testFlr(bean())
+            testAr(bean())
+            arLookupByFnr(bean(),bean())
             arLookupById()
             dphOut()
         }
