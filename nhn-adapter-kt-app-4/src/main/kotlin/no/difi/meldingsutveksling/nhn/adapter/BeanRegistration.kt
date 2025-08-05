@@ -14,7 +14,6 @@ import org.springframework.security.core.userdetails.MapReactiveUserDetailsServi
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
-import org.springframework.security.provisioning.InMemoryUserDetailsManager
 import org.springframework.security.web.server.SecurityWebFilterChain
 import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.coRouter
@@ -36,15 +35,17 @@ class BeanRegistration : BeanRegistrarDsl ({
     }
     registerBean<MapReactiveUserDetailsService>() {
         val passwordEncoder = bean<PasswordEncoder>()
-        val user = User.builder()
-            .username("testUser")
-            .password(passwordEncoder.encode("{noop}" + "testPassword"))
+        val user = User.builder().passwordEncoder { passwordEncoder.encode(it) }
+            .username("testUser")           
+            .password("testPassword")
             .roles()
             .build()
         MapReactiveUserDetailsService(user)
     }
     registerBean<UserDetailsRepositoryReactiveAuthenticationManager>() {
-        UserDetailsRepositoryReactiveAuthenticationManager(this.bean<MapReactiveUserDetailsService>())
+        UserDetailsRepositoryReactiveAuthenticationManager(this.bean<MapReactiveUserDetailsService>()).apply {
+            setPasswordEncoder(bean<PasswordEncoder>())
+        }
     }
     registerBean<SecurityWebFilterChain>() {
         val serverHttpSecurity = this.bean<ServerHttpSecurity>()
@@ -62,7 +63,7 @@ class BeanRegistration : BeanRegistrarDsl ({
         val flrClient = this.bean<FastlegeregisteretClient>()
         val arClient = this.bean<AdresseregisteretClient>()
         coRouter {
-            testHelloWorld().invoke()
+            testHelloWorld()
             testKotlinX()
             testKotlinxSealedclass()
             testFlr(flrClient)
