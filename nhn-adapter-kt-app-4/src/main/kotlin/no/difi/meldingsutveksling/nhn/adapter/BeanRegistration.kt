@@ -1,10 +1,16 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import kotlinx.serialization.Serializable
+import no.ks.fiks.helseid.CachedHttpDiscoveryOpenIdConfiguration
+import no.ks.fiks.helseid.Configuration
+import no.ks.fiks.helseid.HelseIdClient
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.flr.Credentials
 import no.ks.fiks.nhn.flr.Environment
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.msh.HelseIdConfiguration
+import org.apache.hc.client5.http.classic.HttpClient
+import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.http.HttpStatus
@@ -47,9 +53,13 @@ private  fun security() =
             }
         }
         registerBean {
-            val serverHttpSecurity = this.bean<ServerHttpSecurity>()
-            securityFilterChain(serverHttpSecurity)
+            securityFilterChain(bean())
         }
+        registerBean {
+            val helseId = bean<HelseId>()
+            Configuration(helseId.clientId,helseId.privateKey, no.ks.fiks.helseid.Environment.TEST)
+        }
+
     }
 
 
@@ -65,6 +75,14 @@ class BeanRegistration : BeanRegistrarDsl ({
     registerBean {
         val nhnConfig = this.bean<NhnConfig>()
         AdresseregisteretClient(no.ks.fiks.nhn.ar.Environment.TEST, no.ks.fiks.nhn.ar.Credentials(nhnConfig.username,nhnConfig.password))
+    }
+    registerBean<HttpClient>(HttpClients::createDefault)
+    registerBean {
+        HelseIdClient(bean(),
+            bean(),
+            CachedHttpDiscoveryOpenIdConfiguration(Environment.Companion.TEST
+                .url)
+        );
     }
     registerBean<RouterFunction<*>> {
         coRouter {
