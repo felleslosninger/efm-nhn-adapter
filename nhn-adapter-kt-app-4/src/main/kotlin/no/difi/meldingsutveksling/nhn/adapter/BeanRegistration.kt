@@ -38,7 +38,7 @@ private  fun security() =
         registerBean<PasswordEncoder>() {
             BCryptPasswordEncoder()
         }
-        registerBean {
+        registerBean() {
             val passwordEncoder = bean<PasswordEncoder>()
             val user = User.builder().passwordEncoder { passwordEncoder.encode(it) }
                 .username("testUser")
@@ -57,7 +57,7 @@ private  fun security() =
         }
         registerBean {
             val helseId = bean<HelseId>()
-            Configuration(helseId.clientId,helseId.privateKey, no.ks.fiks.helseid.Environment.TEST)
+            Configuration(helseId.clientId,helseId.privateKey, no.ks.fiks.helseid.Environment(helseId.issuer,helseId.audience))
         }
 
     }
@@ -78,10 +78,10 @@ class BeanRegistration : BeanRegistrarDsl ({
     }
     registerBean<HttpClient>(HttpClients::createDefault)
     registerBean {
+        val helseId = bean<HelseId>()
         HelseIdClient(bean(),
             bean(),
-            CachedHttpDiscoveryOpenIdConfiguration(Environment.Companion.TEST
-                .url)
+            CachedHttpDiscoveryOpenIdConfiguration(helseId.issuer)
         );
     }
     registerBean<RouterFunction<*>> {
@@ -91,6 +91,7 @@ class BeanRegistration : BeanRegistrarDsl ({
             testKotlinxSealedclass()
             testFlr(bean())
             testAr(bean())
+            testDphOut(bean(),bean())
             arLookupByFnr(bean(),bean())
             arLookupById()
             dphOut()

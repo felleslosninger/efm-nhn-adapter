@@ -34,6 +34,8 @@ oauth2:
   helse-id:
     client-id: ${NHN_CLIENT_ID}
     private-key: ${NHN_PRIVATE_KEY}
+    issuer: "https://helseid-sts.test.nhn.no"
+    audience: "https://helseid-sts.test.nhn.no"
 logging:
   level:
     org.springframework.http.codec.json: TRACE
