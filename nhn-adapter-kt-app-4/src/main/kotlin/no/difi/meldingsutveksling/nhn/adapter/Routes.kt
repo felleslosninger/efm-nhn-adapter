@@ -39,7 +39,7 @@ fun CoRouterFunctionDsl.testKotlinxSealedclass() =
     }
 
 
-fun CoRouterFunctionDsl.testFlr(flrClient: FastlegeregisteretClient) =
+fun CoRouterFunctionDsl.testFlr(flrClient: DecoratingFlrClient) =
     POST("/flr/test") {
         //       val flrClinet = FastlegeregisteretClient(Environment.TEST, Credentials(username = "****", password = "*****"))
         val patientGP = flrClient.getPatientGP("16822449879")
@@ -122,13 +122,15 @@ fun CoRouterFunctionDsl.testDphOut(
     }
 
 
-fun CoRouterFunctionDsl.arLookupByFnr(flrClient: FastlegeregisteretClient, arClient: AdresseregisteretClient) =
+fun CoRouterFunctionDsl.arLookupByFnr(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
     GET("/arlookup/fastlege/{fnr}") {
         val fnr = it.pathVariable("fnr")
         val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
         val communicationParty =
             arClient.lookupHerId(gpHerId).orElseThrowNotFound("Comunication party not found in AR")
+
         val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
+
         val arDetails = ArDetails(parentHerId, gpHerId, "testedi-address", "testsertifikat")
         ServerResponse.ok().bodyValueAndAwait(arDetails)
     }
