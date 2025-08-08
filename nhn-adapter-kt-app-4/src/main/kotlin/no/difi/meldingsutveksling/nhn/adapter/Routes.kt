@@ -9,12 +9,30 @@ import no.ks.fiks.helseid.TenancyType
 import no.ks.fiks.helseid.TokenType
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.edi.BusinessDocumentSerializer.serializeNhnMessage
-import no.ks.fiks.nhn.flr.FastlegeregisteretClient
-import no.ks.fiks.nhn.msh.*
+import no.ks.fiks.nhn.flr.Credentials
+import no.ks.fiks.nhn.msh.BusinessDocumentMessage
+import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.Configuration
-import org.springframework.web.reactive.function.server.*
+import no.ks.fiks.nhn.msh.DialogmeldingVersion
+import no.ks.fiks.nhn.msh.Environments
+import no.ks.fiks.nhn.msh.HealthcareProfessional
+import no.ks.fiks.nhn.msh.HelseIdConfiguration
+import no.ks.fiks.nhn.msh.HerIdReceiver
+import no.ks.fiks.nhn.msh.HerIdReceiverParent
+import no.ks.fiks.nhn.msh.Id
+import no.ks.fiks.nhn.msh.Organization
+import no.ks.fiks.nhn.msh.OrganizationHerIdReceiverChild
+import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
+import no.ks.fiks.nhn.msh.Patient
+import no.ks.fiks.nhn.msh.RecipientContact
+import no.ks.fiks.nhn.msh.Vedlegg
+import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
+import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.reactive.function.server.awaitBody
+import org.springframework.web.reactive.function.server.bodyValueAndAwait
+import org.springframework.web.reactive.function.server.buildAndAwait
 import java.time.OffsetDateTime
-import java.util.*
+import java.util.UUID
 
 fun CoRouterFunctionDsl.testHelloWorld() =
 
@@ -23,13 +41,11 @@ fun CoRouterFunctionDsl.testHelloWorld() =
         ServerResponse.ok().bodyValueAndAwait("Hello World")
     }
 
-
 fun CoRouterFunctionDsl.testKotlinX() =
     POST("/kotlinx") {
         val kotlinX = it.awaitBody<TestKotlinX>()
         ServerResponse.ok().bodyValueAndAwait(kotlinX.copy(name = "Test2"))
     }
-
 
 fun CoRouterFunctionDsl.testKotlinxSealedclass() =
     POST("/kotlinxsealedclass") {
@@ -37,7 +53,6 @@ fun CoRouterFunctionDsl.testKotlinxSealedclass() =
         println("Communication Party: $messageOut")
         ServerResponse.ok().bodyValueAndAwait(messageOut)
     }
-
 
 fun CoRouterFunctionDsl.testFlr(flrClient: DecoratingFlrClient) =
     POST("/flr/test") {
@@ -49,44 +64,53 @@ fun CoRouterFunctionDsl.testFlr(flrClient: DecoratingFlrClient) =
 
 fun CoRouterFunctionDsl.testDphOut(
     helseIdClient: HelseIdClient,
-    helseIdConfiguration: no.ks.fiks.helseid.Configuration
-) =
-    POST("/dph/testOut") {
-        val accessToken = helseIdClient.getAccessToken(
-            AccessTokenRequestBuilder()
-                .parentOrganizationNumber("931796003")
-                .tokenType(TokenType.BEARER)
-                .tenancyType(TenancyType.MULTI)
-                .build()
-        ).accessToken
+    helseIdConfiguration: no.ks.fiks.helseid.Configuration,
+) = POST("/dph/testOut") {
+    val accessToken =
+        helseIdClient
+            .getAccessToken(
+                AccessTokenRequestBuilder()
+                    .parentOrganizationNumber("931796003")
+                    .tokenType(TokenType.BEARER)
+                    .tenancyType(TenancyType.MULTI)
+                    .build(),
+            ).accessToken
 
-        val dpopAccessToken: String = helseIdClient.getAccessToken(
-            AccessTokenRequestBuilder()
-                .parentOrganizationNumber("931796003")
-                .tokenType(TokenType.DPOP)
-                .tenancyType(TenancyType.MULTI)
-                .build()
-        ).accessToken
+    val dpopAccessToken: String =
+        helseIdClient
+            .getAccessToken(
+                AccessTokenRequestBuilder()
+                    .parentOrganizationNumber("931796003")
+                    .tokenType(TokenType.DPOP)
+                    .tenancyType(TenancyType.MULTI)
+                    .build(),
+            ).accessToken
 
-        val mshClient = Client(
+    val mshClient =
+        Client(
             Configuration(
                 Environments.TEST,
-                "eFormidling", HelseIdConfiguration(helseIdConfiguration.clientId, helseIdConfiguration.jwk),
-                Credentials("dummy-flr-user", "dummy-flr-password"), Credentials("dummy-ar-user", "dummy-ar-password")
-            )
+                "eFormidling",
+                HelseIdConfiguration(helseIdConfiguration.clientId, helseIdConfiguration.jwk),
+                no.ks.fiks.nhn.msh
+                    .Credentials("dummy-flr-user", "dummy-flr-password"),
+                no.ks.fiks.nhn.msh
+                    .Credentials("dummy-ar-user", "dummy-ar-password"),
+            ),
         )
 
-        val outgoingBusinessDocument = OutgoingBusinessDocument(
+    val outgoingBusinessDocument =
+        OutgoingBusinessDocument(
             UUID.randomUUID(),
             Organization(
                 "KS-DIGITALE FELLESTJENESTER AS",
                 Id("8142987", OrganisasjonIdType.HER_ID),
-                Organization("Digdir multi-tenant test", Id("8143154", OrganisasjonIdType.HER_ID), null)
+                Organization("Digdir multi-tenant test", Id("8143154", OrganisasjonIdType.HER_ID), null),
             ),
             HerIdReceiver(
                 HerIdReceiverParent("DIGITALISERINGSDIREKTORATET", Id("8143143", OrganisasjonIdType.HER_ID)),
                 OrganizationHerIdReceiverChild("Service 1", Id("8143144", OrganisasjonIdType.HER_ID)),
-                Patient("14038342168", "Aleksander", null, "Petterson")
+                Patient("14038342168", "Aleksander", null, "Petterson"),
             ),
             BusinessDocumentMessage(
                 "<Message subject>",
@@ -96,51 +120,54 @@ fun CoRouterFunctionDsl.testDphOut(
                     "<Middle name>",
                     "<Last name>",
                     "11223344",
-                    HelsepersonellsFunksjoner.HELSEFAGLIG_KONTAKT // This persons role with respect to the patient
+                    HelsepersonellsFunksjoner.HELSEFAGLIG_KONTAKT, // This persons role with respect to the patient
                 ),
                 RecipientContact(
-                    Helsepersonell.LEGE // Professional group of the healthcare professional recieving the message
-                )
+                    Helsepersonell.LEGE, // Professional group of the healthcare professional recieving the message
+                ),
             ),
             Vedlegg(
                 OffsetDateTime.now(),
                 "<Description of the attachment>",
-                this.javaClass.getClassLoader().getResourceAsStream("small.pdf")
+                this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!,
             ),
-            DialogmeldingVersion.V1_1
+            DialogmeldingVersion.V1_1,
         )
-        println(serializeNhnMessage(outgoingBusinessDocument))
+    println(serializeNhnMessage(outgoingBusinessDocument))
 
-        mshClient.sendMessage(outgoingBusinessDocument, "931796003")
-        val messageID = mshClient.getMessages(8143144, "991825827").iterator().next().id
-        mshClient.getBusinessDocument(messageID, "991825827")
+    mshClient.sendMessage(outgoingBusinessDocument, "931796003")
+    val messageID =
+        mshClient
+            .getMessages(8143144, "991825827")
+            .iterator()
+            .next()
+            .id
+    mshClient.getBusinessDocument(messageID, "991825827")
 
+    val messageOut = it.awaitBody<MessageOut>()
+    println("MessageOut recieved ${messageOut.conversationId}")
+    ServerResponse.ok().buildAndAwait()
+}
 
-        val messageOut = it.awaitBody<MessageOut>()
-        println("MessageOut recieved ${messageOut.conversationId}")
-        ServerResponse.ok().buildAndAwait()
-    }
+fun CoRouterFunctionDsl.arLookupByFnr(
+    flrClient: DecoratingFlrClient,
+    arClient: AdresseregisteretClient,
+) = GET("/arlookup/fastlege/{fnr}") {
+    val fnr = it.pathVariable("fnr")
+    val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
+    val communicationParty =
+        arClient.lookupHerId(gpHerId).orElseThrowNotFound("Comunication party not found in AR")
 
+    val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
 
-fun CoRouterFunctionDsl.arLookupByFnr(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
-    GET("/arlookup/fastlege/{fnr}") {
-        val fnr = it.pathVariable("fnr")
-        val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
-        val communicationParty =
-            arClient.lookupHerId(gpHerId).orElseThrowNotFound("Comunication party not found in AR")
-
-        val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
-
-        val arDetails = ArDetails(parentHerId, gpHerId, "testedi-address", "testsertifikat")
-        ServerResponse.ok().bodyValueAndAwait(arDetails)
-    }
-
+    val arDetails = ArDetails(parentHerId, gpHerId, "testedi-address", "testsertifikat")
+    ServerResponse.ok().bodyValueAndAwait(arDetails)
+}
 
 fun CoRouterFunctionDsl.arLookupById() =
     GET("/arlookup/organisasjonellernoe/{herId2}") {
         ServerResponse.ok().buildAndAwait()
     }
-
 
 fun CoRouterFunctionDsl.dphOut() =
     POST("/dph/out") {
@@ -149,15 +176,9 @@ fun CoRouterFunctionDsl.dphOut() =
         ServerResponse.ok().buildAndAwait()
     }
 
-
 fun CoRouterFunctionDsl.testAr(arClient: AdresseregisteretClient) =
     POST("/ar/test") {
-        //     val arClient = AdresseregisteretClient(
-        //         no.ks.fiks.nhn.ar.Environment.TEST,
-        //         no.ks.fiks.nhn.ar.Credentials(username = "*****", password = "*****"))
         val reciever = arClient.lookupHerId(8143060)
         println(reciever?.name)
         ServerResponse.ok().buildAndAwait()
     }
-
-

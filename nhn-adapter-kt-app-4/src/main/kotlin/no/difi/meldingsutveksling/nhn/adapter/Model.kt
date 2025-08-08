@@ -5,27 +5,37 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 sealed interface CommunicationParty {
-     val herid1:String
-     val herid2:String
+    val herid1: String
+    val herid2: String
 }
 
 @Serializable
 @SerialName("Sender")
-data class Sender(override val herid1:String, override val herid2:String) : CommunicationParty
+data class Sender(
+    override val herid1: String,
+    override val herid2: String,
+) : CommunicationParty
+
 @Serializable
 @SerialName("Reciever")
-data class Reciever(override val herid1: String, override val herid2: String) : CommunicationParty
-
+data class Reciever(
+    override val herid1: String,
+    override val herid2: String,
+) : CommunicationParty
 
 @Serializable
-data class MessageOut(val messageId:String,
-                      val conversationId:String,
-                      val sender: Sender,
-                      val reciever: Reciever,
-                      val fagmelding:String,
-                      )
+data class MessageOut(
+    val messageId: String,
+    val conversationId: String,
+    val sender: Sender,
+    val reciever: Reciever,
+    val fagmelding: String,
+)
+
 @Serializable
-data class ArDetails(val herid1:Int, val herid2:Int,val ediAdress:String,val pemDigdirSertifikat:String)
-
-
-
+data class ArDetails(
+    val herid1: Int,
+    val herid2: Int,
+    val ediAdress: String,
+    val pemDigdirSertifikat: String,
+)
