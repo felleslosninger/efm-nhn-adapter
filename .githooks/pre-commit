@@ -1,14 +1,49 @@
 #!/bin/sh
 # Fast auto-format and lint before committing
 
+# Always run from repo root
+ROOT="$(git rev-parse --show-toplevel)";
+cd "$ROOT"
+
+
+# Add multiple switches; some Maven/JLine/Jansi combos ignore single flags
+
+
+# --- Find Java even when GUI apps don't load your shell profile ---
+# Try SDKMAN first, then macOS java_home, then PATH
+if [ -d "$HOME/.sdkman/candidates/java/current" ]; then
+  export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
+  export PATH="$JAVA_HOME/bin:$PATH"
+elif command -v /usr/libexec/java_home >/dev/null 2>&1; then
+  export JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home 2>/dev/null || true)"
+  [ -n "${JAVA_HOME:-}" ] && export PATH="$JAVA_HOME/bin:$PATH"
+fi
+
+if ! command -v java >/dev/null 2>&1; then
+  echo "Java not found. If you use SDKMAN, ensure $HOME/.sdkman/candidates/java/current exists."
+  exit 1
+fi
+
+
+# --- Use Maven Wrapper ---
+if [ ! -x "./mvnw" ]; then
+  echo "./mvnw not found or not executable. Run the Maven Wrapper plugin and 'chmod +x mvnw'."
+  exit 1
+fi
+
+
 # 1) Format (does not run tests)
-mvn -q -DskipTests spotless:apply ktlint:check || exit 1
+./mvnw -q -DskipTests  \
+  verify || {
+    echo "Commit blocked: fix formatting/lint issues."
+    exit 1
+  }
 
 # 2) Re-stage any files changed by formatting
 git add -A
 
 # 3) Verify formatting + linting (fail commit if issues remain)
-mvn -q -DskipTests verify || {
+./mvnw -q -DskipTests  verify || {
   echo "Commit blocked: fix formatting/lint issues (see output above)."
   exit 1
 }
