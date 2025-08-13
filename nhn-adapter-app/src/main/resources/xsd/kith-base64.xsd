@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Base64Container v1.0 2009-06-16
+KITH http://www.kith.no/
+Skjema for å benytte base64-kodet innhold i Document/Content-elementet i Hodemeldingen.
+-->
+<xs:schema xmlns="http://www.kith.no/xmlstds/base64container" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://www.kith.no/xmlstds/base64container" elementFormDefault="qualified" attributeFormDefault="unqualified">
+    <xs:element name="Base64Container">
+        <xs:complexType>
+            <xs:simpleContent>
+                <xs:extension base="xs:base64Binary"/>
+            </xs:simpleContent>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>
