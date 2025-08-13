@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- Hodemelding-->
+<!-- Versjon 1.2 2006-05-24 rev 3 -->
+<!-- Endringer siden versjon 1.1 2006-02-15: -->
+<!-- Lagt til Document/DocumentConnection og PatientReport/DocumentConnection -->
+<!-- Lagt til RefDoc/Description -->
+<!-- Lagt til RefDoc/FileReference -->
+<!-- Lagt til RefDoc/Compression -->
+<!-- Lagt inn choise mellom FileReference og Content -->
+<!-- Rettet feil på RefDoc/Content, processContent=strict -->
+<!-- Endret kardinalitet på Document/ContentDescription  fra 1..1 til 0..1 -->
+<!-- Endringer siden versjon 1.0 2005-11-22: -->
+<!-- Patient/Ident minOccurs=1 endret til minOccurs=0 -->
+<!-- Lagt til støtte for XML Digital Signature -->
+<!-- www.kith.no -->
+<schema xmlns:mh="http://www.kith.no/xmlstds/msghead/2006-05-24" xmlns:xsd="http://www.w3.org/2001/XMLSchema.xsd" xmlns="http://www.w3.org/2001/XMLSchema" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" targetNamespace="http://www.kith.no/xmlstds/msghead/2006-05-24" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<import namespace="http://www.w3.org/2000/09/xmldsig#" schemaLocation="xmldsig-core-schema.xsd"/>
+	<import namespace="http://www.kith.no/xmlstds/base64container" schemaLocation="kith-base64.xsd"/>
+	<!-- LEVEL 1 -->
+	<!-- Class: Hodemelding (MsgHead) -->
+	<element name="MsgHead">
+		<complexType>
+			<sequence>
+				<element ref="mh:MsgInfo"/>
+				<choice>
+					<element ref="mh:Document" maxOccurs="unbounded"/>
+					<element ref="mh:PatientReport" maxOccurs="unbounded">
+						<annotation>
+							<documentation>
+Benyttes ved innrapportering av data til helseregistre.</documentation>
+						</annotation>
+					</element>
+				</choice>
+				<element ref="ds:Signature" minOccurs="0"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- LEVEL 2 -->
+	<!-- Class: Meldingsinformasjon (MsgInfo) -->
+	<element name="MsgInfo">
+		<annotation>
+			<documentation>
+         Inneholder meldingsteksnisk informasjon relatert til meldingshodet.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="Type" type="mh:CS"/>
+				<element name="MIGversion" type="string" fixed="v1.2 2006-05-24"/>
+				<element name="GenDate" type="dateTime"/>
+				<element name="MsgId" type="string"/>
+				<element name="ProcessingStatus" type="mh:CS" minOccurs="0"/>
+				<element name="RequestedPriority" type="mh:CS" minOccurs="0"/>
+				<element name="Ack" type="mh:CS" minOccurs="0"/>
+				<element ref="mh:ConversationRef" minOccurs="0"/>
+				<element ref="mh:Sender"/>
+				<element ref="mh:Receiver"/>
+				<element ref="mh:OtherReceiver" minOccurs="0" maxOccurs="unbounded"/>
+				<element ref="mh:Patient" minOccurs="0"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Pasientrapport (PatientReport) -->
+	<element name="PatientReport">
+		<annotation>
+			<documentation>
+         Denne klassen benyttes ved innrapportering avdata til helseregistre.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="DocumentConnection" type="mh:CS" minOccurs="0"/>
+				<element name="CaseNo" type="string"/>
+				<element ref="mh:Document" maxOccurs="unbounded"/>
+				<element ref="mh:Patient" minOccurs="0"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- LEVEL 3 -->
+	<!-- Class: Avsender (Sender) -->
+	<element name="Sender">
+		<complexType>
+			<sequence>
+				<element name="ComMethod" type="mh:CS" minOccurs="0"/>
+				<element ref="mh:Organisation"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Annen mottaker (OtherReceiver) -->
+	<element name="OtherReceiver">
+		<complexType>
+			<sequence>
+				<element name="ComMethod" type="mh:CS" minOccurs="0"/>
+				<element name="RoleReceiver" type="mh:CS"/>
+				<choice>
+					<element ref="mh:Organisation" minOccurs="0"/>
+					<choice>
+						<!-- XOR Annen mottaker (OtherReceiver) -->
+						<element ref="mh:Patient" minOccurs="0"/>
+						<element ref="mh:Person" minOccurs="0"/>
+						<element ref="mh:HealthcareProfessional" minOccurs="0"/>
+					</choice>
+				</choice>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Dokument (Document) -->
+	<element name="Document">
+		<annotation>
+			<documentation>
+         Denne klassen benyttes ved overføring av dokumenter. Fagspesifikk informasjoner overføres fortrinnsvis i henhold til en gjeldende standard som regel spesifisert via et eget XML schema, og inkludert i meldingsinstansen i elementet Innhold (Content) under Referanse (RefDoc).
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="DocumentConnection" type="mh:CS" minOccurs="0"/>
+				<element name="ContentType" type="mh:CV" minOccurs="0"/>
+				<element name="ContentDescription" type="string" minOccurs="0"/>
+				<element name="ContentCategory" type="mh:CV" minOccurs="0"/>
+				<element name="Consent" type="mh:CV" minOccurs="0"/>
+				<element name="Annotation" type="string" minOccurs="0"/>
+				<element name="FromDate" type="mh:TS" minOccurs="0"/>
+				<element name="ToDate" type="mh:TS" minOccurs="0"/>
+				<element name="OidRef" type="mh:oid" minOccurs="0"/>
+				<element name="EnquiryRefId" type="string" minOccurs="0"/>
+				<element ref="mh:RefDoc">
+					<annotation>
+						<documentation>
+Referanse/peker til det evt. vedlagte dokumentet. Dokumentet kan ligge direkte inkludert i innhold (Content), som et annet vedlegg i samme sending, eller finnes eksternt.  Når tilsvarende informasjon ligger i eksisterende dokumentet, skal verdiene hentes fra (samsvare med) tilsvarende verdier i dokumentet.
+      </documentation>
+					</annotation>
+				</element>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Referanse (RefDoc) -->
+	<element name="RefDoc">
+		<annotation>
+			<documentation>
+         Referanse/peker til det evt. vedlagte dokumentet. Dokumentet kan ligge direkte inkludert i innhold (Content), som et annet vedlegg i samme sending, eller finnes eksternt.  Når tilsvarende informasjon ligger i eksisterende dokumentet, skal verdiene hentes fra (samsvare med) tilsvarende verdier i dokumentet.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="IssueDate" type="mh:TS" minOccurs="0"/>
+				<element name="MsgType" type="mh:CS"/>
+				<element name="Id" type="string" minOccurs="0"/>
+				<element name="MimeType" type="string" minOccurs="0"/>
+				<element name="Description" type="string" minOccurs="0"/>
+				<element name="Compression" type="mh:CS" minOccurs="0"/>
+				<choice>
+					<element name="FileReference" type="anyURI" minOccurs="0"/>
+					<element name="Content" minOccurs="0">
+						<complexType>
+							<complexContent>
+								<restriction base="anyType">
+									<sequence>
+										<any processContents="strict" minOccurs="0" maxOccurs="unbounded"/>
+									</sequence>
+								</restriction>
+							</complexContent>
+						</complexType>
+					</element>
+				</choice>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Dialogreferanse (ConversationRef) -->
+	<element name="ConversationRef">
+		<annotation>
+			<documentation>
+         Referanse til tidligere meldinger som utgjør en konkret dialog eller konversasjon.   Klassen skal ikke benyttes for den første meldingen i en konversasjon eller dialog.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="RefToParent" type="string"/>
+				<element name="RefToConversation" type="string"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Mottaker (Receiver) -->
+	<element name="Receiver">
+		<complexType>
+			<sequence>
+				<element name="ComMethod" type="mh:CS" minOccurs="0"/>
+				<element ref="mh:Organisation"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- LEVEL 4 -->
+	<!-- Class: Pasient (Patient) -->
+	<element name="Patient">
+		<annotation>
+			<documentation>
+         Informasjon som er knyttet til rollen som pasient.   Alle elementer er frivilige, men navn eller Id (Ident) må alltid oppgis. Vanligvis oppgis både navn og Id.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="FamilyName" type="string" minOccurs="0"/>
+				<element name="MiddleName" type="string" minOccurs="0"/>
+				<element name="GivenName" type="string" minOccurs="0"/>
+				<element name="DateOfBirth" type="date" minOccurs="0"/>
+				<element name="Sex" type="mh:CS" minOccurs="0"/>
+				<element name="Nationality" type="mh:CS" minOccurs="0"/>
+				<element name="Ident" type="mh:Ident" minOccurs="0" maxOccurs="unbounded"/>
+				<element name="Address" type="mh:Address" minOccurs="0"/>
+				<element name="TeleCom" type="mh:TeleCom" minOccurs="0" maxOccurs="unbounded"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Person (Person) -->
+	<element name="Person">
+		<complexType>
+			<sequence>
+				<element name="FamilyName" type="string" minOccurs="0"/>
+				<element name="MiddleName" type="string" minOccurs="0"/>
+				<element name="GivenName" type="string" minOccurs="0"/>
+				<element name="DateOfBirth" type="date" minOccurs="0"/>
+				<element name="Sex" type="mh:CS" minOccurs="0"/>
+				<element name="Nationality" type="mh:CS" minOccurs="0"/>
+				<element name="Ident" type="mh:Ident" minOccurs="0" maxOccurs="unbounded"/>
+				<element name="Address" type="mh:Address" minOccurs="0"/>
+				<element name="TeleCom" type="mh:TeleCom" minOccurs="0" maxOccurs="unbounded"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- LEVEL 5 -->
+	<!-- Class: Organisatorisk enhet (Organisation) -->
+	<element name="Organisation">
+		<annotation>
+			<documentation>
+         Denne klassen benyttes til å beskrive de organisatoriske enhetene som direkte eller indirekte er involvert i korrespondansen.   Hvis organisasjon oppgis som en hierarkisk struktur, skal høyste nivå av klassen tilsvare høyeste nivå i organisasjonen.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence minOccurs="0">
+				<element name="OrganisationName" type="string"/>
+				<element name="TypeOrganisation" type="mh:CV" minOccurs="0"/>
+				<element name="Ident" type="mh:Ident" maxOccurs="unbounded"/>
+				<element name="Address" type="mh:Address" minOccurs="0"/>
+				<element name="TeleCom" type="mh:TeleCom" minOccurs="0" maxOccurs="unbounded"/>
+				<element ref="mh:Organisation" minOccurs="0"/>
+				<element ref="mh:HealthcareProfessional" minOccurs="0"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Class: Helsepersonell (HealthcareProfessional) -->
+	<element name="HealthcareProfessional">
+		<annotation>
+			<documentation>
+         For å beskrive egenskaper ved personen som helsepersonell.
+      </documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="TypeHealthcareProfessional" type="mh:CS" minOccurs="0"/>
+				<element name="RoleToPatient" type="mh:CV" minOccurs="0"/>
+				<element name="FamilyName" type="string" minOccurs="0"/>
+				<element name="MiddleName" type="string" minOccurs="0"/>
+				<element name="GivenName" type="string" minOccurs="0"/>
+				<element name="DateOfBirth" type="date" minOccurs="0"/>
+				<element name="Sex" type="mh:CS" minOccurs="0"/>
+				<element name="Nationality" type="mh:CS" minOccurs="0"/>
+				<element name="Ident" type="mh:Ident" maxOccurs="unbounded"/>
+				<element name="Address" type="mh:Address" minOccurs="0"/>
+				<element name="TeleCom" type="mh:TeleCom" minOccurs="0" maxOccurs="unbounded"/>
+			</sequence>
+		</complexType>
+	</element>
+	<!-- Felleskomponenter-->
+	<complexType name="Address">
+		<annotation>
+			<documentation>
+         Adresseopplysninger.
+      </documentation>
+		</annotation>
+		<sequence>
+			<element name="Type" type="mh:CS" minOccurs="0"/>
+			<element name="StreetAdr" type="string" minOccurs="0"/>
+			<element name="PostalCode" type="string" minOccurs="0"/>
+			<element name="City" type="string" minOccurs="0"/>
+			<element name="Postbox" type="string" minOccurs="0"/>
+			<element name="County" type="mh:CS" minOccurs="0"/>
+			<element name="Country" type="mh:CS" minOccurs="0"/>
+		</sequence>
+	</complexType>
+	<complexType name="TeleCom">
+		<annotation>
+			<documentation>
+         Inneholder opplysninger om telekommunikasjonsadresse, inklusive kommunikasjonstype. Denne klassen benyttes for å registrere telefonnummer, telefaks, personsøker etc., knyttes opp mot de registrerte adressene.
+      </documentation>
+		</annotation>
+		<sequence>
+			<element name="TypeTelecom" type="mh:CS" minOccurs="0"/>
+			<element name="TeleAddress" type="mh:URL"/>
+		</sequence>
+	</complexType>
+	<!-- Class: Identifikator -->
+	<complexType name="Ident">
+		<sequence>
+			<element name="Id" type="string"/>
+			<element name="TypeId" type="mh:CV"/>
+		</sequence>
+	</complexType>
+	<!--Komplekse datatyper-->
+	<complexType name="CV">
+		<attribute name="V" type="token" use="optional"/>
+		<attribute name="S" type="mh:oid" use="optional"/>
+		<attribute name="DN" type="string" use="optional"/>
+		<attribute name="OT" type="string" use="optional"/>
+	</complexType>
+	<simpleType name="oid">
+		<restriction base="token">
+			<pattern value="(\d+\.?)*\d+"/>
+		</restriction>
+	</simpleType>
+	<complexType name="CS">
+		<attribute name="V" type="token" use="optional"/>
+		<attribute name="DN" type="string" use="optional"/>
+	</complexType>
+	<complexType name="TS">
+		<attribute name="V" use="optional">
+			<simpleType>
+				<union memberTypes="dateTime date gYear gYearMonth time"/>
+			</simpleType>
+		</attribute>
+	</complexType>
+	<complexType name="URL">
+		<attribute name="V" type="anyURI" use="optional"/>
+	</complexType>
+</schema>

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated on 10-23-2006  16:36:55 at KITH -->
+<!-- XML-Schema level supported is specified by W3C -->
+<!-- http://www.w3.org/2001/XMLSchema -->
+<!-- Endret 23. januar 2013 til versjon 1.1 (MA):
+	- Endret namespace: http://www.kith.no/xmlstds/dialog/2013-01-23
+	- Endret tegnsett fra "ISO-8859-1" til "UTF-8"
+	- Elementet "Sporsmal": endret datatype fra string til anyType for å tillate bruk av xhtml-formatering
+	- Elementet TypeJournalinfo: endret kardinalitet fra "0..1" til "0..*"
+	- Nytt element: "EmneSporsmal" i klassen "Foresporsel"
+	- Nytt element: "KodetOpplysning" i klassen "Foresporsel"
+-->
+<!-- Endret jan 2017
+	- La til klassen TilknyttetEnhet som refereres fra klassen RollerRelatertNotat
+	- Endret kardinalitet i choice i klassen RollerRelatertNotat fra "1" til "0..*"
+	- namespace og filnavn er uendret
+-->
+<schema xmlns:dia="http://www.kith.no/xmlstds/dialog/2013-01-23"
+        xmlns="http://www.w3.org/2001/XMLSchema" xmlns:kith="http://www.kith.no/xmlstds"
+        xmlns:fk1="http://www.kith.no/xmlstds/felleskomponent1"
+        targetNamespace="http://www.kith.no/xmlstds/dialog/2013-01-23" elementFormDefault="qualified"
+        attributeFormDefault="unqualified">
+    <import namespace="http://www.kith.no/xmlstds" schemaLocation="kith.xsd"/>
+    <import namespace="http://www.kith.no/xmlstds/felleskomponent1"
+            schemaLocation="felleskomponent1.xsd"/>
+    <!-- LEVEL 1 -->
+    <!-- Class: Dialogmelding -->
+    <element name="Dialogmelding">
+        <annotation>
+            <documentation>
+                En instans kan inneholde en eller flere forespørsler, svar på forespørsler, notat eller avviksmeldinger.
+                En instans vil alltid kun dekke en av anvendelsene. En instans vil for eksempel ikke kunne inneholde en
+                forespørsl og et notat om en pasient.
+            </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="SakstypeKodet" type="kith:CV" minOccurs="0"/>
+                <element name="Sakstype" type="string" minOccurs="0"/>
+                <choice>
+                    <element ref="dia:Foresporsel" minOccurs="0" maxOccurs="unbounded"/>
+                    <element ref="dia:Notat" minOccurs="0" maxOccurs="unbounded"/>
+                </choice>
+            </sequence>
+        </complexType>
+    </element>
+    <!-- LEVEL 2 -->
+    <!-- Class: Notat -->
+    <element name="Notat">
+        <annotation>
+            <documentation>
+                Notat kan inneholde opplysninger om svar på en forespørsel, notat (om pasient) eller informasjon om
+                avvik.
+            </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="TemaKodet" type="kith:CV"/>
+                <element name="Tema" type="string" minOccurs="0"/>
+                <element name="TekstNotatInnhold" type="anyType" minOccurs="0"/>
+                <element name="Merknad" type="string" minOccurs="0"/>
+                <element name="DokIdNotat" type="string" minOccurs="0"/>
+                <element name="DatoNotat" type="date" minOccurs="0"/>
+                <element ref="dia:Foresporsel" minOccurs="0"/>
+                <element ref="dia:RollerRelatertNotat" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <!-- LEVEL 3 -->
+    <!-- Class: Forespørsel -->
+    <element name="Foresporsel">
+        <annotation>
+            <documentation>
+                Inneholder en eller flere forespørsler.
+            </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="TypeForesp" type="kith:CV"/>
+                <element name="EmneSporsmal" type="string" minOccurs="0"/>
+                <element name="Sporsmal" type="anyType" minOccurs="0"/>
+                <element name="Formål" type="kith:CV" minOccurs="0"/>
+                <element name="Begrunnelse" type="string" minOccurs="0"/>
+                <element name="Hastegrad" type="kith:CS" minOccurs="0"/>
+                <element name="FraDato" type="date" minOccurs="0"/>
+                <element name="TilDato" type="date" minOccurs="0"/>
+                <element name="TypeJournalinfo" type="kith:CV" minOccurs="0" maxOccurs="unbounded"/>
+                <element name="KodetOpplysning" type="kith:CV" minOccurs="0"/>
+                <element name="DokIdForesp" type="string" minOccurs="0"/>
+                <element ref="dia:RollerRelatertNotat" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <!-- LEVEL 4 -->
+    <!-- Class: Rolle relatert til notatet -->
+    <element name="RollerRelatertNotat">
+        <annotation>
+            <documentation>
+                Inneholder opplysninger om hvilke roller relaterte personer har i tilknytning til notatet og innholdet.
+            </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="RolleNotat" type="kith:CV" minOccurs="0"/>
+                <element name="RoleToPatient" type="kith:CV" minOccurs="0"/>
+                <element ref="dia:TilknyttetEnhet" minOccurs="0"/>
+                <choice minOccurs="0">
+                    <element ref="dia:HealthcareProfessional"/>
+                    <element ref="dia:Person"/>
+                </choice>
+            </sequence>
+        </complexType>
+    </element>
+    <!-- LEVEL 5 -->
+    <!-- Class: TilknyttetEnhet, lagt til 2017 -->
+    <element name="TilknyttetEnhet">
+        <complexType>
+            <sequence>
+                <element name="Kontaktenhet" type="fk1:Organisation"/>
+                <element name="Merknad" type="string" minOccurs="0"/>
+                <choice minOccurs="0">
+                    <element ref="dia:HealthcareProfessional"/>
+                    <element ref="dia:Person"/>
+                </choice>
+            </sequence>
+        </complexType>
+    </element>
+    <!-- Class: Helsepersonell -->
+    <element name="HealthcareProfessional">
+        <annotation>
+            <documentation>
+                For å beskrive egenskaper ved personen som helsepersonell.
+            </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="TypeHealthcareProfessional" type="kith:CS" minOccurs="0"/>
+                <element name="RoleToPatient" type="kith:CV" minOccurs="0"/>
+                <element name="FamilyName" type="string" minOccurs="0"/>
+                <element name="MiddleName" type="string" minOccurs="0"/>
+                <element name="GivenName" type="string" minOccurs="0"/>
+                <element name="DateOfBirth" type="date" minOccurs="0"/>
+                <element name="Sex" type="kith:CS" minOccurs="0"/>
+                <element name="Nationality" type="kith:CS" minOccurs="0"/>
+                <element name="Ident" type="fk1:Ident" minOccurs="0" maxOccurs="unbounded"/>
+                <element name="Address" type="fk1:Address" minOccurs="0"/>
+                <element name="TeleCom" type="fk1:TeleCom" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <!-- Class: Person -->
+    <element name="Person">
+        <complexType>
+            <sequence>
+                <element name="GivenName" type="string" minOccurs="0"/>
+                <element name="MiddleName" type="string" minOccurs="0"/>
+                <element name="FamilyName" type="string" minOccurs="0"/>
+                <element name="DateOfBirth" type="date" minOccurs="0"/>
+                <element name="Sex" type="kith:CS" minOccurs="0"/>
+                <element name="Nationality" type="kith:CS" minOccurs="0"/>
+                <element name="Ident" type="fk1:Ident" minOccurs="0" maxOccurs="unbounded"/>
+                <element name="Address" type="fk1:Address" minOccurs="0"/>
+                <element name="TeleCom" type="fk1:TeleCom" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+</schema>

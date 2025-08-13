@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- File name: AppRec-v1_1.xsd -->
+<!-- Version: "v1.1 2012-02-15" -->
+<!-- Endringer fra versjon 1.0 til versjon 1.1:
+- Endret på rekkefølgen av attributtene i <schema ...>
+- Endret namespace xmlns:ar og targetNamespace til http://www.kith.no/xmlstds/apprec/2012-02-15
+- Lagt til attributtet xmlns:kith="http://www.kith.no/xmlstds" i  <schema ...>
+- Lagt til referanse til kith.xsd:
+		<import namespace="http://www.kith.no/xmlstds"
+- Fjernet lokal representasjon av følgende datatyper: CV, CS, oid, URL. Disse datatypene hentes nå direkte fra kith.xsd. Dette har ingen praktisk betydning for instansmeldinger.
+- Endret deafult verdi for MIGversion
+-->
+<!-- File name: AppRec-v1-2004-11-21-->
+<!-- edited with XMLSPY v2004 rel. 4 U (http://www.xmlspy.com) by Espen Stranger Seland (private) -->
+<!-- Edited by Espen Stranger Seland (KITH) -->
+<!-- Version 1.0 2004-11-21 -->
+<schema xmlns="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema.xsd" xmlns:kith="http://www.kith.no/xmlstds" xmlns:ar="http://www.kith.no/xmlstds/apprec/2012-02-15" targetNamespace="http://www.kith.no/xmlstds/apprec/2012-02-15" elementFormDefault="qualified" attributeFormDefault="unqualified">
+    <import namespace="http://www.kith.no/xmlstds" schemaLocation="kith.xsd"/>
+    <annotation>
+        <documentation>Applikasjonsmelding</documentation>
+    </annotation>
+    <element name="AppRec">
+        <annotation>
+            <documentation>Applikasjonsvittering.</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="MsgType" type="kith:CS">
+                    <annotation>
+                        <documentation>Meldingens funksjon.</documentation>
+                    </annotation>
+                </element>
+                <element name="MIGversion" type="string" default="v1.1 2012-02-15">
+                    <annotation>
+                        <documentation>Spesifikasjon av benyttet implementasjon av meldingen. </documentation>
+                    </annotation>
+                </element>
+                <element name="SoftwareName" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Navn på programvaren som sender/genererer applikasjonsmeldingen.</documentation>
+                    </annotation>
+                </element>
+                <element name="SoftwareVersion" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Versjon av programvaren som sender/genererer applikasjonsmeldingen. </documentation>
+                    </annotation>
+                </element>
+                <element name="GenDate" type="dateTime">
+                    <annotation>
+                        <documentation>Tidspunkt for generering av meldingen angitt med dato og klokkeslett.</documentation>
+                    </annotation>
+                </element>
+                <element name="Id" type="string">
+                    <annotation>
+                        <documentation>Entydig referansenummer for meldingen.</documentation>
+                    </annotation>
+                </element>
+                <element name="Sender">
+                    <annotation>
+                        <documentation>Avsender</documentation>
+                    </annotation>
+                    <complexType>
+                        <sequence>
+                            <element name="Role" type="kith:CS" minOccurs="0"/>
+                            <element ref="ar:HCP"/>
+                        </sequence>
+                    </complexType>
+                </element>
+                <element name="Receiver">
+                    <annotation>
+                        <documentation>Mottaker</documentation>
+                    </annotation>
+                    <complexType>
+                        <sequence>
+                            <element name="Role" type="kith:CS" minOccurs="0"/>
+                            <element ref="ar:HCP"/>
+                        </sequence>
+                    </complexType>
+                </element>
+                <element name="Status" type="kith:CS">
+                    <annotation>
+                        <documentation>Status for det opprinnelig innsendte dokumentet hos mottaker.</documentation>
+                    </annotation>
+                </element>
+                <element name="Error" type="kith:CV" minOccurs="0" maxOccurs="unbounded">
+                    <annotation>
+                        <documentation>Feilkode og beskrivelse.</documentation>
+                    </annotation>
+                </element>
+                <element ref="ar:OriginalMsgId"/>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="OriginalMsgId">
+        <annotation>
+            <documentation>Benyttes for å referere til hvilken melding dette er et svar på. </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="MsgType" type="kith:CS">
+                    <annotation>
+                        <documentation>Meldingstypen applikasjonsmeldingen er et svar på.</documentation>
+                    </annotation>
+                </element>
+                <element name="IssueDate" type="dateTime">
+                    <annotation>
+                        <documentation>Tidspunkt for utstedelse av dokument/melding angitt med dato og klokkeslett.</documentation>
+                    </annotation>
+                </element>
+                <element name="Id" type="string">
+                    <annotation>
+                        <documentation>Den opprinnelige avsenders identifikasjon av dokument/melding</documentation>
+                    </annotation>
+                </element>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="HCP">
+        <annotation>
+            <documentation>Helsetjenesteenhet</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <choice>
+                    <element ref="ar:Inst"/>
+                    <element ref="ar:HCProf"/>
+                </choice>
+                <element name="MedSpeciality" type="kith:CV" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for medisinsk spesialitet for aktuelle helsetjenesteenhet. </documentation>
+                    </annotation>
+                </element>
+                <element ref="ar:Address" minOccurs="0"/>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="HCProf">
+        <annotation>
+            <documentation>Person i helsevesenet som er involvert direkte eller indirekte i å yte helsetjenester til en pasient.</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="Type" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Profesjon for aktuelle person i helsevesenet.</documentation>
+                    </annotation>
+                </element>
+                <element name="Name" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Navn på person. Navnet presenteres som en samlet streng for presentasjon (i motsetning til navn på pasient).</documentation>
+                    </annotation>
+                </element>
+                <element name="Id" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Identifikator for personen. HPR-nummer skal benyttes i de fleste sammenhenger. Må benyttes sammen med "Type id".</documentation>
+                    </annotation>
+                </element>
+                <element name="TypeId" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for type identifikator for personen. Må angis dersom "Id" er angitt.</documentation>
+                    </annotation>
+                </element>
+                <element ref="ar:AdditionalId" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="HCPerson">
+        <annotation>
+            <documentation>Person i helsevesenet som er del av en institusjon eller avdeling.</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="Name" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Navn på person i organisasjon.</documentation>
+                    </annotation>
+                </element>
+                <element name="Id" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Identifikator for personen.</documentation>
+                    </annotation>
+                </element>
+                <element name="TypeId" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for type identifikator.</documentation>
+                    </annotation>
+                </element>
+                <element ref="ar:AdditionalId" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="Dept">
+        <annotation>
+            <documentation>Opplysninger om avdeling.</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="Type" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for type avdeling (sengeavdeling, serviceavdeling etc.). Benyttes foreløpig ikke.</documentation>
+                    </annotation>
+                </element>
+                <element name="Name" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Navn på avdeling angitt som offisielt navn. </documentation>
+                    </annotation>
+                </element>
+                <element name="Id" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Identifikator for avdelingen. Må benyttes sammen med "Type id".</documentation>
+                    </annotation>
+                </element>
+                <element name="TypeId" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for type identifikator. Må angis dersom "Id" er angitt.</documentation>
+                    </annotation>
+                </element>
+                <element ref="ar:AdditionalId" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="Inst">
+        <annotation>
+            <documentation>Institusjon i helsevesenet.</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="Name" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Navn på institusjon angitt som offisielt navn. </documentation>
+                    </annotation>
+                </element>
+                <element name="Id" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Identifikator for institusjonen. Må benyttes sammen med "Type id".</documentation>
+                    </annotation>
+                </element>
+                <element name="TypeId" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for type identifikator. Må angis dersom "Id" er angitt.</documentation>
+                    </annotation>
+                </element>
+                <element ref="ar:Dept" minOccurs="0" maxOccurs="unbounded"/>
+                <element ref="ar:AdditionalId" minOccurs="0" maxOccurs="unbounded"/>
+                <element ref="ar:HCPerson" minOccurs="0" maxOccurs="unbounded"/>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="Address">
+        <annotation>
+            <documentation>Adresse.</documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="Type" type="kith:CS">
+                    <annotation>
+                        <documentation>Kode for type adresse.</documentation>
+                    </annotation>
+                </element>
+                <element name="StreetAdr" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Gateadresse.</documentation>
+                    </annotation>
+                </element>
+                <element name="PostalCode" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Postnummer.</documentation>
+                    </annotation>
+                </element>
+                <element name="City" type="string" minOccurs="0">
+                    <annotation>
+                        <documentation>Poststed.</documentation>
+                    </annotation>
+                </element>
+                <element name="County" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Angivelse av kode for fylke og/eller kommune i henhold til SSB's kodeverk for fylkes/kommunenr.</documentation>
+                    </annotation>
+                </element>
+                <element name="Country" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for land iht. ISO 3166. Benyttes vanligvis kun for adresser i utlandet.</documentation>
+                    </annotation>
+                </element>
+                <element name="CityDistr" type="kith:CS" minOccurs="0">
+                    <annotation>
+                        <documentation>Kode for angivelse av administrativ del av by i henhold til lokale kodeverk.</documentation>
+                    </annotation>
+                </element>
+                <element name="TeleAddress" type="kith:URL" minOccurs="0" maxOccurs="unbounded">
+                    <annotation>
+                        <documentation>Telekommunikasjonsadresse inkludert type.</documentation>
+                    </annotation>
+                </element>
+            </sequence>
+        </complexType>
+    </element>
+    <element name="AdditionalId">
+        <annotation>
+            <documentation>Annen identifikasjon av organisatorisk enhet som denne er eller har vært kjent under. </documentation>
+        </annotation>
+        <complexType>
+            <sequence>
+                <element name="Id" type="string">
+                    <annotation>
+                        <documentation>Alternativ identifikasjon</documentation>
+                    </annotation>
+                </element>
+                <element name="Type" type="kith:CS">
+                    <annotation>
+                        <documentation>Kode for type alternativ ID</documentation>
+                    </annotation>
+                </element>
+            </sequence>
+        </complexType>
+    </element>
+</schema>
