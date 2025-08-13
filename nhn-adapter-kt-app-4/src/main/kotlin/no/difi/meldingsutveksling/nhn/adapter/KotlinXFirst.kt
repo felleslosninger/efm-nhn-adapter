@@ -10,16 +10,11 @@ import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
 @Configuration
 class KotlinXFirst : CodecCustomizer {
     override fun customize(cfg: CodecConfigurer) {
-        val json =
-            Json {
-                ignoreUnknownKeys = true
-                classDiscriminator = "type"
-            }
-        cfg
-            .customCodecs()
-            .registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
-        cfg
-            .customCodecs()
-            .registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
+        val json = Json {
+            ignoreUnknownKeys = true
+            classDiscriminator = "type"
+        }
+        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
+        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
     }
 }

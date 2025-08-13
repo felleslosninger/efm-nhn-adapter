@@ -3,10 +3,8 @@ package no.difi.meldingsutveksling.nhn.adapter
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
-@SpringBootApplication
-class Main
+@SpringBootApplication class Main
 
 fun main(args: Array<String>) {
-    runApplication<Main>(*args) {
-    }
+    runApplication<Main>(*args) {}
 }

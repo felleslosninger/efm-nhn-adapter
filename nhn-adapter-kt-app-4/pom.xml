@@ -161,15 +161,6 @@
     </dependencies>
     <build>
         <sourceDirectory>src/main/kotlin</sourceDirectory>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>com.github.gantsign.maven</groupId>
-                    <artifactId>ktlint-maven-plugin</artifactId>
-                    <version>3.5.0</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -193,15 +184,46 @@
                     <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
                 </configuration>
             </plugin>
+            <!-- used for formating -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>2.46.1</version>
+                <configuration>
+                    <kotlin>
+                        <includes>
+                            <include>src/**/*.kt</include>
+                            <include>src/**/*.kts</include>
+                        </includes>
+
+                        <ktfmt>
+                            <version>0.47</version>
+                            <style>KOTLINLANG</style>
+                            <maxWidth>120</maxWidth>
+                            <manageTrailingCommas>true</manageTrailingCommas>
+                        </ktfmt>
+                    </kotlin>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-apply</id>
+                        <phase>validate</phase> <!-- format before compilation -->
+                        <goals>
+                            <goal>apply</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Used for linting only! The formatting is disabled and left to ktFormt via spotless plugin -->
             <plugin>
                 <groupId>com.github.gantsign.maven</groupId>
                 <artifactId>ktlint-maven-plugin</artifactId>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <id>ktlint-check</id>
                         <phase>verify</phase>
                         <goals>
-                            <goal>format</goal>
                             <goal>check</goal>
                         </goals>
                     </execution>

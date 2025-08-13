@@ -7,8 +7,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtIss
 import org.springframework.security.web.server.SecurityWebFilterChain
 
 fun securityFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
-    val jwtIssuerReactiveAuthenticationManagerResolver:
-        JwtIssuerReactiveAuthenticationManagerResolver? =
+    val jwtIssuerReactiveAuthenticationManagerResolver: JwtIssuerReactiveAuthenticationManagerResolver? =
         JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers("https://test.maskinporten.no/")
 
     http
@@ -22,15 +21,12 @@ fun securityFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
                     .authenticated()
                     .anyExchange()
                     .authenticated()
-            },
-        ).headers { headers: ServerHttpSecurity.HeaderSpec ->
-            headers.frameOptions(withDefaults())
-        }.httpBasic(withDefaults())
+            }
+        )
+        .headers { headers: ServerHttpSecurity.HeaderSpec -> headers.frameOptions(withDefaults()) }
+        .httpBasic(withDefaults())
         .oauth2ResourceServer { oauth2: ServerHttpSecurity.OAuth2ResourceServerSpec ->
-            oauth2
-                .authenticationManagerResolver(
-                    jwtIssuerReactiveAuthenticationManagerResolver,
-                )
+            oauth2.authenticationManagerResolver(jwtIssuerReactiveAuthenticationManagerResolver)
         }
 
     return http.build()
