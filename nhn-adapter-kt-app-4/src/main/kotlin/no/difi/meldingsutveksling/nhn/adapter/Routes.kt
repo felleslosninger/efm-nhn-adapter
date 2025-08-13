@@ -122,10 +122,10 @@ fun CoRouterFunctionDsl.testDphOut(
                         "<Middle name>",
                         "<Last name>",
                         "11223344",
-                        HelsepersonellsFunksjoner.HELSEFAGLIG_KONTAKT, // This persons role with respect to the patient
+                        HelsepersonellsFunksjoner.HELSEFAGLIG_KONTAKT,
                     ),
                     RecipientContact(
-                        Helsepersonell.LEGE // Professional group of the healthcare professional recieving the
+                        Helsepersonell.LEGE
                         // message
                     ),
                 ),

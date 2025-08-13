@@ -12,6 +12,9 @@ ktlint_standard_multiline-expression-wrapping = disabled
 ktlint_standard_annotation = disabled
 ktlint_standard_trailing-comma-on-call-site = disabled
 ktlint_standard_trailing-comma-on-declaration-site = disabled
+ktlint_standard_function-literal = disabled
+ktlint_standard_multiline-if-else = disabled
+ktlint_standard_if-else-wrapping = disabled
 
 # Rules we aways use
 ktlint_standard_filename = enabled
