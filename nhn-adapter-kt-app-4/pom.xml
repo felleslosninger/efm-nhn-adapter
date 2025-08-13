@@ -195,6 +195,7 @@
                             <include>src/**/*.kt</include>
                             <include>src/**/*.kts</include>
                         </includes>
+
                         <ktfmt>
                             <version>0.47</version>
                             <style>KOTLINLANG</style>
@@ -209,13 +210,6 @@
                         <phase>validate</phase> <!-- format before compilation -->
                         <goals>
                             <goal>apply</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>spotless-check</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>check</goal>
                         </goals>
                     </execution>
                 </executions>
