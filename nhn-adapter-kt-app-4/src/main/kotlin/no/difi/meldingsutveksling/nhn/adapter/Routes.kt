@@ -176,8 +176,8 @@ fun CoRouterFunctionDsl.testDphOut(
             RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("991825827"))),
         )
 
-        val messageOut = it.awaitBody<MessageOut>()
-        println("MessageOut recieved ${messageOut.conversationId}")
+        //  val messageOut = it.awaitBody<MessageOut>()
+        //  println("MessageOut recieved ${messageOut.conversationId}")
         ServerResponse.ok().buildAndAwait()
     }
 
