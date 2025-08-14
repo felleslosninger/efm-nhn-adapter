@@ -25,8 +25,17 @@ management:
     enabled-by-default: true
 nhn:
   services:
-    username: ${NHN_SERVICES_USERNAME}
-    password: ${NHN_SERVICES_PASSWORD}
+    ar:
+      url: "https://ws-web.test.nhn.no/v1/Ar"
+      username: ${NHN_SERVICES_USERNAME}
+      password: ${NHN_SERVICES_PASSWORD}
+    flr:
+      url: "https://ws-web.test.nhn.no/v2/flr"
+      username: ${NHN_SERVICES_USERNAME}
+      password: ${NHN_SERVICES_PASSWORD}
+    edi:
+      url: "https://api.tjener.test.melding.nhn.no"
+
 
 
     

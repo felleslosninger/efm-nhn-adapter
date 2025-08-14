@@ -5,9 +5,10 @@ import no.ks.fiks.helseid.CachedHttpDiscoveryOpenIdConfiguration
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.helseid.HelseIdClient
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.ar.AdresseregisteretService
 import no.ks.fiks.nhn.flr.Credentials
-import no.ks.fiks.nhn.flr.Environment
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretService
 import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.springframework.beans.factory.BeanRegistrarDsl
@@ -23,7 +24,9 @@ import org.springframework.web.reactive.function.server.coRouter
 import org.springframework.web.server.ResponseStatusException
 
 private fun properties() = BeanRegistrarDsl {
-    registerBean<NhnConfig> { Binder.get(env).bind("nhn.services", NhnConfig::class.java).get() }
+    registerBean<NhnConfig>("ArConfig") { Binder.get(env).bind("nhn.services.ar", NhnConfig::class.java).get() }
+    registerBean<NhnConfig>("FlrConfig") { Binder.get(env).bind("nhn.services.flr", NhnConfig::class.java).get() }
+
     registerBean<HelseId> { Binder.get(env).bind("oauth2.helse-id", HelseId::class.java).get() }
 }
 
@@ -63,9 +66,11 @@ class BeanRegistration :
 
         profile("local || dev") {
             registerBean {
-                val nhnConfig = this.bean<NhnConfig>()
+                val flrConfig = this.bean<NhnConfig>("FlrConfig")
                 val flrClient =
-                    FastlegeregisteretClient(Environment.TEST, Credentials(nhnConfig.username, nhnConfig.password))
+                    FastlegeregisteretClient(
+                        FastlegeregisteretService(flrConfig.url, Credentials(flrConfig.username, flrConfig.password))
+                    )
                 DecoratingFlrClient(
                     flrClient,
                     this.env.activeProfiles.filter { it in listOf("local", "dev", "test", "prod") },
@@ -73,10 +78,12 @@ class BeanRegistration :
             }
         }
         registerBean {
-            val nhnConfig = this.bean<NhnConfig>()
+            val arConfig = this.bean<NhnConfig>("ArConfig")
             AdresseregisteretClient(
-                no.ks.fiks.nhn.ar.Environment.TEST,
-                no.ks.fiks.nhn.ar.Credentials(nhnConfig.username, nhnConfig.password),
+                AdresseregisteretService(
+                    arConfig.url,
+                    no.ks.fiks.nhn.ar.Credentials(arConfig.username, arConfig.password),
+                )
             )
         }
         registerBean<HttpClient>(HttpClients::createDefault)

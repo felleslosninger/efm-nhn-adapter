@@ -4,29 +4,31 @@ import java.time.OffsetDateTime
 import java.util.UUID
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
-import no.ks.fiks.hdir.OrganisasjonIdType
+import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.helseid.AccessTokenRequestBuilder
 import no.ks.fiks.helseid.HelseIdClient
 import no.ks.fiks.helseid.TenancyType
 import no.ks.fiks.helseid.TokenType
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.edi.BusinessDocumentSerializer.serializeNhnMessage
-import no.ks.fiks.nhn.msh.BusinessDocumentMessage
-import no.ks.fiks.nhn.msh.Client
+import no.ks.fiks.nhn.msh.ChildOrganization
+import no.ks.fiks.nhn.msh.ClientFactory
 import no.ks.fiks.nhn.msh.Configuration
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
-import no.ks.fiks.nhn.msh.Environments
 import no.ks.fiks.nhn.msh.HealthcareProfessional
 import no.ks.fiks.nhn.msh.HelseIdConfiguration
-import no.ks.fiks.nhn.msh.HerIdReceiver
-import no.ks.fiks.nhn.msh.HerIdReceiverParent
-import no.ks.fiks.nhn.msh.Id
+import no.ks.fiks.nhn.msh.HelseIdTokenParameters
+import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.Organization
-import no.ks.fiks.nhn.msh.OrganizationHerIdReceiverChild
+import no.ks.fiks.nhn.msh.OrganizationId
+import no.ks.fiks.nhn.msh.OrganizationReceiverDetails
 import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
+import no.ks.fiks.nhn.msh.OutgoingMessage
+import no.ks.fiks.nhn.msh.OutgoingVedlegg
 import no.ks.fiks.nhn.msh.Patient
+import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
-import no.ks.fiks.nhn.msh.Vedlegg
+import no.ks.fiks.nhn.msh.RequestParameters
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.awaitBody
@@ -88,32 +90,49 @@ fun CoRouterFunctionDsl.testDphOut(
                         .build()
                 )
                 .accessToken
-
-        val mshClient =
-            Client(
-                Configuration(
-                    Environments.TEST,
-                    "eFormidling",
-                    HelseIdConfiguration(helseIdConfiguration.clientId, helseIdConfiguration.jwk),
-                    no.ks.fiks.nhn.msh.Credentials("dummy-flr-user", "dummy-flr-password"),
-                    no.ks.fiks.nhn.msh.Credentials("dummy-ar-user", "dummy-ar-password"),
-                )
+        val helseIdConfiguration =
+            HelseIdConfiguration(
+                helseIdConfiguration.environment,
+                helseIdConfiguration.clientId,
+                helseIdConfiguration.jwk,
             )
-
+        val mshClient =
+            ClientFactory.createClient(
+                Configuration(helseIdConfiguration, "https://api.tjener.test.melding.nhn.no", "digidir")
+            )
+        /*val mshClient =
+        Client(
+            Configuration(
+                Environments.TEST,
+                "eFormidling",
+                HelseIdConfiguration(helseIdConfiguration.clientId, helseIdConfiguration.jwk),
+                no.ks.fiks.nhn.msh.Credentials("dummy-flr-user", "dummy-flr-password"),
+                no.ks.fiks.nhn.msh.Credentials("dummy-ar-user", "dummy-ar-password"),
+            )
+        )*/
         val outgoingBusinessDocument =
             OutgoingBusinessDocument(
                 UUID.randomUUID(),
                 Organization(
                     "KS-DIGITALE FELLESTJENESTER AS",
-                    Id("8142987", OrganisasjonIdType.HER_ID),
-                    Organization("Digdir multi-tenant test", Id("8143154", OrganisasjonIdType.HER_ID), null),
+                    listOf(OrganizationId("8142987", OrganizationIdType.HER_ID)),
+                    ChildOrganization(
+                        "Digdir multi-tenant test",
+                        listOf(OrganizationId("8143154", OrganizationIdType.HER_ID)),
+                    ),
                 ),
-                HerIdReceiver(
-                    HerIdReceiverParent("DIGITALISERINGSDIREKTORATET", Id("8143143", OrganisasjonIdType.HER_ID)),
-                    OrganizationHerIdReceiverChild("Service 1", Id("8143144", OrganisasjonIdType.HER_ID)),
+                Receiver(
+                    OrganizationReceiverDetails(
+                        name = "DIGITALISERINGSDIREKTORATET",
+                        ids = listOf(OrganizationId("8143143", OrganizationIdType.HER_ID)),
+                    ),
+                    OrganizationReceiverDetails(
+                        name = "Service 1",
+                        ids = listOf(OrganizationId("8143144", OrganizationIdType.HER_ID)),
+                    ),
                     Patient("14038342168", "Aleksander", null, "Petterson"),
                 ),
-                BusinessDocumentMessage(
+                OutgoingMessage(
                     "<Message subject>",
                     "<Message body>",
                     HealthcareProfessional(
@@ -129,7 +148,7 @@ fun CoRouterFunctionDsl.testDphOut(
                         // message
                     ),
                 ),
-                Vedlegg(
+                OutgoingVedlegg(
                     OffsetDateTime.now(),
                     "<Description of the attachment>",
                     this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!,
@@ -138,9 +157,24 @@ fun CoRouterFunctionDsl.testDphOut(
             )
         println(serializeNhnMessage(outgoingBusinessDocument))
 
-        mshClient.sendMessage(outgoingBusinessDocument, "931796003")
-        val messageID = mshClient.getMessages(8143144, "991825827").iterator().next().id
-        mshClient.getBusinessDocument(messageID, "991825827")
+        mshClient.sendMessage(
+            outgoingBusinessDocument,
+            RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("931796003"))),
+        )
+
+        val messageID =
+            mshClient
+                .getMessages(
+                    8143144,
+                    RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("991825827"))),
+                )
+                .iterator()
+                .next()
+                .id
+        mshClient.getBusinessDocument(
+            messageID,
+            RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("991825827"))),
+        )
 
         val messageOut = it.awaitBody<MessageOut>()
         println("MessageOut recieved ${messageOut.conversationId}")
