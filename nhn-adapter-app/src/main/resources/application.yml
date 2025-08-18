@@ -1,9 +1,12 @@
 server:
+  port: 9080
   servlet:
     context-path: /nhn-adapter
+  error:
+    include-message: always
 management:
   server:
-    port: 8090
+    port: 9090
   endpoint:
     health:
       show-details: always
@@ -20,12 +23,32 @@ management:
       exposure:
         include: "info,env,prometheus,health"
     enabled-by-default: true
+nhn:
+  services:
+    ar:
+      url: "https://ws-web.test.nhn.no/v1/Ar"
+      username: ${NHN_SERVICES_USERNAME}
+      password: ${NHN_SERVICES_PASSWORD}
+    flr:
+      url: "https://ws-web.test.nhn.no/v2/flr"
+      username: ${NHN_SERVICES_USERNAME}
+      password: ${NHN_SERVICES_PASSWORD}
+    edi:
+      url: "https://api.tjener.test.melding.nhn.no"
+
+
+
     
 oauth2:
   helse-id:
     client-id: ${NHN_CLIENT_ID}
     private-key: ${NHN_PRIVATE_KEY}
+    issuer: "https://helseid-sts.test.nhn.no"
+    audience: "https://helseid-sts.test.nhn.no"
+logging:
+  level:
+    org.springframework.http.codec.json: TRACE
+    org.springframework.core.codec: TRACE
 
 
 
-    

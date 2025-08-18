@@ -101,7 +101,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
     <modules>
-        <module>nhn-adapter-kt-app-4</module>
+        <module>nhn-adapter-app</module>
     </modules>
 
 </project>
