@@ -1,12 +1,12 @@
 server:
-  port: 9080
+  port: 8080
   servlet:
     context-path: /nhn-adapter
   error:
     include-message: always
 management:
   server:
-    port: 9090
+    port: 8090
   endpoint:
     health:
       show-details: always
