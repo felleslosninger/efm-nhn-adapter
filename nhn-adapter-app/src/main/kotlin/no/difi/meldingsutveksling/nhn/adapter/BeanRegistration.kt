@@ -3,16 +3,20 @@ package no.difi.meldingsutveksling.nhn.adapter
 import kotlinx.serialization.Serializable
 import no.ks.fiks.helseid.CachedHttpDiscoveryOpenIdConfiguration
 import no.ks.fiks.helseid.Configuration
+import no.ks.fiks.helseid.Environment
 import no.ks.fiks.helseid.HelseIdClient
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.AdresseregisteretService
 import no.ks.fiks.nhn.flr.Credentials
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretService
+import no.ks.fiks.nhn.msh.ClientFactory
+import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.core.env.get
 import org.springframework.http.HttpStatus
 import org.springframework.security.authentication.UserDetailsRepositoryReactiveAuthenticationManager
 import org.springframework.security.core.userdetails.MapReactiveUserDetailsService
@@ -57,6 +61,14 @@ private fun security() = BeanRegistrarDsl {
             no.ks.fiks.helseid.Environment(helseId.issuer, helseId.audience),
         )
     }
+    registerBean {
+        val helseId = bean<HelseId>()
+        HelseIdConfiguration(Environment(helseId.issuer, helseId.audience), helseId.clientId, helseId.privateKey)
+    }
+    registerBean {
+        val helseId = bean<HelseId>()
+        HelseIdClient(bean(), bean(), CachedHttpDiscoveryOpenIdConfiguration(helseId.issuer))
+    }
 }
 
 class BeanRegistration :
@@ -87,13 +99,12 @@ class BeanRegistration :
             )
         }
         registerBean<HttpClient>(HttpClients::createDefault)
+
         registerBean {
-            val helseId = bean<HelseId>()
-            HelseIdClient(bean(), bean(), CachedHttpDiscoveryOpenIdConfiguration(helseId.issuer))
+            ClientFactory.createClient(no.ks.fiks.nhn.msh.Configuration(bean(), this.env["nhn.msh.url"]!!, "digdir"))
         }
         registerBean<RouterFunction<*>> {
             coRouter {
-                testHelloWorld()
                 testKotlinX()
                 testKotlinxSealedclass()
                 testFlr(bean())
@@ -101,7 +112,7 @@ class BeanRegistration :
                 testDphOut(bean(), bean())
                 arLookupByFnr(bean(), bean())
                 arLookupById()
-                dphOut()
+                dphOut(bean())
             }
         }
     })

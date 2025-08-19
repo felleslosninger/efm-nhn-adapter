@@ -11,7 +11,7 @@ sealed interface CommunicationParty {
 
 @Serializable
 @SerialName("Sender")
-data class Sender(override val herid1: String, override val herid2: String) : CommunicationParty
+data class Sender(override val herid1: String, override val herid2: String, val name: String) : CommunicationParty
 
 @Serializable
 @SerialName("Reciever")
@@ -24,7 +24,19 @@ data class MessageOut(
     val sender: Sender,
     val reciever: Reciever,
     val fagmelding: String,
+    val patient: Patient,
+    val healthcareProfressional: HealthcareProfressional,
 )
+
+@Serializable
+data class Fagmelding(val subject: String, val body: String, val healthcareProfressional: HealthcareProfressional)
+
+@Serializable
+data class Person(val firstName: String, val middleName: String?, val lastName: String, val phoneNumber: String)
+
+typealias HealthcareProfressional = Person
+
+typealias Patient = Person
 
 @Serializable
 data class ArDetails(val herid1: Int, val herid2: Int, val ediAdress: String, val pemDigdirSertifikat: String)

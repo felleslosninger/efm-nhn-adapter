@@ -33,8 +33,9 @@ nhn:
       url: "https://ws-web.test.nhn.no/v2/flr"
       username: ${NHN_SERVICES_USERNAME}
       password: ${NHN_SERVICES_PASSWORD}
-    edi:
+    msh:
       url: "https://api.tjener.test.melding.nhn.no"
+      source-system: "digidir"
 
 
 
