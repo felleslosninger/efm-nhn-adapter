@@ -101,7 +101,9 @@ class BeanRegistration :
         registerBean<HttpClient>(HttpClients::createDefault)
 
         registerBean {
-            ClientFactory.createClient(no.ks.fiks.nhn.msh.Configuration(bean(), this.env["nhn.msh.url"]!!, "digdir"))
+            ClientFactory.createClient(
+                no.ks.fiks.nhn.msh.Configuration(bean(), this.env["nhn.services.msh.url"]!!, "digdir")
+            )
         }
         registerBean<RouterFunction<*>> {
             coRouter {
