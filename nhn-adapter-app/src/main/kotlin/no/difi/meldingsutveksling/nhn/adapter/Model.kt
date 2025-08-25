@@ -32,11 +32,24 @@ data class MessageOut(
 data class Fagmelding(val subject: String, val body: String, val healthcareProfressional: HealthcareProfressional)
 
 @Serializable
-data class Person(val firstName: String, val middleName: String?, val lastName: String, val phoneNumber: String)
+data class Person(
+    val fnr: String,
+    val firstName: String,
+    val middleName: String?,
+    val lastName: String,
+    val phoneNumber: String,
+)
 
 typealias HealthcareProfressional = Person
 
 typealias Patient = Person
 
 @Serializable
-data class ArDetails(val herid1: Int, val herid2: Int, val ediAdress: String, val pemDigdirSertifikat: String)
+data class ArDetails(
+    val herid1: Int,
+    val communicationPartyParentName: String,
+    val herid2: Int,
+    val communicationPartyName: String,
+    val ediAdress: String,
+    val pemDigdirSertifikat: String,
+)

@@ -106,12 +106,12 @@ fun CoRouterFunctionDsl.testDphOut(
                 ),
                 Receiver(
                     OrganizationReceiverDetails(
-                        name = "DIGITALISERINGSDIREKTORATET",
-                        ids = listOf(OrganizationId("8143143", OrganizationIdType.HER_ID)),
+                        name = "Digidir test fastlegekontor",
+                        ids = listOf(OrganizationId("8143541", OrganizationIdType.HER_ID)),
                     ),
                     OrganizationReceiverDetails(
-                        name = "Service 1",
-                        ids = listOf(OrganizationId("8143144", OrganizationIdType.HER_ID)),
+                        name = "Peter Peterson",
+                        ids = listOf(OrganizationId("8143548", OrganizationIdType.HER_ID)),
                     ),
                     Patient("14038342168", "Aleksander", null, "Petterson"),
                 ),
@@ -148,15 +148,15 @@ fun CoRouterFunctionDsl.testDphOut(
         val messageID =
             mshClient
                 .getMessages(
-                    8143144,
-                    RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("991825827"))),
+                    8143548,
+                    RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("310673145"))),
                 )
                 .iterator()
                 .next()
                 .id
         mshClient.getBusinessDocument(
             messageID,
-            RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("991825827"))),
+            RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("310673145"))),
         )
 
         //  val messageOut = it.awaitBody<MessageOut>()
@@ -166,7 +166,7 @@ fun CoRouterFunctionDsl.testDphOut(
 
 fun CoRouterFunctionDsl.testAr(arClient: AdresseregisteretClient) =
     POST("/ar/test") {
-        val reciever = arClient.lookupHerId(8143060)
+        val reciever = arClient.lookupHerId(8143548)
         println(reciever?.name)
         ServerResponse.ok().buildAndAwait()
     }

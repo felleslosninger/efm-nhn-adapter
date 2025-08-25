@@ -7,6 +7,7 @@ import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.edi.BusinessDocumentSerializer.serializeNhnMessage
 import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
@@ -29,46 +30,71 @@ import org.springframework.web.reactive.function.server.buildAndAwait
 fun CoRouterFunctionDsl.arLookupByFnr(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
     GET("/arlookup/fastlege/{fnr}") {
         val fnr = it.pathVariable("fnr")
-        val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
-        val communicationParty = arClient.lookupHerId(gpHerId).orElseThrowNotFound("Comunication party not found in AR")
 
-        val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
-
-        val arDetails = ArDetails(parentHerId, gpHerId, "testedi-address", "testsertifikat")
-        ServerResponse.ok().bodyValueAndAwait(arDetails)
+        arLookupByFnr(fnr, flrClient, arClient).let { ServerResponse.ok().bodyValueAndAwait(it) }
     }
+
+private fun arLookupByFnr(fnr: String, flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient): ArDetails {
+    val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
+    return arLookupByHerId(gpHerId.toInt(), arClient)
+}
+
+private fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails {
+    val communicationParty = arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
+    val comunicationPartyName = communicationParty.name
+
+    val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
+    val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"
+
+    return ArDetails(
+        parentHerId,
+        comunicationPartyParentName,
+        herId,
+        comunicationPartyName,
+        "testedi-address",
+        "testsertifikat",
+    )
+}
 
 fun CoRouterFunctionDsl.arLookupById() =
     GET("/arlookup/organisasjonellernoe/{herId2}") { ServerResponse.ok().buildAndAwait() }
 
-fun CoRouterFunctionDsl.dphOut(mshClient: Client) =
+fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretClient) =
     POST("/dph/out") {
         val messageOut = it.awaitBody<MessageOut>()
+        val arDetailsSender = arLookupByHerId(messageOut.sender.herid2.toInt(), arClient)
+
+        val arDetailsReciever = arLookupByHerId(messageOut.reciever.herid2.toInt(), arClient)
+
         // The fagmelding needs to be decyrpted
         val fagmelding = Json {}.decodeFromString(Fagmelding.serializer(), messageOut.fagmelding)
 
-        val outdoc: OutgoingBusinessDocument =
-            OutgoingBusinessDocument(
+        OutgoingBusinessDocument(
                 UUID.randomUUID(),
                 Organization(
-                    "KS-DIGITALE FELLESTJENESTER AS",
+                    arDetailsSender.communicationPartyParentName,
                     listOf(OrganizationId(messageOut.sender.herid1, OrganizationIdType.HER_ID)),
                     ChildOrganization(
-                        "Digdir multi-tenant test",
+                        arDetailsSender.communicationPartyName,
                         listOf(OrganizationId(messageOut.sender.herid2, OrganizationIdType.HER_ID)),
                     ),
                 ),
                 receiver =
                     Receiver(
                         OrganizationReceiverDetails(
-                            name = "DIGITALISERINGSDIREKTORATET",
+                            name = arDetailsReciever.communicationPartyParentName,
                             ids = listOf(OrganizationId(messageOut.reciever.herid1, OrganizationIdType.HER_ID)),
                         ),
                         OrganizationReceiverDetails(
-                            name = "Service 1",
+                            name = arDetailsReciever.communicationPartyName,
                             ids = listOf(OrganizationId(messageOut.reciever.herid2, OrganizationIdType.HER_ID)),
                         ),
-                        Patient("14038342168", "Aleksander", null, "Petterson"),
+                        no.ks.fiks.nhn.msh.Patient(
+                            messageOut.patient.fnr,
+                            messageOut.patient.firstName,
+                            messageOut.patient.middleName,
+                            messageOut.patient.lastName,
+                        ),
                     ),
                 message =
                     OutgoingMessage(
@@ -95,6 +121,11 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client) =
                 ),
                 DialogmeldingVersion.V1_1,
             )
+            .also {
+                println(serializeNhnMessage(it))
+                mshClient.sendMessage(it)
+            }
+
         println("MessageOut recieved ${messageOut.conversationId}")
         ServerResponse.ok().buildAndAwait()
     }
