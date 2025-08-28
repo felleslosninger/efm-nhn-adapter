@@ -112,7 +112,7 @@ class BeanRegistration :
                 testFlr(bean())
                 testAr(bean())
                 testDphOut(bean(), bean())
-                arLookupByFnr(bean(), bean())
+                arLookup(bean(), bean())
                 arLookupById()
                 dphOut(bean(), bean())
             }

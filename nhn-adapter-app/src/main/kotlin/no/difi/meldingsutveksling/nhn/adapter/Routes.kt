@@ -3,6 +3,8 @@ package no.difi.meldingsutveksling.nhn.adapter
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import mu.KotlinLogging
+import no.idporten.identifiers.validation.PersonIdentifierValidator
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
@@ -12,26 +14,36 @@ import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
 import no.ks.fiks.nhn.msh.HealthcareProfessional
+import no.ks.fiks.nhn.msh.HelseIdTokenParameters
+import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.Organization
 import no.ks.fiks.nhn.msh.OrganizationId
 import no.ks.fiks.nhn.msh.OrganizationReceiverDetails
 import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
 import no.ks.fiks.nhn.msh.OutgoingMessage
 import no.ks.fiks.nhn.msh.OutgoingVedlegg
-import no.ks.fiks.nhn.msh.Patient
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
+import no.ks.fiks.nhn.msh.RequestParameters
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.awaitBody
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.buildAndAwait
 
-fun CoRouterFunctionDsl.arLookupByFnr(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
-    GET("/arlookup/fastlege/{fnr}") {
-        val fnr = it.pathVariable("fnr")
+val logger = KotlinLogging.logger {}
 
-        arLookupByFnr(fnr, flrClient, arClient).let { ServerResponse.ok().bodyValueAndAwait(it) }
+fun CoRouterFunctionDsl.arLookup(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
+    GET("/arlookup/{identifier}") {
+        val fnr = it.pathVariable("identifier")
+        PersonIdentifierValidator.setSyntheticPersonIdentifiersAllowed(true)
+        val arDetails =
+            when (PersonIdentifierValidator.isValid(fnr)) {
+                true -> arLookupByFnr(fnr, flrClient, arClient)
+                false -> arLookupByHerId(fnr.toInt(), arClient)
+            }
+
+        ServerResponse.ok().bodyValueAndAwait(arDetails)
     }
 
 private fun arLookupByFnr(fnr: String, flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient): ArDetails {
@@ -44,11 +56,13 @@ private fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDe
     val comunicationPartyName = communicationParty.name
 
     val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
+    val orgNumber = communicationParty.parent!!.organizationNumber
     val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"
 
     return ArDetails(
         parentHerId,
         comunicationPartyParentName,
+        orgNumber = orgNumber,
         herId,
         comunicationPartyName,
         "testedi-address",
@@ -100,12 +114,12 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
                     OutgoingMessage(
                         fagmelding.subject,
                         fagmelding.body,
-                        with(messageOut.healthcareProfressional) {
+                        with(messageOut.patient) {
                             HealthcareProfessional(
                                 this.firstName,
                                 this.middleName,
                                 this.lastName,
-                                this.phoneNumber,
+                                "8888888",
                                 HelsepersonellsFunksjoner.FASTLEGE,
                             )
                         },
@@ -122,10 +136,15 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
                 DialogmeldingVersion.V1_1,
             )
             .also {
-                println(serializeNhnMessage(it))
-                mshClient.sendMessage(it)
+                logger.debug { serializeNhnMessage(it) }
+                mshClient.sendMessage(
+                    it,
+                    RequestParameters(
+                        HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(messageOut.onBehalfOfOrgNum))
+                    ),
+                )
             }
 
-        println("MessageOut recieved ${messageOut.conversationId}")
+        logger.debug { "MessageOut recieved ${messageOut.conversationId}" }
         ServerResponse.ok().buildAndAwait()
     }

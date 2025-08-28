@@ -21,11 +21,11 @@ data class Reciever(override val herid1: String, override val herid2: String) : 
 data class MessageOut(
     val messageId: String,
     val conversationId: String,
+    val onBehalfOfOrgNum: String,
     val sender: Sender,
     val reciever: Reciever,
     val fagmelding: String,
     val patient: Patient,
-    val healthcareProfressional: HealthcareProfressional,
 )
 
 @Serializable
@@ -37,7 +37,7 @@ data class Person(
     val firstName: String,
     val middleName: String?,
     val lastName: String,
-    val phoneNumber: String,
+    val phoneNumber: String?,
 )
 
 typealias HealthcareProfressional = Person
@@ -48,6 +48,7 @@ typealias Patient = Person
 data class ArDetails(
     val herid1: Int,
     val communicationPartyParentName: String,
+    val orgNumber: String,
     val herid2: Int,
     val communicationPartyName: String,
     val ediAdress: String,
