@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import no.nhn.msh.v2.model.StatusInfo
 
 @Serializable
 sealed interface CommunicationParty {
@@ -14,8 +15,8 @@ sealed interface CommunicationParty {
 data class Sender(override val herid1: String, override val herid2: String, val name: String) : CommunicationParty
 
 @Serializable
-@SerialName("Reciever")
-data class Reciever(override val herid1: String, override val herid2: String) : CommunicationParty
+@SerialName("Receiver")
+data class Receiver(override val herid1: String, override val herid2: String) : CommunicationParty
 
 @Serializable
 data class MessageOut(
@@ -23,13 +24,13 @@ data class MessageOut(
     val conversationId: String,
     val onBehalfOfOrgNum: String,
     val sender: Sender,
-    val reciever: Reciever,
+    val receiver: Receiver,
     val fagmelding: String,
     val patient: Patient,
 )
 
 @Serializable
-data class Fagmelding(val subject: String, val body: String, val healthcareProfressional: HealthcareProfressional)
+data class Fagmelding(val subject: String, val body: String, val healthcareProfessional: HealthcareProfessional)
 
 @Serializable
 data class Person(
@@ -40,7 +41,7 @@ data class Person(
     val phoneNumber: String?,
 )
 
-typealias HealthcareProfressional = Person
+typealias HealthcareProfessional = Person
 
 typealias Patient = Person
 
@@ -54,3 +55,49 @@ data class ArDetails(
     val ediAdress: String,
     val pemDigdirSertifikat: String,
 )
+
+fun StatusInfo.toMessageStatus(): MessageStatus =
+    MessageStatus(
+        this.receiverHerId,
+        TransportStatus.fromValue(this.transportDeliveryState.value),
+        ApprecStatus.fromValue(this.appRecStatus.value),
+    )
+
+@Serializable
+data class MessageStatus(val recieverHerId: Int, val transportStatus: TransportStatus, val apprecStatus: ApprecStatus)
+
+@Serializable
+enum class ApprecStatus(val value: String) {
+    OK("Ok"),
+    REJECTED("Rejected"),
+    OK_ERROR_IN_MESSAGE_PART("OkErrorInMessagePart");
+
+    companion object {
+        fun fromValue(value: String?): ApprecStatus {
+            for (b in ApprecStatus.values()) {
+                if (b.value == value) {
+                    return b
+                }
+            }
+            throw IllegalArgumentException("Unexpected value '$value'")
+        }
+    }
+}
+
+@Serializable
+enum class TransportStatus(val value: String) {
+    UNCONFIRMED("Unconfirmed"),
+    ACKNOWLEDGED("Acknowledged"),
+    REJECTED("Rejected");
+
+    companion object {
+        fun fromValue(value: String?): TransportStatus {
+            for (b in TransportStatus.values()) {
+                if (b.value == value) {
+                    return b
+                }
+            }
+            throw IllegalArgumentException("Unexpected value '$value'")
+        }
+    }
+}

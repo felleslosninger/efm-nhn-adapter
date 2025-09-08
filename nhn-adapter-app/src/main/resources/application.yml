@@ -48,8 +48,8 @@ oauth2:
     audience: "https://helseid-sts.test.nhn.no"
 logging:
   level:
-    org.springframework.http.codec.json: TRACE
-    org.springframework.core.codec: TRACE
+    org.springframework.http.codec.json: INFO
+    org.springframework.core.codec: INFO
 
 
 

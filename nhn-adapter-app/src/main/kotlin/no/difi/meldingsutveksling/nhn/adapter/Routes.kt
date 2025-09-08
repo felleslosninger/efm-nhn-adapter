@@ -30,8 +30,27 @@ import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.awaitBody
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.buildAndAwait
+import org.springframework.web.reactive.function.server.queryParamOrNull
 
 val logger = KotlinLogging.logger {}
+
+fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
+    GET("/dph/status/{messageId}") { it ->
+        val messageId = it.pathVariable("messageId")
+        val onBehalfOf = it.queryParamOrNull("onBehalfOf")
+
+        val requestParameters =
+            onBehalfOf?.let { onBehalfOf ->
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
+            }
+        ServerResponse.ok()
+            .bodyValueAndAwait(
+                mshClient
+                    .messageStatus(UUID.fromString(messageId), requestParameters)
+                    .map { it.toMessageStatus() }
+                    .first()
+            )
+    }
 
 fun CoRouterFunctionDsl.arLookup(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
     GET("/arlookup/{identifier}") {
@@ -48,7 +67,7 @@ fun CoRouterFunctionDsl.arLookup(flrClient: DecoratingFlrClient, arClient: Adres
 
 private fun arLookupByFnr(fnr: String, flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient): ArDetails {
     val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
-    return arLookupByHerId(gpHerId.toInt(), arClient)
+    return arLookupByHerId(gpHerId, arClient)
 }
 
 private fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails {
@@ -78,12 +97,13 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
         val messageOut = it.awaitBody<MessageOut>()
         val arDetailsSender = arLookupByHerId(messageOut.sender.herid2.toInt(), arClient)
 
-        val arDetailsReciever = arLookupByHerId(messageOut.reciever.herid2.toInt(), arClient)
+        val arDetailsReciever = arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient)
 
         // The fagmelding needs to be decyrpted
         val fagmelding = Json {}.decodeFromString(Fagmelding.serializer(), messageOut.fagmelding)
 
-        OutgoingBusinessDocument(
+        val outGoingDocument =
+            OutgoingBusinessDocument(
                 UUID.randomUUID(),
                 Organization(
                     arDetailsSender.communicationPartyParentName,
@@ -97,11 +117,11 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
                     Receiver(
                         OrganizationReceiverDetails(
                             name = arDetailsReciever.communicationPartyParentName,
-                            ids = listOf(OrganizationId(messageOut.reciever.herid1, OrganizationIdType.HER_ID)),
+                            ids = listOf(OrganizationId(messageOut.receiver.herid1, OrganizationIdType.HER_ID)),
                         ),
                         OrganizationReceiverDetails(
                             name = arDetailsReciever.communicationPartyName,
-                            ids = listOf(OrganizationId(messageOut.reciever.herid2, OrganizationIdType.HER_ID)),
+                            ids = listOf(OrganizationId(messageOut.receiver.herid2, OrganizationIdType.HER_ID)),
                         ),
                         no.ks.fiks.nhn.msh.Patient(
                             messageOut.patient.fnr,
@@ -135,16 +155,16 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
                 ),
                 DialogmeldingVersion.V1_1,
             )
-            .also {
-                logger.debug { serializeNhnMessage(it) }
-                mshClient.sendMessage(
-                    it,
-                    RequestParameters(
-                        HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(messageOut.onBehalfOfOrgNum))
-                    ),
-                )
-            }
 
-        logger.debug { "MessageOut recieved ${messageOut.conversationId}" }
-        ServerResponse.ok().buildAndAwait()
+        logger.debug { serializeNhnMessage(outGoingDocument) }
+        val messageReference =
+            mshClient.sendMessage(
+                outGoingDocument,
+                RequestParameters(
+                    HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(messageOut.onBehalfOfOrgNum))
+                ),
+            )
+
+        logger.debug { "MessageOut recieved with messageReferance = $messageReference" }
+        ServerResponse.ok().bodyValueAndAwait(messageReference)
     }
