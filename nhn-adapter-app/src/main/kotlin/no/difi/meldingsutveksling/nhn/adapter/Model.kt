@@ -60,11 +60,15 @@ fun StatusInfo.toMessageStatus(): MessageStatus =
     MessageStatus(
         this.receiverHerId,
         TransportStatus.fromValue(this.transportDeliveryState.value),
-        ApprecStatus.fromValue(this.appRecStatus.value),
+        this.appRecStatus?.value?.let { ApprecStatus.fromValue(it) },
     )
 
 @Serializable
-data class MessageStatus(val recieverHerId: Int, val transportStatus: TransportStatus, val apprecStatus: ApprecStatus)
+data class MessageStatus(
+    val receiverHerId: Int,
+    val transportStatus: TransportStatus,
+    val apprecStatus: ApprecStatus? = null,
+)
 
 @Serializable
 enum class ApprecStatus(val value: String) {

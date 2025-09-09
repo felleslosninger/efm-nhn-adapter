@@ -25,6 +25,7 @@ import no.ks.fiks.nhn.msh.OutgoingVedlegg
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
 import no.ks.fiks.nhn.msh.RequestParameters
+import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.awaitBody
@@ -166,5 +167,5 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
             )
 
         logger.debug { "MessageOut recieved with messageReferance = $messageReference" }
-        ServerResponse.ok().bodyValueAndAwait(messageReference)
+        ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
