@@ -36,6 +36,7 @@ constructor(
     val senderHerId: Int,
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
     val errors: List<SerializableApplicationReceiptError>? = null,
+    val recieverHerId: Int? = null,
 )
 
 @Serializable

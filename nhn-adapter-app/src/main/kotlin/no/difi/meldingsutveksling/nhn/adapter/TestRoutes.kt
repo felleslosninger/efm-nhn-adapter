@@ -41,51 +41,46 @@ import org.springframework.web.reactive.function.server.queryParamOrNull
 @OptIn(ExperimentalUuidApi::class)
 fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
     POST("/messages/apprec") { request ->
-        //   val messageId = request.pathVariable("messageId");
-        //   val senderHerId = request.pathVariable("senderHerId");
-        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
+        val onBehalfOf =
+            request.queryParamOrNull("onBehalfOf")
+                ?: return@POST ServerResponse.badRequest()
+                    .bodyValueAndAwait(mapOf("error" to "Missing query parameter: onBehalfOf"))
 
         try {
             val receipt = request.awaitBody<SerializableOutgoingApplicationReceipt>()
 
+            val receiverHerId =
+                receipt.recieverHerId
+                    ?: return@POST ServerResponse.badRequest()
+                        .bodyValueAndAwait(mapOf("error" to "recieverHerId is not defined"))
+            val acknowledgedId = UUID.fromString(receipt.acknowledgedId.toString())
+
+            // mark the message as it has bean read. I am not sure it is nessesary but it makes it
+            // closer to what will happen real world
             mshClient.markMessageRead(
-                UUID.fromString(receipt.acknowledgedId.toString()),
-                8143548,
-                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("310673145"))),
+                acknowledgedId,
+                receiverHerId,
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf))),
             )
 
             val apprecUUID =
                 mshClient.sendApplicationReceipt(
                     receipt.toOriginal(),
-                    onBehalfOf?.let {
-                        RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(it)))
-                    },
+                    RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf))),
                 )
 
-            //  val apprecInfo =  mshClient.getApprecInfo(UUID.fromString(
-            // "e7a20a2c-948f-4fac-bb00-3c517c8df45c"),RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("931796003"))))
-            //   println(apprecInfo)
-            val inReciept =
+            val inReceipt =
                 mshClient.getApplicationReceipt(
                     apprecUUID,
                     RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("931796003"))),
                 )
-            println(inReciept)
 
-            return@POST ServerResponse.ok()
-                .bodyValueAndAwait(
-                    mapOf(
-                        "messageId" to inReciept.acknowledgedBusinessDocumentId,
-                        "senderHerId" to inReciept.sender.id.id,
-                        "receipt" to inReciept.toSerializable(),
-                    )
-                )
+            return@POST ServerResponse.ok().bodyValueAndAwait(mapOf("incoming-apprec" to inReceipt.toSerializable()))
         } catch (e: Exception) {
-            logger.error(e) { "unable to send" }
+            logger.error(e) { "Unable to send application receipt" }
             return@POST ServerResponse.badRequest()
-                .bodyValueAndAwait(mapOf("error" to "Failed to deserialize: ${e.message}"))
+                .bodyValueAndAwait(mapOf("error" to "Failed to process request: ${e.message}"))
         }
-        // ServerResponse.ok().bodyValueAndAwait("Apprec sendt")
     }
 
 fun CoRouterFunctionDsl.testKotlinX() =
