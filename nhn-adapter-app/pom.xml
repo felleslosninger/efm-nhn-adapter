@@ -64,9 +64,9 @@
             <version>${helseid.version}</version>
         </dependency>
         <dependency>
-            <groupId>no.idporten.identifiers</groupId>
-            <artifactId>idporten-identifiers</artifactId>
-            <version>0.0.1</version>
+            <groupId>no.idporten.validators</groupId>
+            <artifactId>idporten-validators</artifactId>
+            <version>1.6.0</version>
         </dependency>
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>

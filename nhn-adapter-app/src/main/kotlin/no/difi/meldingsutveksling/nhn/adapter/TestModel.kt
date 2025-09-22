@@ -19,6 +19,7 @@ import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.msh.ApplicationReceiptError
+import no.ks.fiks.nhn.msh.ApplicationReceiptInfo
 import no.ks.fiks.nhn.msh.Department
 import no.ks.fiks.nhn.msh.Id
 import no.ks.fiks.nhn.msh.IncomingApplicationReceipt
@@ -111,6 +112,16 @@ data class SerializableIncomingApplicationReceipt(
     val sender: SerializableInstitution,
     val receiver: SerializableInstitution,
 )
+
+@Serializable
+data class SerializableApplicationReceiptInfo(
+    val recieverHerId: Int,
+    @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding?,
+    val errors: List<SerializableApplicationReceiptError>,
+)
+
+fun ApplicationReceiptInfo.toSerializable(): SerializableApplicationReceiptInfo =
+    SerializableApplicationReceiptInfo(this.receiverHerId, this.status, this.errors.map { it.toSerializable() })
 
 @Serializable
 data class SerializableInstitution(

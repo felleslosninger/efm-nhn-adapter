@@ -2,9 +2,10 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import java.time.OffsetDateTime
 import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import no.idporten.identifiers.validation.PersonIdentifierValidator
+import no.idporten.validators.identifier.PersonIdentifierValidator
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
@@ -38,6 +39,10 @@ val logger = KotlinLogging.logger {}
 fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
     GET("/dph/status/{messageId}") { it ->
         val messageId = it.pathVariable("messageId")
+        // @TODO to use onBehalfOf as request parameter exposes details of next
+        // authentication/authorization step
+        // potentialy put the onBehalfOf orgnummeret enten som Body eller som ekstra claim i maskin
+        // to maski tokenet
         val onBehalfOf = it.queryParamOrNull("onBehalfOf")
 
         val requestParameters =
@@ -46,10 +51,7 @@ fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
             }
         ServerResponse.ok()
             .bodyValueAndAwait(
-                mshClient
-                    .messageStatus(UUID.fromString(messageId), requestParameters)
-                    .map { it.toMessageStatus() }
-                    .first()
+                mshClient.getStatus(UUID.fromString(messageId), requestParameters).map { it.toMessageStatus() }.first()
             )
     }
 
@@ -93,6 +95,29 @@ private fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDe
 fun CoRouterFunctionDsl.arLookupById() =
     GET("/arlookup/organisasjonellernoe/{herId2}") { ServerResponse.ok().buildAndAwait() }
 
+@OptIn(ExperimentalUuidApi::class)
+fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =
+    GET("/dph/in/{messageId}/reciept") {
+        val messageId: UUID =
+            it.pathVariable("messageId")
+                .runCatching { UUID.fromString(this) }
+                .getOrElse {
+                    return@GET ServerResponse.badRequest().bodyValueAndAwait("Message id is wrong format")
+                }
+        // @TODO to use onBehalfOf as request parameter exposes details of next
+        // authentication/authorization step
+        // potentialy put the onBehalfOf orgnummeret enten som Body eller som ekstra claim i maskin
+        // to maski tokenet
+        val onBehalfOf = it.queryParamOrNull("onBehalfOf")
+        val requestParameters =
+            onBehalfOf?.let { onBehalfOf ->
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
+            }
+        val incomingApplicationReceipt = mshClient.getApplicationReceiptsForMessage(messageId, requestParameters)
+
+        ServerResponse.ok().bodyValueAndAwait(incomingApplicationReceipt.map { it.toSerializable() })
+    }
+
 fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretClient) =
     POST("/dph/out") {
         val messageOut = it.awaitBody<MessageOut>()
@@ -124,6 +149,7 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
                             name = arDetailsReciever.communicationPartyName,
                             ids = listOf(OrganizationId(messageOut.receiver.herid2, OrganizationIdType.HER_ID)),
                         ),
+                        // @TODO hvis reciever er nhn tjeneste hvordan setter vi pasient?
                         no.ks.fiks.nhn.msh.Patient(
                             messageOut.patient.fnr,
                             messageOut.patient.firstName,

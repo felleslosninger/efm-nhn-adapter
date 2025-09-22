@@ -117,6 +117,7 @@ class BeanRegistration :
                 arLookupById()
                 dphOut(bean(), bean())
                 statusCheck(bean())
+                incomingReciept(bean())
             }
         }
     })

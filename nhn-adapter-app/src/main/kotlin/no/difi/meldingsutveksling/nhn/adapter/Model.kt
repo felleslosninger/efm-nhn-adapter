@@ -56,11 +56,11 @@ data class ArDetails(
     val pemDigdirSertifikat: String,
 )
 
-fun StatusInfo.toMessageStatus(): MessageStatus =
+fun no.ks.fiks.nhn.msh.StatusInfo.toMessageStatus(): MessageStatus =
     MessageStatus(
         this.receiverHerId,
-        TransportStatus.fromValue(this.transportDeliveryState.value),
-        this.appRecStatus?.value?.let { ApprecStatus.fromValue(it) },
+        TransportStatus.fromValue(this.deliveryState.name),
+        this.appRecStatus?.let { ApprecStatus.fromValue(it.name) },
     )
 
 @Serializable
@@ -79,7 +79,7 @@ enum class ApprecStatus(val value: String) {
     companion object {
         fun fromValue(value: String?): ApprecStatus {
             for (b in ApprecStatus.values()) {
-                if (b.value == value) {
+                if (b.value.equals(value, true)) {
                     return b
                 }
             }
@@ -97,7 +97,7 @@ enum class TransportStatus(val value: String) {
     companion object {
         fun fromValue(value: String?): TransportStatus {
             for (b in TransportStatus.values()) {
-                if (b.value == value) {
+                if (b.value.equals(value, true)) {
                     return b
                 }
             }
