@@ -4,14 +4,10 @@ import java.lang.Thread.sleep
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
-import kotlinx.serialization.json.Json
-import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
-import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.helseid.AccessTokenRequestBuilder
 import no.ks.fiks.helseid.HelseIdClient
 import no.ks.fiks.helseid.TenancyType
@@ -53,20 +49,6 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
                     .bodyValueAndAwait(mapOf("error" to "Missing query parameter: onBehalfOf"))
 
         try {
-            val testRcipit =
-                SerializableOutgoingApplicationReceipt(
-                    Uuid.parse("c3ded8cd-a69d-4ff3-8112-7d41e38c1bf0"),
-                    1212,
-                    StatusForMottakAvMelding.AVVIST,
-                    listOf<SerializableApplicationReceiptError>(
-                        SerializableApplicationReceiptError(
-                            FeilmeldingForApplikasjonskvittering.PASIENT_EKSISTERER_IKKE_HOS_MOTTAKER,
-                            "sdfdsf",
-                        )
-                    ),
-                )
-
-            println(Json {}.encodeToString(testRcipit))
             val receipt = request.awaitBody<SerializableOutgoingApplicationReceipt>()
 
             val receiverHerId =
@@ -88,7 +70,7 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
                     receipt.toOriginal(),
                     RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf))),
                 )
-            sleep(1000)
+            sleep(5000)
 
             val inReceipt =
                 mshClient.getApplicationReceipt(

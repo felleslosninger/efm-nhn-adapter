@@ -68,36 +68,12 @@ fun CoRouterFunctionDsl.arLookup(flrClient: DecoratingFlrClient, arClient: Adres
         ServerResponse.ok().bodyValueAndAwait(arDetails)
     }
 
-private fun arLookupByFnr(fnr: String, flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient): ArDetails {
-    val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
-    return arLookupByHerId(gpHerId, arClient)
-}
-
-private fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails {
-    val communicationParty = arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
-    val comunicationPartyName = communicationParty.name
-
-    val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
-    val orgNumber = communicationParty.parent!!.organizationNumber
-    val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"
-
-    return ArDetails(
-        parentHerId,
-        comunicationPartyParentName,
-        orgNumber = orgNumber,
-        herId,
-        comunicationPartyName,
-        "testedi-address",
-        "testsertifikat",
-    )
-}
-
 fun CoRouterFunctionDsl.arLookupById() =
     GET("/arlookup/organisasjonellernoe/{herId2}") { ServerResponse.ok().buildAndAwait() }
 
 @OptIn(ExperimentalUuidApi::class)
 fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =
-    GET("/dph/in/{messageId}/reciept") {
+    GET("/dph/in/{messageId}/receipt") {
         val messageId: UUID =
             it.pathVariable("messageId")
                 .runCatching { UUID.fromString(this) }
@@ -195,3 +171,27 @@ fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretCli
         logger.debug { "MessageOut recieved with messageReferance = $messageReference" }
         ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
+
+private fun arLookupByFnr(fnr: String, flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient): ArDetails {
+    val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
+    return arLookupByHerId(gpHerId, arClient)
+}
+
+private fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails {
+    val communicationParty = arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
+    val comunicationPartyName = communicationParty.name
+
+    val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
+    val orgNumber = communicationParty.parent!!.organizationNumber
+    val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"
+
+    return ArDetails(
+        parentHerId,
+        comunicationPartyParentName,
+        orgNumber = orgNumber,
+        herId,
+        comunicationPartyName,
+        "testedi-address",
+        "testsertifikat",
+    )
+}

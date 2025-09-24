@@ -19,7 +19,6 @@ import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.msh.ApplicationReceiptError
-import no.ks.fiks.nhn.msh.ApplicationReceiptInfo
 import no.ks.fiks.nhn.msh.Department
 import no.ks.fiks.nhn.msh.Id
 import no.ks.fiks.nhn.msh.IncomingApplicationReceipt
@@ -39,29 +38,6 @@ constructor(
     val errors: List<SerializableApplicationReceiptError>? = null,
     val recieverHerId: Int? = null,
 )
-
-@Serializable
-data class SerializableApplicationReceiptError(
-    @Serializable(with = FeilmeldingForApplikasjonskvitteringSerializer::class)
-    val type: FeilmeldingForApplikasjonskvittering,
-    val details: String? = null,
-)
-
-object StatusForMottakAvMeldingSerializer : KSerializer<StatusForMottakAvMelding> {
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("StatusForMottakAvMelding", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: StatusForMottakAvMelding) {
-        encoder.encodeString(value.verdi)
-    }
-
-    @OptIn(ExperimentalStdlibApi::class)
-    override fun deserialize(decoder: Decoder): StatusForMottakAvMelding {
-        val verdi = decoder.decodeString()
-        return StatusForMottakAvMelding.entries.find { it.verdi == verdi }
-            ?: throw IllegalArgumentException("Unknown StatusForMottakAvMelding verdi: $verdi")
-    }
-}
 
 object FeilmeldingForApplikasjonskvitteringSerializer : KSerializer<FeilmeldingForApplikasjonskvittering> {
     override val descriptor: SerialDescriptor =
@@ -112,16 +88,6 @@ data class SerializableIncomingApplicationReceipt(
     val sender: SerializableInstitution,
     val receiver: SerializableInstitution,
 )
-
-@Serializable
-data class SerializableApplicationReceiptInfo(
-    val recieverHerId: Int,
-    @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding?,
-    val errors: List<SerializableApplicationReceiptError>,
-)
-
-fun ApplicationReceiptInfo.toSerializable(): SerializableApplicationReceiptInfo =
-    SerializableApplicationReceiptInfo(this.receiverHerId, this.status, this.errors.map { it.toSerializable() })
 
 @Serializable
 data class SerializableInstitution(

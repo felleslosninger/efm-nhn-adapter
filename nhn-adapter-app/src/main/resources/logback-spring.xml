@@ -24,15 +24,15 @@
         </encoder>
     </appender>
 
-        <logger name="no.difi" level="INFO" additivity="false">
+        <logger name="no.difi" level="DEBUG" additivity="false">
             <appender-ref ref="APPLICATION"/>
         </logger>
-        <logger name="logging.level.org.springframework.http.codec" level="TRACE">
+        <logger name="logging.level.org.springframework.http.codec" level="ERROR">
             <appender-ref ref="APPLICATION"/>
         </logger>
 
         <root level="INFO">
-            <!--appender-ref ref="APPLICATION"/-->
+            <appender-ref ref="APPLICATION"/>
             <appender-ref ref="CONSOLE"/>
         </root>
 </configuration>
