@@ -5,6 +5,9 @@ import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.toJavaUuid
+import no.difi.meldingsutveksling.nhn.adapter.model.SerializableOutgoingApplicationReceipt
+import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
+import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
@@ -91,19 +94,6 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
             return@POST ServerResponse.badRequest()
                 .bodyValueAndAwait(mapOf("error" to "Failed to process request: ${e.message}"))
         }
-    }
-
-fun CoRouterFunctionDsl.testKotlinX() =
-    POST("/kotlinx") {
-        val kotlinX = it.awaitBody<TestKotlinX>()
-        ServerResponse.ok().bodyValueAndAwait(kotlinX.copy(name = "Test2"))
-    }
-
-fun CoRouterFunctionDsl.testKotlinxSealedclass() =
-    POST("/kotlinxsealedclass") {
-        val messageOut = it.awaitBody<CommunicationParty>()
-        println("Communication Party: $messageOut")
-        ServerResponse.ok().bodyValueAndAwait(messageOut)
     }
 
 fun CoRouterFunctionDsl.testFlr(flrClient: DecoratingFlrClient) =

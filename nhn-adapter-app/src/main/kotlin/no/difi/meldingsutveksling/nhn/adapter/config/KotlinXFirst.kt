@@ -1,7 +1,10 @@
-package no.difi.meldingsutveksling.nhn.adapter
+package no.difi.meldingsutveksling.nhn.adapter.config
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
+import no.difi.meldingsutveksling.nhn.adapter.model.FeilmeldingForApplikasjonskvitteringSerializer
+import no.difi.meldingsutveksling.nhn.adapter.model.IdSerializer
+import no.difi.meldingsutveksling.nhn.adapter.model.StatusForMottakAvMeldingSerializer
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.msh.Id

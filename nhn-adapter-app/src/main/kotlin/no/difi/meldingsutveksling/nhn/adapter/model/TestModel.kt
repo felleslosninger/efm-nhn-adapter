@@ -1,4 +1,4 @@
-package no.difi.meldingsutveksling.nhn.adapter
+package no.difi.meldingsutveksling.nhn.adapter.model
 
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -14,7 +14,6 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.encoding.decodeStructure
 import kotlinx.serialization.encoding.encodeStructure
-import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.hdir.StatusForMottakAvMelding
@@ -38,22 +37,6 @@ constructor(
     val errors: List<SerializableApplicationReceiptError>? = null,
     val recieverHerId: Int? = null,
 )
-
-object FeilmeldingForApplikasjonskvitteringSerializer : KSerializer<FeilmeldingForApplikasjonskvittering> {
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("FeilmeldingForApplikasjonskvittering", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: FeilmeldingForApplikasjonskvittering) {
-        encoder.encodeString(value.verdi)
-    }
-
-    @OptIn(ExperimentalStdlibApi::class)
-    override fun deserialize(decoder: Decoder): FeilmeldingForApplikasjonskvittering {
-        val verdi = decoder.decodeString()
-        return FeilmeldingForApplikasjonskvittering.entries.find { it.verdi == verdi }
-            ?: throw IllegalArgumentException("Unknown FeilmeldingForApplikasjonskvittering verdi: $verdi")
-    }
-}
 
 @OptIn(ExperimentalUuidApi::class)
 fun OutgoingApplicationReceipt.toSerializable(): SerializableOutgoingApplicationReceipt =

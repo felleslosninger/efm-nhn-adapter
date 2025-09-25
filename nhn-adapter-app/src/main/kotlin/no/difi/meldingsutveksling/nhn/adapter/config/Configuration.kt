@@ -1,4 +1,4 @@
-package no.difi.meldingsutveksling.nhn.adapter
+package no.difi.meldingsutveksling.nhn.adapter.config
 
 data class NhnConfig(val url: String, val username: String, val password: String)
 
