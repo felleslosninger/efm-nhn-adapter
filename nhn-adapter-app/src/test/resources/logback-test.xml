@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="true">
+    <!-- Console appender for test output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Debug logging for NHN adapter code -->
+    <logger name="no.difi" level="DEBUG">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- Debug logging for Spring framework (context, beans, web) -->
+    <logger name="org.springframework" level="DEBUG">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- Debug logging for codec configuration -->
+    <logger name="org.springframework.http.codec" level="DEBUG">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- Debug logging for MockK -->
+    <logger name="io.mockk" level="DEBUG">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- Debug logging for coroutines -->
+    <logger name="kotlinx.coroutines" level="DEBUG">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- Root logger for other logs (set to INFO to avoid noise) -->
+    <root level="TRACE">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration>

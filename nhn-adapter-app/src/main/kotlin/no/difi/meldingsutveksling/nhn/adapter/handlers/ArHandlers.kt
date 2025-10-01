@@ -1,6 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
+import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.idporten.validators.identifier.PersonIdentifierValidator
@@ -15,12 +16,14 @@ object ArHandlers {
         flrClient: DecoratingFlrClient,
         arClient: AdresseregisteretClient,
     ): ServerResponse {
-        val fnr = request.pathVariable("identifier")
+        logger.debug("I was here")
+        println("I was 100% here")
+        val identifier = request.pathVariable("identifier")
         PersonIdentifierValidator.setSyntheticPersonIdentifiersAllowed(true)
         val arDetails =
-            when (PersonIdentifierValidator.isValid(fnr)) {
-                true -> arLookupByFnr(fnr, flrClient, arClient)
-                false -> arLookupByHerId(fnr.toInt(), arClient)
+            when (PersonIdentifierValidator.isValid(identifier)) {
+                true -> arLookupByFnr(identifier, flrClient, arClient)
+                false -> arLookupByHerId(identifier.toInt(), arClient)
             }
 
         return ServerResponse.ok().bodyValueAndAwait(arDetails)

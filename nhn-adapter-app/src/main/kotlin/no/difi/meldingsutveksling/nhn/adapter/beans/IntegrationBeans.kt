@@ -12,16 +12,13 @@ import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import org.springframework.core.env.Environment
 
 object IntegrationBeans {
-    fun flrClient(flrConfig: NhnConfig, env: Environment): DecoratingFlrClient {
-        val flrClient =
-            FastlegeregisteretClient(
-                FastlegeregisteretService(flrConfig.url, Credentials(flrConfig.username, flrConfig.password))
-            )
-        return DecoratingFlrClient(
-            flrClient,
-            env.activeProfiles.filter { it in listOf("local", "dev", "test", "prod") },
+    fun flrClient(flrConfig: NhnConfig) =
+        FastlegeregisteretClient(
+            FastlegeregisteretService(flrConfig.url, Credentials(flrConfig.username, flrConfig.password))
         )
-    }
+
+    fun flrClientDecorator(flrClient: FastlegeregisteretClient, env: Environment): DecoratingFlrClient =
+        DecoratingFlrClient(flrClient, env.activeProfiles.filter { it in listOf("local", "dev", "test", "prod") })
 
     fun arClient(arConfig: NhnConfig): AdresseregisteretClient =
         AdresseregisteretClient(

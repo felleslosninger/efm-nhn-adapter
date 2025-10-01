@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<configuration>
+<configuration debug="true">
     <springProperty name="APP-NAME" source="spring.application.name" defaultValue="-"/>
     <springProperty name="APP-ENV" source="spring.application.environment" defaultValue="-"/>
 
@@ -31,7 +31,7 @@
             <appender-ref ref="APPLICATION"/>
         </logger>
 
-        <root level="INFO">
+        <root level="DEBUG">
             <appender-ref ref="APPLICATION"/>
             <appender-ref ref="CONSOLE"/>
         </root>
