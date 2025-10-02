@@ -20,7 +20,7 @@ import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.core.env.get
 import org.springframework.http.HttpStatus
-import org.springframework.security.core.userdetails.ReactiveUserDetailsService
+import org.springframework.security.core.userdetails.MapReactiveUserDetailsService
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.web.reactive.function.server.RouterFunction
@@ -59,7 +59,9 @@ private fun properties() = BeanRegistrarDsl {
 
 private fun security() = BeanRegistrarDsl {
     registerBean<PasswordEncoder> { BCryptPasswordEncoder() }
-    registerBean<ReactiveUserDetailsService> { SecurityBeans.userDetailsService(bean()) }
+    registerBean<MapReactiveUserDetailsService> {
+        SecurityBeans.userDetailsService(bean()) as MapReactiveUserDetailsService
+    }
     registerBean { SecurityBeans.userDetailsRepositoryReactiveAuthenticationManager(bean<PasswordEncoder>(), bean()) }
     registerBean { SecurityBeans.securityFilterChain(bean()) }
     registerBean<Configuration> {

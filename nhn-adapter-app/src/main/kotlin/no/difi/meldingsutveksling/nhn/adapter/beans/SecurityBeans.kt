@@ -11,14 +11,13 @@ import org.springframework.security.authentication.UserDetailsRepositoryReactive
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.web.server.ServerHttpSecurity
 import org.springframework.security.core.userdetails.MapReactiveUserDetailsService
-import org.springframework.security.core.userdetails.ReactiveUserDetailsService
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerReactiveAuthenticationManagerResolver
 import org.springframework.security.web.server.SecurityWebFilterChain
 
 object SecurityBeans {
-    fun userDetailsService(passwordEncoder: PasswordEncoder): ReactiveUserDetailsService =
+    fun userDetailsService(passwordEncoder: PasswordEncoder): MapReactiveUserDetailsService =
         User.builder()
             .passwordEncoder { passwordEncoder.encode(it) }
             .username("testUser")

@@ -19,9 +19,11 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webflux.test.autoconfigure.AutoConfigureWebTestClient
 import org.springframework.http.MediaType
+import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.reactive.server.WebTestClient
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@ActiveProfiles("unit-test")
 @AutoConfigureWebTestClient
 class RouterBootMockEnvTest(
     @MockkBean val flr: FastlegeregisteretClient,
