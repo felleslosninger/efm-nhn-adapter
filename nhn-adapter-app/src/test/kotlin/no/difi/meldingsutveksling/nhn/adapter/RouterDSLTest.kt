@@ -29,53 +29,17 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.http.MediaType
 import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
 import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
-import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
-import org.springframework.web.reactive.function.server.HandlerStrategies
-import org.springframework.web.reactive.function.server.RouterFunctions
-import org.springframework.web.reactive.function.server.coRouter
-import org.springframework.web.server.WebHandler
+import org.springframework.test.web.reactive.server.WebTestClient
 
-fun BeanRegistrarDsl.kotlinXPriority() =
-    registerBean<HandlerStrategies>() {
-        HandlerStrategies.builder()
-            .codecs { codecs ->
-                val json = Json {
-                    ignoreUnknownKeys = true
-                    classDiscriminator = "type"
-                    serializersModule = SerializersModule {
-                        contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
-                        contextual(
-                            FeilmeldingForApplikasjonskvittering::class,
-                            FeilmeldingForApplikasjonskvitteringSerializer,
-                        )
-                        contextual(Id::class, IdSerializer)
-                    }
-                }
-
-                codecs.customCodecs().register(KotlinSerializationJsonEncoder(json))
-                codecs.customCodecs().register(KotlinSerializationJsonDecoder(json))
-            }
-            .build()
-    }
-
-fun testBeanRegistrarDsl(block: BeanRegistrarDsl.() -> Unit = {}) = BeanRegistrarDsl {
-    kotlinXPriority()
-    block.invoke(this)
-}
-
-fun testCoRouter(handlerStrategy: HandlerStrategies, block: CoRouterFunctionDsl.() -> Unit) =
-    RouterFunctions.toWebHandler(coRouter { block.invoke(this) }, handlerStrategy)
-
-class RouterTest() :
+class RouterDSLTest() :
     FunSpec({
         context("Test AR lookup") {
-            val arLookupContext = testBeanRegistrarDsl {
+            val arLookupContext = BeanRegistrarDsl {
                 registerBean<FastlegeregisteretClient>(::mockk)
                 registerBean<DecoratingFlrClient>() { DecoratingFlrClient(bean(), listOf()) }
                 registerBean<AdresseregisteretClient> { mockk() }
-                registerBean<WebHandler>() { testCoRouter(bean()) { arLookup(bean(), bean()) } }
+                testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean()) }
             }
-
             val context =
                 AnnotationConfigApplicationContext().apply {
                     register(arLookupContext)
@@ -83,9 +47,30 @@ class RouterTest() :
                 }
 
             val webTestClient =
-                afterTest() {
-                    clearMocks(context.getBean<FastlegeregisteretClient>(), context.getBean<AdresseregisteretClient>())
-                }
+                WebTestClient.bindToWebHandler(context.getBean())
+                    .configureClient()
+                    .codecs { cfg ->
+                        val json = Json {
+                            ignoreUnknownKeys = true
+                            classDiscriminator = "type"
+                            serializersModule = SerializersModule {
+                                contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
+                                contextual(
+                                    FeilmeldingForApplikasjonskvittering::class,
+                                    FeilmeldingForApplikasjonskvitteringSerializer,
+                                )
+                                contextual(Id::class, IdSerializer)
+                            }
+                        }
+
+                        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
+                        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
+                    }
+                    .build()
+
+            afterTest() {
+                clearMocks(context.getBean<FastlegeregisteretClient>(), context.getBean<AdresseregisteretClient>())
+            }
 
             test("Happy lookup by FNR") {
                 val flr = context.getBean<FastlegeregisteretClient>()

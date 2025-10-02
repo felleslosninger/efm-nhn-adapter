@@ -9,61 +9,27 @@ import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.mockk.every
 import io.mockk.verify
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.modules.SerializersModule
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
-import no.difi.meldingsutveksling.nhn.adapter.model.FeilmeldingForApplikasjonskvitteringSerializer
-import no.difi.meldingsutveksling.nhn.adapter.model.IdSerializer
-import no.difi.meldingsutveksling.nhn.adapter.model.StatusForMottakAvMeldingSerializer
-import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
-import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.CommunicationPartyParent
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.PatientGP
-import no.ks.fiks.nhn.msh.Id
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.ApplicationContext
+import org.springframework.boot.webflux.test.autoconfigure.AutoConfigureWebTestClient
 import org.springframework.http.MediaType
-import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
-import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.reactive.server.WebTestClient
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
-@ActiveProfiles("unit-test")
-class SecurityTest(
+@AutoConfigureWebTestClient
+class RouterBootMockEnvTest(
     @MockkBean val flr: FastlegeregisteretClient,
     @MockkBean val arClient: AdresseregisteretClient,
-    @Autowired val context: ApplicationContext,
+    @Autowired val webTestClient: WebTestClient,
 ) :
     FunSpec({
         test("Load Application Context") {
-            val webTestClient =
-                WebTestClient.bindToApplicationContext(context)
-                    .configureClient()
-                    .codecs { cfg ->
-                        val json = Json {
-                            ignoreUnknownKeys = true
-                            classDiscriminator = "type"
-                            serializersModule = SerializersModule {
-                                contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
-                                contextual(
-                                    FeilmeldingForApplikasjonskvittering::class,
-                                    FeilmeldingForApplikasjonskvitteringSerializer,
-                                )
-                                contextual(Id::class, IdSerializer)
-                            }
-                        }
-                        cfg.defaultCodecs().configureDefaultCodec {}
-
-                        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
-                        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
-                    }
-                    .build()
-
             val PATIENT_FNR = "16822449879"
             val HERID2 = 454545
             val HERID1 = 1111

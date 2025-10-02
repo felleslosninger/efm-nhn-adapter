@@ -16,13 +16,13 @@ import no.ks.fiks.nhn.flr.PatientGP
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 import org.springframework.http.MediaType
 import org.springframework.security.config.web.server.ServerHttpSecurity
 import org.springframework.security.web.server.SecurityWebFilterChain
-import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.reactive.server.WebTestClient
 
-// @Configuration
+@Configuration
 class TestSecurityConfig {
     @Bean
     fun securityWebFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
@@ -34,8 +34,6 @@ class TestSecurityConfig {
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["spring.security.user.name=testuser", "spring.security.user.password=testpass"],
 )
-// @Import(TestSecurityConfig::class)
-@ActiveProfiles("unit-test")
 class SecurityTest2(
     @MockkBean val flr: FastlegeregisteretClient,
     @MockkBean val arClient: AdresseregisteretClient,
