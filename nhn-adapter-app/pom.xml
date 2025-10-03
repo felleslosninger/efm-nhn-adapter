@@ -79,6 +79,10 @@
             <version>3.2.2</version>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kotlin-serialization</artifactId>
+        </dependency>
+        <dependency>
             <groupId>no.ks.fiks</groupId>
             <artifactId>msh-client</artifactId>
             <version>${msh-client.version}</version>
@@ -111,6 +115,12 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>io.kotest</groupId>
+            <artifactId>kotest-framework-datatest</artifactId>
+            <version>${kotest.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.ninja-squad</groupId>
             <artifactId>springmockk</artifactId>
             <version>4.0.2</version>
@@ -124,6 +134,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-test-autoconfigure</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webflux-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

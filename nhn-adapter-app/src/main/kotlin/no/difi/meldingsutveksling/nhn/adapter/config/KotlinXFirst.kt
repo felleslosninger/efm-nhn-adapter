@@ -26,7 +26,6 @@ class KotlinXFirst : CodecCustomizer {
                 contextual(Id::class, IdSerializer)
             }
         }
-        cfg.registerDefaults(false)
         cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
         cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
     }

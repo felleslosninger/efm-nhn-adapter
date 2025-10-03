@@ -1,10 +1,12 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import java.lang.IllegalArgumentException
 import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.idporten.validators.identifier.PersonIdentifierValidator
+import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
@@ -20,10 +22,27 @@ object ArHandlers {
         println("I was 100% here")
         val identifier = request.pathVariable("identifier")
         PersonIdentifierValidator.setSyntheticPersonIdentifiersAllowed(true)
+
+        val isFnr = PersonIdentifierValidator.isValid(identifier)
+
+        if (!isFnr) {
+            identifier.toIntOrNull()?.takeIf { it > 0 } ?: throw IllegalArgumentException("Illegal input")
+        }
+
         val arDetails =
-            when (PersonIdentifierValidator.isValid(identifier)) {
-                true -> arLookupByFnr(identifier, flrClient, arClient)
-                false -> arLookupByHerId(identifier.toInt(), arClient)
+            try {
+                when (PersonIdentifierValidator.isValid(identifier)) {
+                    true -> arLookupByFnr(identifier, flrClient, arClient)
+                    false -> arLookupByHerId(identifier.toInt(), arClient)
+                }
+            } catch (e: AdresseregisteretApiException) {
+                if ("InvalidHerIdSupplied" == e.errorCode) {
+                    throw HerIdNotFound()
+                } else {
+                    throw e
+                }
+            } catch (e: Exception) {
+                throw e
             }
 
         return ServerResponse.ok().bodyValueAndAwait(arDetails)
