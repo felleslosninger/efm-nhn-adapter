@@ -14,17 +14,19 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.encoding.decodeStructure
 import kotlinx.serialization.encoding.encodeStructure
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.hdir.StatusForMottakAvMelding
-import no.ks.fiks.nhn.msh.ApplicationReceiptError
 import no.ks.fiks.nhn.msh.Department
 import no.ks.fiks.nhn.msh.Id
 import no.ks.fiks.nhn.msh.IncomingApplicationReceipt
+import no.ks.fiks.nhn.msh.IncomingApplicationReceiptError
 import no.ks.fiks.nhn.msh.Institution
 import no.ks.fiks.nhn.msh.InstitutionPerson
 import no.ks.fiks.nhn.msh.OrganizationId
 import no.ks.fiks.nhn.msh.OutgoingApplicationReceipt
+import no.ks.fiks.nhn.msh.OutgoingApplicationReceiptError
 import no.ks.fiks.nhn.msh.PersonId
 
 @Serializable
@@ -34,7 +36,7 @@ constructor(
     val acknowledgedId: Uuid,
     val senderHerId: Int,
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
-    val errors: List<SerializableApplicationReceiptError>? = null,
+    val errors: List<SerializeableOutgoingApplicationReceiptError>? = null,
     val recieverHerId: Int? = null,
 )
 
@@ -56,18 +58,37 @@ fun SerializableOutgoingApplicationReceipt.toOriginal(): OutgoingApplicationRece
         errors = this.errors?.map { it.toOriginal() },
     )
 
-fun ApplicationReceiptError.toSerializable(): SerializableApplicationReceiptError =
-    SerializableApplicationReceiptError(type = this.type, details = this.details)
+@Serializable
+data class SerializeableOutgoingApplicationReceiptError(
+    @Serializable(with = FeilmeldingForApplikasjonskvitteringSerializer::class)
+    val type: FeilmeldingForApplikasjonskvittering,
+    val details: String? = null,
+)
 
-fun SerializableApplicationReceiptError.toOriginal(): ApplicationReceiptError =
-    ApplicationReceiptError(type = this.type, details = this.details)
+fun SerializeableOutgoingApplicationReceiptError.toOriginal(): OutgoingApplicationReceiptError =
+    OutgoingApplicationReceiptError(type = this.type, details = this.details)
+
+fun OutgoingApplicationReceiptError.toSerializable() =
+    SerializeableOutgoingApplicationReceiptError(this.type, this.details)
+
+fun IncomingApplicationReceiptError.toSerializable(): SerializableIncomingApplicationReceiptError =
+    SerializableIncomingApplicationReceiptError(type = this.type, details = this.details)
+
+fun SerializableIncomingApplicationReceiptError.toOriginal(): IncomingApplicationReceiptError =
+    IncomingApplicationReceiptError(
+        type = this.type,
+        details = this.details,
+        this.errorCode,
+        this.description,
+        this.oid,
+    )
 
 @Serializable
 data class SerializableIncomingApplicationReceipt(
     val id: String,
     val acknowledgedBusinessDocumentId: String, // Adjust to UUID if needed
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
-    val errors: List<SerializableApplicationReceiptError>,
+    val errors: List<SerializableIncomingApplicationReceiptError>,
     val sender: SerializableInstitution,
     val receiver: SerializableInstitution,
 )

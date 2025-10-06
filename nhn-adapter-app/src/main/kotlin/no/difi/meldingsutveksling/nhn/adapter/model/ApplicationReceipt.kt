@@ -33,14 +33,17 @@ enum class ApprecStatus(val value: String) {
 data class SerializableApplicationReceiptInfo(
     val recieverHerId: Int,
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding?,
-    val errors: List<SerializableApplicationReceiptError>,
+    val errors: List<SerializableIncomingApplicationReceiptError>,
 )
 
 @Serializable
-data class SerializableApplicationReceiptError(
+data class SerializableIncomingApplicationReceiptError(
     @Serializable(with = FeilmeldingForApplikasjonskvitteringSerializer::class)
     val type: FeilmeldingForApplikasjonskvittering,
     val details: String? = null,
+    val errorCode: String? = null,
+    val description: String? = null,
+    val oid: String? = null,
 )
 
 fun ApplicationReceiptInfo.toSerializable(): SerializableApplicationReceiptInfo =

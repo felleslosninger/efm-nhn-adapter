@@ -8,6 +8,7 @@ import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.idporten.validators.identifier.PersonIdentifierValidator
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
@@ -37,6 +38,12 @@ object ArHandlers {
                 }
             } catch (e: AdresseregisteretApiException) {
                 if ("InvalidHerIdSupplied" == e.errorCode) {
+                    throw HerIdNotFound()
+                } else {
+                    throw e
+                }
+            } catch (e: FastlegeregisteretApiException) {
+                if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt") {
                     throw HerIdNotFound()
                 } else {
                     throw e

@@ -5,17 +5,21 @@ import io.kotest.datatest.withData
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
+import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.flr.PatientGP
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 
 class RouterDSLTest() :
@@ -100,6 +104,37 @@ class RouterDSLTest() :
                 arDetails.herid1 shouldBeEqual HERID1
                 arDetails.orgNumber shouldBeEqual ORGNUM
                 arDetails.pemDigdirSertifikat.shouldNotBeNull()
+            }
+
+            should("Respond with 404 when identifier is not found") {
+                val flr = context.getBean<FastlegeregisteretClient>()
+                val arClient = context.getBean<AdresseregisteretClient>()
+
+                val PATIENT_FNR_SOM_FINNES_IKKE = "29039900147"
+                val HERID_SOM_FINNES_IKKE = 12312323
+
+                every { flr.getPatientGP(any()) } throws
+                    FastlegeregisteretException(
+                        "Feil",
+                        "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt",
+                        "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt",
+                    )
+                every { arClient.lookupHerId(HERID_SOM_FINNES_IKKE) } throws
+                    AdresseregisteretApiException("InvalidHerIdSupplied", "HerID not found", "HerID not found")
+
+                webTestClient
+                    .get()
+                    .uri("/arlookup/$PATIENT_FNR_SOM_FINNES_IKKE")
+                    .exchange()
+                    .returnResult(ArDetails::class.java)
+                    .status shouldBe HttpStatus.NOT_FOUND
+
+                webTestClient
+                    .get()
+                    .uri("/arlookup/$HERID_SOM_FINNES_IKKE")
+                    .exchange()
+                    .returnResult(ArDetails::class.java)
+                    .status shouldBe HttpStatus.NOT_FOUND
             }
 
             withData(
