@@ -36,12 +36,6 @@ object ArHandlers {
                     true -> arLookupByFnr(identifier, flrClient, arClient)
                     false -> arLookupByHerId(identifier.toInt(), arClient)
                 }
-            } catch (e: AdresseregisteretApiException) {
-                if ("InvalidHerIdSupplied" == e.errorCode) {
-                    throw HerIdNotFound()
-                } else {
-                    throw e
-                }
             } catch (e: FastlegeregisteretApiException) {
                 if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt") {
                     throw HerIdNotFound()
@@ -64,22 +58,29 @@ object ArHandlers {
         return arLookupByHerId(gpHerId, arClient)
     }
 
-    fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails {
-        val communicationParty = arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
-        val comunicationPartyName = communicationParty.name
+    fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails =
+        try {
+            val communicationParty =
+                arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
+            val comunicationPartyName = communicationParty.name
+            val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
+            val orgNumber = communicationParty.parent!!.organizationNumber
+            val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"
 
-        val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
-        val orgNumber = communicationParty.parent!!.organizationNumber
-        val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"
-
-        return ArDetails(
-            parentHerId,
-            comunicationPartyParentName,
-            orgNumber = orgNumber,
-            herId,
-            comunicationPartyName,
-            "testedi-address",
-            "testsertifikat",
-        )
-    }
+            ArDetails(
+                parentHerId,
+                comunicationPartyParentName,
+                orgNumber = orgNumber,
+                herId,
+                comunicationPartyName,
+                "testedi-address",
+                "testsertifikat",
+            )
+        } catch (e: AdresseregisteretApiException) {
+            if ("InvalidHerIdSupplied" == e.errorCode) {
+                throw HerIdNotFound()
+            } else {
+                throw e
+            }
+        }
 }

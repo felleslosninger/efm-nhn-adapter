@@ -3,7 +3,6 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.serialization.json.Json
-import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
@@ -18,7 +17,6 @@ import no.ks.fiks.nhn.edi.BusinessDocumentSerializer.serializeNhnMessage
 import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
-import no.ks.fiks.nhn.msh.GpNotFoundException
 import no.ks.fiks.nhn.msh.HealthcareProfessional
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
@@ -69,6 +67,8 @@ object OutHandler {
         // The fagmelding needs to be decyrpted
         val fagmelding = Json {}.decodeFromString(Fagmelding.serializer(), messageOut.fagmelding)
 
+        // @TODO Dette er her er ikke helt presis. Vi kan leve med det for øyebliket men
+        // vi skall endre det å ta hensyn til det som kommer fra AR og ikke bruke fnr-en å besteme
         val receiver =
             if (messageOut.receiver.patientFnr != null) {
                 arClient
@@ -156,21 +156,4 @@ object OutHandler {
         logger.debug { "MessageOut recieved with messageReferance = $messageReference" }
         return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
-
-    private fun lookupFastlege(
-        personId: String,
-        flrClient: DecoratingFlrClient,
-        arClient: AdresseregisteretClient,
-    ): PersonCommunicationParty =
-        flrClient.getPatientGP(personId)?.let { patientGP ->
-            arClient
-                .lookupHerId(patientGP.gpHerId ?: throw GpNotFoundException("GP does not have HER-id", personId))
-                .let {
-                    it as? PersonCommunicationParty
-                        ?: throw GpNotFoundException(
-                            "Adresseregisteret returned a communication party that is not a person",
-                            personId,
-                        )
-                }
-        } ?: throw GpNotFoundException("Could not find GP for person", personId)
 }

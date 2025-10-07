@@ -13,8 +13,8 @@ import io.mockk.verify
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
-import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.flr.PatientGP
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
@@ -22,7 +22,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 
-class RouterDSLTest() :
+class ArLookupDSLTest() :
     ShouldSpec({
         context("Test AR lookup") {
             val arLookupContext = BeanRegistrarDsl {
@@ -37,7 +37,7 @@ class RouterDSLTest() :
                     refresh()
                 }
 
-            val webTestClient = webTestClient(context.getBean()) { this.defaultCookie("test", "test") }
+            val webTestClient = webTestClient(context.getBean())
 
             afterTest() {
                 clearMocks(context.getBean<FastlegeregisteretClient>(), context.getBean<AdresseregisteretClient>())
@@ -58,7 +58,7 @@ class RouterDSLTest() :
                 val result =
                     webTestClient
                         .get()
-                        .uri("/arlookup/16822449879")
+                        .uri("/arlookup/$PATIENT_FNR")
                         .accept(MediaType.APPLICATION_JSON)
                         .exchange()
                         .returnResult(ArDetails::class.java)
@@ -114,7 +114,7 @@ class RouterDSLTest() :
                 val HERID_SOM_FINNES_IKKE = 12312323
 
                 every { flr.getPatientGP(any()) } throws
-                    FastlegeregisteretException(
+                    FastlegeregisteretApiException(
                         "Feil",
                         "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt",
                         "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt",
@@ -144,9 +144,6 @@ class RouterDSLTest() :
                     "alphanumeric instead of digit" to "sdfdsf233",
                 )
             ) { invalidIdentifier ->
-                val HERID1 = 2222
-                val ORGNUM = "787878"
-
                 val result =
                     webTestClient
                         .get()

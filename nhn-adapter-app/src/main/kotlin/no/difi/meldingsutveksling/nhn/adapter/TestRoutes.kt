@@ -100,7 +100,7 @@ fun CoRouterFunctionDsl.testFlr(flrClient: DecoratingFlrClient) =
     POST("/flr/test") {
         val patientGP = flrClient.getPatientGP("16822449879")
         println(patientGP?.gpHerId)
-        ServerResponse.ok().buildAndAwait()
+        ServerResponse.ok().build().onErrorResume { e -> ServerResponse.ok().build() }.block()!!
     }
 
 fun CoRouterFunctionDsl.testDphOut(
