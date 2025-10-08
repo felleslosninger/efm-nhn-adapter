@@ -53,7 +53,7 @@ class ArLookupDSLTest() :
 
                 every { flr.getPatientGP(PATIENT_FNR) } returns PatientGP("dummyId", HERID2)
 
-                every { arClient.lookupHerId(HERID2) } returns mockFastlegeCommunicationParty(HERID2, HERID1, ORGNUM)
+                every { arClient.lookupHerId(HERID2) } returns testFastlegeCommunicationParty(HERID2, HERID1, ORGNUM)
 
                 val result =
                     webTestClient
@@ -83,7 +83,7 @@ class ArLookupDSLTest() :
                 val HERID1 = 2222
                 val ORGNUM = "787878"
 
-                every { arClient.lookupHerId(HERID2) } returns mockNhnServiceCommunicationParty(HERID2, HERID1, ORGNUM)
+                every { arClient.lookupHerId(HERID2) } returns testNhnServiceCommunicationParty(HERID2, HERID1, ORGNUM)
 
                 val result =
                     webTestClient

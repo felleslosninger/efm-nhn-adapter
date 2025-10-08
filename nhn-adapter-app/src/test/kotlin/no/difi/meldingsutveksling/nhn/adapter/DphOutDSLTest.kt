@@ -1,8 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import io.kotest.core.spec.style.ShouldSpec
-import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
+import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -16,9 +16,6 @@ import kotlin.uuid.toJavaUuid
 import kotlinx.coroutines.reactive.awaitFirst
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
-import no.ks.fiks.nhn.ar.CommunicationPartyParent
-import no.ks.fiks.nhn.ar.OrganizationCommunicationParty
-import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.OrganizationReceiverDetails
@@ -28,7 +25,6 @@ import no.ks.fiks.nhn.msh.RequestParameters
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
-import org.springframework.test.web.reactive.server.returnResult
 
 @OptIn(ExperimentalUuidApi::class)
 class DphOutDSLTest :
@@ -47,11 +43,11 @@ class DphOutDSLTest :
 
             val webTestClient = webTestClient(context.getBean()) { this.responseTimeout(60.seconds.toJavaDuration()) }
 
+            afterTest() { clearMocks(context.getBean<AdresseregisteretClient>()) }
+
             should("Should return BAD request if HerID is not found") {
                 val HERID_SOM_FINNES_IKKE = "656237"
-                val PARENT_HER_ID = "1212"
                 val HERID_SOM_FINNES = "856268"
-                val ORGNUM = "233243"
 
                 val arService = context.getBean<AdresseregisteretClient>()
 
@@ -61,19 +57,19 @@ class DphOutDSLTest :
                         slot.captured
                             .takeIf { it == HERID_SOM_FINNES.toInt() }
                             ?.let {
-                                OrganizationCommunicationParty(
+                                testNhnServiceCommunicationParty(
                                     HERID_SOM_FINNES.toInt(),
-                                    "dummy",
-                                    CommunicationPartyParent(PARENT_HER_ID.toInt(), "dummyname", ORGNUM),
-                                    listOf(),
-                                    listOf(),
-                                    ORGNUM,
+                                    PARENT_HER_ID.toInt(),
+                                    ON_BEHALF_OF_ORGNUM,
                                 )
                             } ?: throw HerIdNotFound()
                     }
 
                 val messageOut =
-                    mockMessageOut(PARENT_HER_ID, HERID_SOM_FINNES_IKKE, PARENT_HER_ID, HERID_SOM_FINNES_IKKE)
+                    messageOutTemplate.modify {
+                        sender { herid2 = HERID_SOM_FINNES_IKKE }
+                        reciever { herid2 = HERID_SOM_FINNES_IKKE }
+                    }
 
                 webTestClient
                     .post()
@@ -87,7 +83,7 @@ class DphOutDSLTest :
                 webTestClient
                     .post()
                     .uri("/dph/out")
-                    .bodyValue(messageOut.copy(sender = messageOut.sender.copy(herid2 = HERID_SOM_FINNES)))
+                    .bodyValue(messageOut.modify { sender { herid2 = HERID_SOM_FINNES } })
                     .exchange()
                     .returnResult(String::class.java)
                     .status
@@ -102,7 +98,6 @@ class DphOutDSLTest :
                 val PARENT_HER_ID = "1212"
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
-                val ORGNUM = "233243"
                 val slot = slot<Int>()
                 val arService = context.getBean<AdresseregisteretClient>()
                 val mshClient = context.getBean<Client>()
@@ -111,15 +106,10 @@ class DphOutDSLTest :
                         when (slot.captured.toString()) {
                             HER_ID_ORG,
                             HER_ID_PERSON ->
-                                PersonCommunicationParty(
+                                testFastlegeCommunicationParty(
                                     HER_ID_PERSON.toInt(),
-                                    "dummyname",
-                                    CommunicationPartyParent(PARENT_HER_ID.toInt(), "dummyname", ORGNUM),
-                                    listOf(),
-                                    listOf(),
-                                    "Petter",
-                                    "middlename",
-                                    "Petterson",
+                                    PARENT_HER_ID.toInt(),
+                                    ON_BEHALF_OF_ORGNUM,
                                 )
                             else -> throw HerIdNotFound()
                         }
@@ -130,9 +120,14 @@ class DphOutDSLTest :
                 coEvery { mshClient.sendMessage(capture(businessDocumentSlot), any()) } throws
                     RuntimeException("Terminate test here")
 
-                val mockMessageOutWithFNR = mockMessageOut(PARENT_HER_ID, HER_ID_ORG, PARENT_HER_ID, HER_ID_PERSON)
-                val mockMessageOutWithoutFNR =
-                    mockMessageOutWithFNR.copy(receiver = mockMessageOutWithFNR.receiver.copy(patientFnr = null))
+                val mockMessageOutWithFNR =
+                    messageOutTemplate.modify {
+                        sender { herid2 = HER_ID_ORG }
+                        reciever { herid2 = HER_ID_PERSON }
+                    }
+
+                val mockMessageOutWithoutFNR = mockMessageOutWithFNR.modify { reciever { patientFnr = null } }
+
                 webTestClient
                     .post()
                     .uri("/dph/out")
@@ -160,7 +155,7 @@ class DphOutDSLTest :
                 val PARENT_HER_ID = "1212"
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
-                val ORGNUM = "233243"
+
                 val slot = slot<Int>()
                 val arService = context.getBean<AdresseregisteretClient>()
                 val mshClient = context.getBean<Client>()
@@ -169,15 +164,10 @@ class DphOutDSLTest :
                         when (slot.captured.toString()) {
                             HER_ID_ORG,
                             HER_ID_PERSON ->
-                                PersonCommunicationParty(
+                                testFastlegeCommunicationParty(
                                     HER_ID_PERSON.toInt(),
-                                    "dummyname",
-                                    CommunicationPartyParent(PARENT_HER_ID.toInt(), "dummyname", ORGNUM),
-                                    listOf(),
-                                    listOf(),
-                                    "Petter",
-                                    "middlename",
-                                    "Petterson",
+                                    PARENT_HER_ID.toInt(),
+                                    ON_BEHALF_OF_ORGNUM,
                                 )
                             else -> throw HerIdNotFound()
                         }
@@ -189,19 +179,12 @@ class DphOutDSLTest :
                     Uuid.random().toJavaUuid()
 
                 val mockMessageOut =
-                    mockMessageOut() {
-                        reciever {
-                            herid1 = PARENT_HER_ID
-                            herid2 = HER_ID_PERSON
-                        }
-                        sender {
-                            herid1 = PARENT_HER_ID
-                            herid2 = HER_ID_ORG
-                        }
-                        onBehalfOfOrgNum = ORGNUM
+                    messageOutTemplate.modify {
+                        reciever { herid2 = HER_ID_PERSON }
+                        sender { herid2 = HER_ID_ORG }
                     }
 
-                val mockMessageOutWithoutFNR = mockMessageOut(mockMessageOut) { reciever { patientFnr = null } }
+                val mockMessageOutWithoutFNR = mockMessageOut.modify { reciever { patientFnr = null } }
 
                 var result =
                     webTestClient
@@ -214,7 +197,7 @@ class DphOutDSLTest :
                 Uuid.parse(result.responseBody.awaitFirst())
 
                 (slotRequestParam.captured.helseId!!.tenant as MultiTenantHelseIdTokenParameters)
-                    .parentOrganization shouldBe ORGNUM
+                    .parentOrganization shouldBe ON_BEHALF_OF_ORGNUM
                 businessDocumentSlot.captured.receiver.child::class shouldBe PersonReceiverDetails::class
 
                 result =
@@ -231,3 +214,10 @@ class DphOutDSLTest :
             }
         }
     })
+
+private val PARENT_HER_ID = "1212"
+
+private val messageOutTemplate = testMessageOut {
+    reciever { herid1 = PARENT_HER_ID }
+    sender { herid1 = PARENT_HER_ID }
+}
