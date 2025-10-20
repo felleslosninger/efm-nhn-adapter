@@ -2,6 +2,9 @@
 
 package no.difi.meldingsutveksling.nhn.adapter
 
+import java.util.Date
+import kotlin.time.ExperimentalTime
+import kotlinx.serialization.Serializable
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.FLRCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_AR
@@ -27,9 +30,11 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.web.reactive.function.server.HandlerFilterFunction
 import org.springframework.web.reactive.function.server.RouterFunction
+import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.coRouter
 import org.springframework.web.server.ResponseStatusException
+import reactor.core.publisher.Mono
 
 private object Names {
     const val ARCONFIG = "ArConfig"
@@ -114,25 +119,53 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
     next.handle(request).onErrorResume {
         val basePath = request.path().substringBeforeLast("/")
         when (it) {
-            is IllegalArgumentException -> ServerResponse.badRequest().bodyValue(it.message ?: "Client error")
+            is IllegalArgumentException ->
+                request.toApiError(status = HttpStatus.BAD_REQUEST, it.message ?: "Client error")
             is HerIdNotFound -> {
                 when (basePath) {
-                    "/arlookup" -> ServerResponse.notFound()
-                    else -> ServerResponse.badRequest()
+                    "/arlookup" -> request.toApiError(HttpStatus.NOT_FOUND, "HerId is not found")
+                    else -> request.toApiError(HttpStatus.BAD_GATEWAY)
                 }
-                ServerResponse.notFound().build()
             }
             is AdresseregisteretApiException ->
-                ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .bodyValue("Not able to process, try later. ErrorCode: ${it.errorCode}")
+                request.toApiError(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Not able to process, try later. ErrorCode: ${it.errorCode}",
+                )
+            is ResponseStatusException -> throw it
             else -> {
                 logger.error("Unexpected error: ${it.message}", it)
-                ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .bodyValue("Not able to process, try later. ErrorCode: E7777")
+                request.toApiError(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Not able to process, try later. ErrorCode: E7777",
+                )
             }
-        }
+        }.toServerResponse()
     }
 }
 
 fun <T> T?.orElseThrowNotFound(message: String): T =
     this ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, message)
+
+@Serializable
+data class ApiError(
+    val status: Int,
+    val message: String?,
+    val error: String?,
+    val path: String?,
+    val requestId: String?,
+    val timestamp: String,
+)
+
+fun ApiError.toServerResponse(): Mono<ServerResponse> = ServerResponse.status(this.status).bodyValue(this)
+
+@OptIn(ExperimentalTime::class)
+fun ServerRequest.toApiError(status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR, message: String = ""): ApiError =
+    ApiError(
+        timestamp = Date().toString(),
+        status = status.value(),
+        error = status.reasonPhrase,
+        message = message,
+        path = this.path(),
+        requestId = this.exchange().request.id,
+    )
