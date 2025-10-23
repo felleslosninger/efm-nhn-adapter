@@ -32,6 +32,7 @@ import org.springframework.web.reactive.function.server.HandlerFilterFunction
 import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.coRouter
 import org.springframework.web.server.ResponseStatusException
 import reactor.core.publisher.Mono
@@ -112,6 +113,12 @@ class BeanRegistration() :
                         dphOut(bean(), bean())
                         statusCheck(bean())
                         incomingReciept(bean())
+                        POST("/{*path}") {
+                            logger.info("I was here")
+                            logger.info { "${it.path()} ${it.uri()} ${it.remoteAddress()} ${it.method()}" }
+
+                            ServerResponse.ok().bodyValueAndAwait("Helloooooo")
+                        }
                     }
                 }
                 .filter(nhnErrorFilter())

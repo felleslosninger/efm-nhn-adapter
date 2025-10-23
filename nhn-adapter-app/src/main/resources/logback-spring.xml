@@ -27,11 +27,11 @@
         <logger name="no.difi" level="DEBUG" additivity="false">
             <appender-ref ref="APPLICATION"/>
         </logger>
-        <logger name="logging.level.org.springframework.http.codec" level="DEBUG">
+        <logger name="logging.level.org.springframework" level="DEBUG">
             <appender-ref ref="APPLICATION"/>
         </logger>
 
-        <root level="INFO">
+        <root level="DEBUG">
             <appender-ref ref="APPLICATION"/>
             <appender-ref ref="CONSOLE"/>
         </root>
