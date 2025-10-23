@@ -3,11 +3,8 @@ spring:
     base-path: /nhn-adapter
 server:
   port: 8080
-  app:
-    context-path: /nhn-adapter
   error:
     include-message: always
-  address: 0.0.0.0
 management:
   server:
     port: 8090
@@ -40,10 +37,6 @@ nhn:
     msh:
       url: "https://api.tjener.test.melding.nhn.no"
       source-system: "digidir"
-
-
-
-    
 oauth2:
   helse-id:
     client-id: ${NHN_CLIENT_ID}
@@ -52,8 +45,8 @@ oauth2:
     audience: "https://helseid-sts.test.nhn.no"
 logging:
   level:
-    org.springframework.http.codec.json: DEBUG
-    org.springframework.core.codec: DEBUG
+    org.springframework.http.codec.json: INFO
+    org.springframework.core.codec: INFO
 
 
 
