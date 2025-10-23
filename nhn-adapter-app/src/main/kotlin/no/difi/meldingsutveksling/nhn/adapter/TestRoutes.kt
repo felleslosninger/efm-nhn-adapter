@@ -214,5 +214,6 @@ fun CoRouterFunctionDsl.testAr(arClient: AdresseregisteretClient) =
     POST("/ar/test") {
         val reciever = arClient.lookupHerId(8143548)
         println(reciever?.name)
+        println(reciever?.name)
         ServerResponse.ok().buildAndAwait()
     }
