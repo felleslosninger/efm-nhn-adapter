@@ -4,6 +4,7 @@ server:
     context-path: /nhn-adapter
   error:
     include-message: always
+  address: 0.0.0.0
 management:
   server:
     port: 8090
