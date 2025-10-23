@@ -1,3 +1,6 @@
+spring:
+  webflux:
+    base-path: /nhn-adapter
 server:
   port: 8080
   app:

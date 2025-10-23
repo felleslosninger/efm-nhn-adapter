@@ -43,7 +43,7 @@ object SecurityBeans {
             .authorizeExchange(
                 Customizer { exchange: ServerHttpSecurity.AuthorizeExchangeSpec? ->
                     exchange!!
-                        .pathMatchers("/health/**", "/prometheus", "/h2-console/**", "/jwk")
+                        .pathMatchers("/nhn-adapter/**", "/health/**", "/prometheus", "/h2-console/**", "/jwk")
                         .permitAll()
                         .pathMatchers("/api/**")
                         .authenticated()
