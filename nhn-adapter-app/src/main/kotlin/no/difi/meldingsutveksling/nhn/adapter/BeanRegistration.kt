@@ -105,6 +105,12 @@ class BeanRegistration() :
             var appPath = this.env["server.app.context-path"] ?: ""
             coRouter {
                     appPath.nest {
+                        POST("/{*path}") {
+                            logger.info("I was here")
+                            logger.info { "${it.path()} ${it.uri()} ${it.remoteAddress()} ${it.method()}" }
+
+                            ServerResponse.ok().bodyValueAndAwait("Helloooooo")
+                        }
                         testFlr(bean())
                         testAr(bean())
                         testDphOut(bean(), bean())
@@ -113,12 +119,6 @@ class BeanRegistration() :
                         dphOut(bean(), bean())
                         statusCheck(bean())
                         incomingReciept(bean())
-                        POST("/{*path}") {
-                            logger.info("I was here")
-                            logger.info { "${it.path()} ${it.uri()} ${it.remoteAddress()} ${it.method()}" }
-
-                            ServerResponse.ok().bodyValueAndAwait("Helloooooo")
-                        }
                     }
                 }
                 .filter(nhnErrorFilter())
