@@ -63,6 +63,8 @@ object ArHandlers {
             val communicationParty =
                 arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
             val comunicationPartyName = communicationParty.name
+            // @TODO fix orElseThrowNotFound either you use HerIdNotFound or ResponseStatusException
+            // but not both
             val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
             val orgNumber = communicationParty.parent!!.organizationNumber
             val comunicationPartyParentName = communicationParty.parent?.name ?: "empty"

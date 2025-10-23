@@ -101,15 +101,18 @@ class BeanRegistration() :
         this.register(integrations())
 
         registerBean<RouterFunction<*>> {
+            var appPath = this.env["server.app.context-path"] ?: ""
             coRouter {
-                    testFlr(bean())
-                    testAr(bean())
-                    testDphOut(bean(), bean())
-                    testRespondApprecFralegekontor(bean())
-                    arLookup(bean(), bean())
-                    dphOut(bean(), bean())
-                    statusCheck(bean())
-                    incomingReciept(bean())
+                    appPath.nest {
+                        testFlr(bean())
+                        testAr(bean())
+                        testDphOut(bean(), bean())
+                        testRespondApprecFralegekontor(bean())
+                        arLookup(bean(), bean())
+                        dphOut(bean(), bean())
+                        statusCheck(bean())
+                        incomingReciept(bean())
+                    }
                 }
                 .filter(nhnErrorFilter())
         }
