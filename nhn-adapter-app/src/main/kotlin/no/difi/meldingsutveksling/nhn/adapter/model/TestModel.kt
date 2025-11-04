@@ -72,7 +72,13 @@ fun OutgoingApplicationReceiptError.toSerializable() =
     SerializeableOutgoingApplicationReceiptError(this.type, this.details)
 
 fun IncomingApplicationReceiptError.toSerializable(): SerializableIncomingApplicationReceiptError =
-    SerializableIncomingApplicationReceiptError(type = this.type, details = this.details)
+    SerializableIncomingApplicationReceiptError(
+        type = this.type,
+        details = this.details,
+        errorCode = this.errorCode,
+        description = this.description,
+        oid = this.oid,
+    )
 
 fun SerializableIncomingApplicationReceiptError.toOriginal(): IncomingApplicationReceiptError =
     IncomingApplicationReceiptError(

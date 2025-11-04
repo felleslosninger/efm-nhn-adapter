@@ -19,8 +19,7 @@ object ArHandlers {
         flrClient: DecoratingFlrClient,
         arClient: AdresseregisteretClient,
     ): ServerResponse {
-        logger.debug("I was here")
-        println("I was 100% here")
+        logger.info("Entering AR lookup handler")
         val identifier = request.pathVariable("identifier")
         PersonIdentifierValidator.setSyntheticPersonIdentifiersAllowed(true)
 

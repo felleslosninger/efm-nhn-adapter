@@ -19,6 +19,7 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.msh.HttpException
 import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.springframework.beans.factory.BeanRegistrarDsl
@@ -133,6 +134,9 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
                     "Not able to process, try later. ErrorCode: ${it.errorCode}",
                 )
             is ResponseStatusException -> throw it
+            is HttpException -> {
+                request.toApiError(HttpStatus.valueOf(it.status), it.message!!)
+            }
             else -> {
                 logger.error("Unexpected error: ${it.message}", it)
                 request.toApiError(

@@ -14,6 +14,13 @@ import org.springframework.web.reactive.function.server.coRouter
 
 val logger = KotlinLogging.logger {}
 
+object Routes {
+    const val STATUS_CHECK = "/dph/status/{messageId}"
+    const val AR_LOOKUP = "/arlookup/{identifier}"
+    const val INCOMING_RECEIPT = "/dph/in/{messageId}/receipt"
+    const val DPH_OUT = "/dph/out"
+}
+
 fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
     testFlr(bean())
     testAr(bean())
@@ -26,16 +33,16 @@ fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
 }
 
 fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
-    GET("/dph/status/{messageId}") { OutHandler.statusHandler(it, mshClient) }
+    GET(Routes.STATUS_CHECK) { OutHandler.statusHandler(it, mshClient) }
 
 fun CoRouterFunctionDsl.arLookup(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
-    GET("/arlookup/{identifier}") { ArHandlers.arLookup(it, flrClient, arClient) }
+    GET(Routes.AR_LOOKUP) { ArHandlers.arLookup(it, flrClient, arClient) }
 
 @OptIn(ExperimentalUuidApi::class)
 fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =
-    GET("/dph/in/{messageId}/receipt") {
+    GET(Routes.INCOMING_RECEIPT) {
         return@GET InHandler.incomingApprec(it, mshClient)
     }
 
 fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretClient) =
-    POST("/dph/out") { OutHandler.dphOut(it, arClient, mshClient) }
+    POST(Routes.DPH_OUT) { OutHandler.dphOut(it, arClient, mshClient) }

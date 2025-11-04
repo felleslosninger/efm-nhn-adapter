@@ -28,25 +28,22 @@ fun BeanRegistrarDsl.testCoRouter(block: CoRouterFunctionDsl.(BeanRegistrarDsl.S
     }
 }
 
+val jsonNhn = Json {
+    ignoreUnknownKeys = true
+    classDiscriminator = "type"
+    serializersModule = SerializersModule {
+        contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
+        contextual(FeilmeldingForApplikasjonskvittering::class, FeilmeldingForApplikasjonskvitteringSerializer)
+        contextual(Id::class, IdSerializer)
+    }
+}
+
 fun BeanRegistrarDsl.kotlinXPriority() =
     registerBean<HandlerStrategies>() {
         HandlerStrategies.builder()
             .codecs { codecs ->
-                val json = Json {
-                    ignoreUnknownKeys = true
-                    classDiscriminator = "type"
-                    serializersModule = SerializersModule {
-                        contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
-                        contextual(
-                            FeilmeldingForApplikasjonskvittering::class,
-                            FeilmeldingForApplikasjonskvitteringSerializer,
-                        )
-                        contextual(Id::class, IdSerializer)
-                    }
-                }
-
-                codecs.customCodecs().register(KotlinSerializationJsonEncoder(json))
-                codecs.customCodecs().register(KotlinSerializationJsonDecoder(json))
+                codecs.customCodecs().register(KotlinSerializationJsonEncoder(jsonNhn))
+                codecs.customCodecs().register(KotlinSerializationJsonDecoder(jsonNhn))
             }
             .build()
     }
@@ -55,20 +52,8 @@ fun webTestClient(webhandler: WebHandler, init: WebTestClient.Builder.() -> WebT
     WebTestClient.bindToWebHandler(webhandler)
         .configureClient()
         .codecs { cfg ->
-            val json = Json {
-                ignoreUnknownKeys = true
-                classDiscriminator = "type"
-                serializersModule = SerializersModule {
-                    contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
-                    contextual(
-                        FeilmeldingForApplikasjonskvittering::class,
-                        FeilmeldingForApplikasjonskvitteringSerializer,
-                    )
-                    contextual(Id::class, IdSerializer)
-                }
-            }
-            cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
-            cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
+            cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(jsonNhn))
+            cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(jsonNhn))
         }
         .init()
         .build()

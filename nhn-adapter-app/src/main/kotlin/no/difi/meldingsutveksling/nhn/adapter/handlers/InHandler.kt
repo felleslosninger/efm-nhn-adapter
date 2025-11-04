@@ -1,6 +1,10 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import java.lang.IllegalArgumentException
 import java.util.UUID
+import kotlinx.serialization.builtins.ListSerializer
+import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
+import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
 import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
@@ -13,13 +17,12 @@ import org.springframework.web.reactive.function.server.queryParamOrNull
 
 object InHandler {
     suspend fun incomingApprec(request: ServerRequest, mshClient: Client): ServerResponse {
-        val messageId: UUID =
-            request
-                .pathVariable("messageId")
-                .runCatching { UUID.fromString(this) }
-                .getOrElse {
-                    return ServerResponse.badRequest().bodyValueAndAwait("Message id is wrong format")
-                }
+        val messageId =
+            try {
+                UUID.fromString(request.pathVariable("messageId"))
+            } catch (e: IllegalArgumentException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
         // @TODO to use onBehalfOf as request parameter exposes details of next
         // authentication/authorization step
         // potentialy put the onBehalfOf orgnummeret enten som Body eller som ekstra claim i maskin
@@ -28,9 +31,16 @@ object InHandler {
         val requestParameters =
             onBehalfOf?.let { onBehalfOf ->
                 RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
-            }
+            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
+
         val incomingApplicationReceipt = mshClient.getApplicationReceiptsForMessage(messageId, requestParameters)
 
-        return ServerResponse.ok().bodyValueAndAwait(incomingApplicationReceipt.map { it.toSerializable() })
+        val payload =
+            jsonParser.encodeToString(
+                ListSerializer(SerializableApplicationReceiptInfo.serializer()),
+                incomingApplicationReceipt.map { it.toSerializable() },
+            )
+
+        return ServerResponse.ok().bodyValueAndAwait(payload)
     }
 }

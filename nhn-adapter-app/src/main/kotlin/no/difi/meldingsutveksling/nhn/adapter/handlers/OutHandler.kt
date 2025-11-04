@@ -13,7 +13,6 @@ import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
-import no.ks.fiks.nhn.edi.BusinessDocumentSerializer.serializeNhnMessage
 import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
@@ -141,7 +140,16 @@ object OutHandler {
                 DialogmeldingVersion.V1_1,
             )
 
-        logger.debug { serializeNhnMessage(outGoingDocument) }
+        logger.info {
+            outGoingDocument.copy(
+                vedlegg =
+                    outGoingDocument.vedlegg.copy(
+                        data = this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!
+                    )
+            )
+        }
+        // outGoingDocument.copy(vedlegg = outGoingDocument.vedlegg.copy(data =
+        // this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!))
         val messageReference =
             mshClient.sendMessage(
                 outGoingDocument,
@@ -153,7 +161,7 @@ object OutHandler {
         logger.info("EDI 2.0 message referance: $messageReference")
         logger.info("dialogmeldin messageId:${outGoingDocument.id}")
 
-        logger.debug { "MessageOut recieved with messageReferance = $messageReference" }
+        logger.info { "MessageOut recieved with messageReferance = $messageReference" }
         return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
 }

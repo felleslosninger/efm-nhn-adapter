@@ -14,19 +14,20 @@ import org.springframework.http.codec.CodecConfigurer
 import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
 import org.springframework.http.codec.json.KotlinSerializationJsonEncoder
 
+val jsonParser = Json {
+    ignoreUnknownKeys = true
+    classDiscriminator = "type"
+    serializersModule = SerializersModule {
+        contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
+        contextual(FeilmeldingForApplikasjonskvittering::class, FeilmeldingForApplikasjonskvitteringSerializer)
+        contextual(Id::class, IdSerializer)
+    }
+}
+
 @Configuration
 class KotlinXFirst : CodecCustomizer {
     override fun customize(cfg: CodecConfigurer) {
-        val json = Json {
-            ignoreUnknownKeys = true
-            classDiscriminator = "type"
-            serializersModule = SerializersModule {
-                contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
-                contextual(FeilmeldingForApplikasjonskvittering::class, FeilmeldingForApplikasjonskvitteringSerializer)
-                contextual(Id::class, IdSerializer)
-            }
-        }
-        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonDecoder(json))
-        cfg.customCodecs().registerWithDefaultConfig(KotlinSerializationJsonEncoder(json))
+        cfg.customCodecs().register(KotlinSerializationJsonDecoder(jsonParser))
+        cfg.customCodecs().register(KotlinSerializationJsonEncoder(jsonParser))
     }
 }
