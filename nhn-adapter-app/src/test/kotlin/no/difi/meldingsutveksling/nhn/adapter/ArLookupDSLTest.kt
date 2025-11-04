@@ -26,7 +26,7 @@ class ArLookupDSLTest() :
     ShouldSpec({
         context("Test AR lookup") {
             val arLookupContext = BeanRegistrarDsl {
-                registerBean<FastlegeregisteretClient>(::mockk)
+                registerBean<FastlegeregisteretClient> { mockk() }
                 registerBean<DecoratingFlrClient>() { DecoratingFlrClient(bean(), listOf()) }
                 registerBean<AdresseregisteretClient> { mockk() }
                 testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean()) }
@@ -66,6 +66,7 @@ class ArLookupDSLTest() :
                 result.status.is2xxSuccessful.shouldBeTrue()
 
                 val arDetails = result.responseBody.blockFirst()
+                arDetails.shouldNotBeNull()
                 arDetails.herid2 shouldBeEqual HERID2
                 arDetails.herid1 shouldBeEqual HERID1
                 arDetails.orgNumber shouldBeEqual ORGNUM
@@ -100,6 +101,7 @@ class ArLookupDSLTest() :
                 verify(exactly = 1) { arClient.lookupHerId(HERID2) }
 
                 val arDetails = result.responseBody.blockFirst()
+                arDetails.shouldNotBeNull()
                 arDetails.herid2 shouldBeEqual HERID2
                 arDetails.herid1 shouldBeEqual HERID1
                 arDetails.orgNumber shouldBeEqual ORGNUM

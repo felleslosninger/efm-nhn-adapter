@@ -124,7 +124,7 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
             is HerIdNotFound -> {
                 when (basePath) {
                     "/arlookup" -> request.toApiError(HttpStatus.NOT_FOUND, "HerId is not found")
-                    else -> request.toApiError(HttpStatus.BAD_GATEWAY)
+                    else -> request.toApiError(HttpStatus.BAD_REQUEST)
                 }
             }
             is AdresseregisteretApiException ->

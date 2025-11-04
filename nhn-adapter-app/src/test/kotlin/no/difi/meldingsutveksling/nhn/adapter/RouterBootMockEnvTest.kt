@@ -17,7 +17,7 @@ import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.PatientGP
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webflux.test.autoconfigure.AutoConfigureWebTestClient
+import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.reactive.server.WebTestClient
@@ -62,6 +62,7 @@ class RouterBootMockEnvTest(
             result.status.is2xxSuccessful.shouldBeTrue()
 
             val arDetails = result.responseBody.blockFirst()
+            arDetails.shouldNotBeNull()
             arDetails.herid2 shouldBeEqual HERID2
             arDetails.herid1 shouldBeEqual HERID1
             arDetails.orgNumber shouldBeEqual ORGNUM

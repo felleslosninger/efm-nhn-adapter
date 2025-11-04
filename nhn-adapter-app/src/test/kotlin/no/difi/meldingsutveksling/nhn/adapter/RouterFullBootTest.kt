@@ -81,6 +81,7 @@ class SecurityTest2(
             result.status.is2xxSuccessful.shouldBeTrue()
 
             val arDetails = result.responseBody.blockFirst()
+            arDetails.shouldNotBeNull()
             arDetails.herid2 shouldBeEqual HERID2
             arDetails.herid1 shouldBeEqual HERID1
             arDetails.orgNumber shouldBeEqual ORGNUM
