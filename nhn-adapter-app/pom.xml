@@ -208,6 +208,14 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <!--configuration>
+                    <requiresUnpack>
+                        <dependency>
+                            <groupId>no.ks.fiks</groupId>
+                            <artifactId>msh-client</artifactId>
+                        </dependency>
+                    </requiresUnpack>
+                </configuration-->
                 <executions>
                     <execution>
                         <goals>
