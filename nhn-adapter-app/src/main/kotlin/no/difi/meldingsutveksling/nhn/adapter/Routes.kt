@@ -15,10 +15,10 @@ import org.springframework.web.reactive.function.server.coRouter
 val logger = KotlinLogging.logger {}
 
 object Routes {
-    const val STATUS_CHECK = "/dph/status/{messageId}"
-    const val AR_LOOKUP = "/arlookup/{identifier}"
-    const val INCOMING_RECEIPT = "/dph/in/{messageId}/receipt"
-    const val DPH_OUT = "/dph/out"
+    const val STATUS_CHECK = "/nhn-adapter/dph/status/{messageId}"
+    const val AR_LOOKUP = "/nhn-adapter/arlookup/{identifier}"
+    const val INCOMING_RECEIPT = "/nhn-adapter/dph/in/{messageId}/receipt"
+    const val DPH_OUT = "/nhn-adapter/dph/out"
 }
 
 fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
