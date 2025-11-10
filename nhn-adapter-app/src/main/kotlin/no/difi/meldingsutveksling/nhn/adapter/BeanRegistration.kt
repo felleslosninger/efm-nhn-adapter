@@ -105,7 +105,7 @@ class BeanRegistration() :
         this.register(security())
         this.register(integrations())
 
-        profile(expression = "local || dev || unit-test || test ") {
+        profile(expression = "local || dev || unit-test || test") {
             registerBean<RouterFunction<*>> {
                 coRouter {
                     testFlr(bean())
