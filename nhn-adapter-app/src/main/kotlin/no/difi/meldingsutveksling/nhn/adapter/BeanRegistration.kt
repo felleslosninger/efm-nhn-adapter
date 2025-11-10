@@ -73,14 +73,18 @@ private fun security() = BeanRegistrarDsl {
         SecurityBeans.userDetailsService(bean()) as MapReactiveUserDetailsService
     }
     registerBean { SecurityBeans.userDetailsRepositoryReactiveAuthenticationManager(bean<PasswordEncoder>(), bean()) }
-    registerBean { SecurityBeans.securityFilterChain(bean()) }
+    profile(expression = "local || dev || unit-test") {
+        registerBean { SecurityBeans.securityFilterChain(bean(), includeBasicSecurity = true) }
+    }
+    profile(expression = "prod || test") { registerBean { SecurityBeans.securityFilterChain(bean()) } }
+
     registerBean<Configuration> {
-        // @TODO it may be time to remove this one. It was used for testy
+        // @TODO it may be time to remove this one. It was used for test
         SecurityBeans.helseIdConfigurationForTest(bean<HelseId>())
     }
     registerBean { SecurityBeans.helseIdConfiguration(bean<HelseId>()) }
     registerBean {
-        // @TODO it may be time to remove this one. It was used for testy
+        // @TODO it may be time to remove this one. It was used for test
         SecurityBeans.helseIdClient(bean(), bean(), bean())
     }
 }
@@ -89,7 +93,7 @@ private fun integrations() = BeanRegistrarDsl {
     registerBean { IntegrationBeans.arClient(this.bean<NhnConfig>(ARCONFIG)) }
     registerBean<HttpClient> { HttpClients.createDefault() }
     registerBean { IntegrationBeans.mshClient(bean(), this.env[SERVICES_MSH_URL]!!) }
-    profile("local || dev || unit-test") {
+    profile(expression = "local || dev || unit-test || test ") {
         registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(FLRCONFIG)) }
         registerBean { IntegrationBeans.flrClientDecorator(bean(), this.env) }
     }
@@ -100,6 +104,17 @@ class BeanRegistration() :
         this.register(properties())
         this.register(security())
         this.register(integrations())
+
+        profile(expression = "local || dev || unit-test || test ") {
+            registerBean<RouterFunction<*>> {
+                coRouter {
+                    testFlr(bean())
+                    testAr(bean())
+                    testDphOut(bean(), bean())
+                    testRespondApprecFralegekontor(bean())
+                }
+            }
+        }
 
         registerBean<RouterFunction<*>> {
             coRouter {

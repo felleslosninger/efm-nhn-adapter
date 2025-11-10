@@ -1,6 +1,5 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
-import java.lang.Thread.sleep
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
@@ -73,7 +72,6 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
                     receipt.toOriginal(),
                     RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf))),
                 )
-            sleep(5000)
 
             val inReceipt =
                 mshClient.getApplicationReceipt(

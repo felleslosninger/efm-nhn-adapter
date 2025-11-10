@@ -34,7 +34,7 @@ object SecurityBeans {
             setPasswordEncoder(passwordEncoder)
         }
 
-    fun securityFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
+    fun securityFilterChain(http: ServerHttpSecurity, includeBasicSecurity: Boolean = false): SecurityWebFilterChain {
         val jwtIssuerReactiveAuthenticationManagerResolver: JwtIssuerReactiveAuthenticationManagerResolver? =
             JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers("https://test.maskinporten.no/")
 
@@ -43,19 +43,22 @@ object SecurityBeans {
             .authorizeExchange(
                 Customizer { exchange: ServerHttpSecurity.AuthorizeExchangeSpec? ->
                     exchange!!
-                        .pathMatchers("/nhn-adapter/**", "/health/**", "/prometheus", "/h2-console/**", "/jwk")
+                        .pathMatchers("/health/**", "/prometheus")
                         .permitAll()
-                        .pathMatchers("/api/**")
+                        .pathMatchers("/nhn-adapter/**")
                         .authenticated()
                         .anyExchange()
                         .authenticated()
                 }
             )
             .headers { headers: ServerHttpSecurity.HeaderSpec -> headers.frameOptions(Customizer.withDefaults()) }
-            .httpBasic(Customizer.withDefaults())
             .oauth2ResourceServer { oauth2: ServerHttpSecurity.OAuth2ResourceServerSpec ->
                 oauth2.authenticationManagerResolver(jwtIssuerReactiveAuthenticationManagerResolver)
             }
+
+        if (includeBasicSecurity) {
+            http.httpBasic(Customizer.withDefaults())
+        }
 
         return http.build()
     }

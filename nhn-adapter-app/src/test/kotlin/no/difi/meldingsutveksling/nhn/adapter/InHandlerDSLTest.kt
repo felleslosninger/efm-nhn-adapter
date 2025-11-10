@@ -160,6 +160,7 @@ class InHandlerDSLTest :
                     .responseBody
                     .run {
                         this.shouldNotBeNull()
+                        println(this.toString(Charsets.UTF_8))
                         val response =
                             jsonNhn.decodeFromString(
                                 ListSerializer(SerializableApplicationReceiptInfo.serializer()),
