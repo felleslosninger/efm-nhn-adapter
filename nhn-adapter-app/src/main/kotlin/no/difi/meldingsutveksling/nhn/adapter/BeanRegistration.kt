@@ -118,10 +118,6 @@ class BeanRegistration() :
 
         registerBean<RouterFunction<*>> {
             coRouter {
-                    testFlr(bean())
-                    testAr(bean())
-                    testDphOut(bean(), bean())
-                    testRespondApprecFralegekontor(bean())
                     arLookup(bean(), bean())
                     dphOut(bean(), bean())
                     statusCheck(bean())
