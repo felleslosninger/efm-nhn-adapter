@@ -307,9 +307,9 @@
                             <goal>test-compile</goal>
                         </goals>
                         <configuration>
-                            <!--sourceDirs>
+                            <sourceDirs>
                                 <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>
-                            </sourceDirs-->
+                            </sourceDirs>
                         </configuration>
                     </execution>
                 </executions>

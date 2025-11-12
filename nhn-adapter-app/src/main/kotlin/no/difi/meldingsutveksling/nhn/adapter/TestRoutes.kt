@@ -3,10 +3,8 @@ package no.difi.meldingsutveksling.nhn.adapter
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.toJavaUuid
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableOutgoingApplicationReceipt
 import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
-import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
@@ -35,6 +33,7 @@ import no.ks.fiks.nhn.msh.Patient
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
 import no.ks.fiks.nhn.msh.RequestParameters
+import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.awaitBody
@@ -53,10 +52,9 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
         try {
             val receipt = request.awaitBody<SerializableOutgoingApplicationReceipt>()
 
-            val receiverHerId =
-                receipt.recieverHerId
-                    ?: return@POST ServerResponse.badRequest()
-                        .bodyValueAndAwait(mapOf("error" to "recieverHerId is not defined"))
+            receipt.recieverHerId
+                ?: return@POST ServerResponse.badRequest()
+                    .bodyValueAndAwait(mapOf("error" to "recieverHerId is not defined"))
             val acknowledgedId = UUID.fromString(receipt.acknowledgedId.toString())
 
             // mark the message as it has bean read. I am not sure it is nessesary but it makes it
@@ -73,19 +71,9 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
                     RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf))),
                 )
 
-            val inReceipt =
-                mshClient.getApplicationReceipt(
-                    apprecUUID,
-                    RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("931796003"))),
-                )
-            var inrecpiept2 =
-                mshClient.getApplicationReceiptsForMessage(
-                    receipt.acknowledgedId.toJavaUuid(),
-                    RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("931796003"))),
-                )
-
             return@POST ServerResponse.ok()
-                .bodyValueAndAwait(mapOf("incoming-apprec" to inrecpiept2.map { it.toSerializable() }))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValueAndAwait("Apprec is send med message reference:$apprecUUID")
         } catch (e: Exception) {
             e.printStackTrace()
             logger.error(e) { "Unable to send application receipt" }

@@ -10,6 +10,7 @@ import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.RequestParameters
+import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
@@ -41,6 +42,6 @@ object InHandler {
                 incomingApplicationReceipt.map { it.toSerializable() },
             )
 
-        return ServerResponse.ok().bodyValueAndAwait(payload)
+        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(payload)
     }
 }
