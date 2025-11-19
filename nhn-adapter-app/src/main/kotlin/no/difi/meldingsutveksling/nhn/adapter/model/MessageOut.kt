@@ -10,19 +10,25 @@ data class MessageOut(
     val sender: Sender,
     val receiver: Receiver,
     val fagmelding: String,
-    val patient: Patient,
 )
 
 @Serializable
-data class Fagmelding(val subject: String, val body: String, val healthcareProfessional: HealthcareProfessional)
+data class Fagmelding(
+    val notat: Notat,
+    val patient: Patient,
+    val responsibleHealthcareProfessionalId: String,
+    val vedleggBeskrivelse: String,
+)
+
+@Serializable data class Notat(val subject: String, val notatinnhold: String)
 
 @Serializable
 data class Person(
     val fnr: String,
     val firstName: String,
-    val middleName: String?,
+    val middleName: String? = null,
     val lastName: String,
-    val phoneNumber: String?,
+    val phoneNumber: String? = null,
 )
 
 typealias HealthcareProfessional = Person

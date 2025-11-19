@@ -4,8 +4,8 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.serialization.json.Json
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
-import no.difi.meldingsutveksling.nhn.adapter.model.HealthcareProfessional
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
+import no.difi.meldingsutveksling.nhn.adapter.model.Notat
 import no.difi.meldingsutveksling.nhn.adapter.model.Patient
 import no.difi.meldingsutveksling.nhn.adapter.model.Receiver
 import no.difi.meldingsutveksling.nhn.adapter.model.Sender
@@ -45,6 +45,7 @@ val HER_ID2_RECEIVER: String = RECEIVER_HERID.second
 val PATIENT_FNR: String = "234123412"
 val ON_BEHALF_OF_ORGNUM = "87362478364"
 val FASTLEGE_FNR = "87893274"
+val FASTLEGE_HER_ID = "234234432434"
 
 @DomeneDSL
 class TestMessageOut() {
@@ -53,16 +54,13 @@ class TestMessageOut() {
     var onBehalfOfOrgNum: String = ON_BEHALF_OF_ORGNUM
     var sender: Sender = TestSender().build()
     var receiver: Receiver = TestReceiver().build()
+    var patient: Patient = Patient(PATIENT_FNR, "Petter", "", "Petterson", "732864827364")
+
     var fagmelding: String =
         Json {}
             .encodeToString(
-                Fagmelding(
-                    "dummy title",
-                    "dummy body",
-                    HealthcareProfessional(FASTLEGE_FNR, "Jonas", "", "Jonasson", "876786"),
-                )
+                Fagmelding(Notat("dummy title", "dummy body"), patient, receiver.herid2, "dummy vedleggbeskrivelse")
             )
-    var patient: Patient = Patient(PATIENT_FNR, "Petter", "", "Petterson", "732864827364")
 
     @DomeneDSL
     fun reciever(block: TestReceiver.() -> Unit) {
@@ -82,7 +80,6 @@ class TestMessageOut() {
         this.sender = template.sender
         this.receiver = template.receiver
         this.fagmelding = template.fagmelding
-        this.patient = template.patient
         return this
     }
 
@@ -94,7 +91,6 @@ class TestMessageOut() {
             this.sender,
             this.receiver,
             this.fagmelding,
-            this.patient,
         )
 }
 

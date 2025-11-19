@@ -14,7 +14,9 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
 import kotlinx.coroutines.reactive.awaitFirst
+import kotlinx.serialization.json.Json
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
+import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
@@ -124,6 +126,13 @@ class DphOutDSLTest :
                     messageOutTemplate.modify {
                         sender { herid2 = HER_ID_ORG }
                         reciever { herid2 = HER_ID_PERSON }
+                        fagmelding =
+                            Json {}
+                                .encodeToString(
+                                    (Json {}.decodeFromString(this.fagmelding) as Fagmelding).copy(
+                                        responsibleHealthcareProfessionalId = HER_ID_PERSON
+                                    )
+                                )
                     }
 
                 val mockMessageOutWithoutFNR = mockMessageOutWithFNR.modify { reciever { patientFnr = null } }
@@ -182,6 +191,13 @@ class DphOutDSLTest :
                     messageOutTemplate.modify {
                         reciever { herid2 = HER_ID_PERSON }
                         sender { herid2 = HER_ID_ORG }
+                        fagmelding =
+                            Json {}
+                                .encodeToString(
+                                    (Json {}.decodeFromString(this.fagmelding) as Fagmelding).copy(
+                                        responsibleHealthcareProfessionalId = HER_ID_PERSON
+                                    )
+                                )
                     }
 
                 val mockMessageOutWithoutFNR = mockMessageOut.modify { reciever { patientFnr = null } }

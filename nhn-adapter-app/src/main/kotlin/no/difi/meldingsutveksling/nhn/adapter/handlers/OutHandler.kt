@@ -11,6 +11,7 @@ import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
+import no.ks.fiks.nhn.ar.AddressComponent
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.msh.ChildOrganization
@@ -64,10 +65,12 @@ object OutHandler {
         val arDetailsReciever = ArHandlers.arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient)
 
         // The fagmelding needs to be decyrpted
-        val fagmelding = Json {}.decodeFromString(Fagmelding.serializer(), messageOut.fagmelding)
+        val fagmelding =
+            Json { ignoreUnknownKeys = true }.decodeFromString(Fagmelding.serializer(), messageOut.fagmelding)
 
         // @TODO Dette er her er ikke helt presis. Vi kan leve med det for øyebliket men
         // vi skall endre det å ta hensyn til det som kommer fra AR og ikke bruke fnr-en å besteme
+
         val receiver =
             if (messageOut.receiver.patientFnr != null) {
                 arClient
@@ -88,6 +91,17 @@ object OutHandler {
                 )
             }
 
+        val patient =
+            Patient(
+                fagmelding.patient.fnr,
+                fagmelding.patient.firstName,
+                fagmelding.patient.middleName,
+                fagmelding.patient.lastName,
+            )
+
+        val healthcareProfessional: PersonCommunicationParty =
+            arClient.lookupHerId(fagmelding.responsibleHealthcareProfessionalId.toInt()) as PersonCommunicationParty
+
         val outGoingDocument =
             OutgoingBusinessDocument(
                 UUID.randomUUID(),
@@ -106,24 +120,19 @@ object OutHandler {
                             ids = listOf(OrganizationId(messageOut.receiver.herid1, OrganizationIdType.HER_ID)),
                         ),
                         receiver,
-                        // @TODO hvis reciever er nhn tjeneste hvordan setter vi pasient?
-                        Patient(
-                            messageOut.patient.fnr,
-                            messageOut.patient.firstName,
-                            messageOut.patient.middleName,
-                            messageOut.patient.lastName,
-                        ),
+                        patient,
                     ),
                 message =
                     OutgoingMessage(
-                        fagmelding.subject,
-                        fagmelding.body,
-                        with(messageOut.patient) {
+                        fagmelding.notat.subject,
+                        fagmelding.notat.notatinnhold,
+                        with(healthcareProfessional) {
                             HealthcareProfessional(
                                 this.firstName,
                                 this.middleName,
                                 this.lastName,
-                                "8888888",
+                                this.electronicAddresses.find { it.type == AddressComponent.TELEFONNUMMER }?.address
+                                    ?: "not found",
                                 HelsepersonellsFunksjoner.FASTLEGE,
                             )
                         },
@@ -134,7 +143,7 @@ object OutHandler {
                     ),
                 OutgoingVedlegg(
                     OffsetDateTime.now(),
-                    "<Description of the attachment>",
+                    fagmelding.vedleggBeskrivelse,
                     this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!,
                 ),
                 DialogmeldingVersion.V1_1,
