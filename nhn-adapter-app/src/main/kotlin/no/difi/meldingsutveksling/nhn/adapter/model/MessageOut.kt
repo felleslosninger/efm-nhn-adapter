@@ -9,8 +9,10 @@ data class MessageOut(
     val onBehalfOfOrgNum: String,
     val sender: Sender,
     val receiver: Receiver,
-    val fagmelding: String,
+    val fagmelding: FagmeldingRaw,
 )
+
+typealias FagmeldingRaw = String
 
 @Serializable
 data class Fagmelding(

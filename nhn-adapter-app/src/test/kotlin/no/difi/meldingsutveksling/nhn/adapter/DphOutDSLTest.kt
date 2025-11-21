@@ -14,9 +14,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
 import kotlinx.coroutines.reactive.awaitFirst
-import kotlinx.serialization.json.Json
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
-import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
@@ -70,7 +68,7 @@ class DphOutDSLTest :
                 val messageOut =
                     messageOutTemplate.modify {
                         sender { herid2 = HERID_SOM_FINNES_IKKE }
-                        reciever { herid2 = HERID_SOM_FINNES_IKKE }
+                        receiver { herid2 = HERID_SOM_FINNES_IKKE }
                     }
 
                 webTestClient
@@ -97,7 +95,6 @@ class DphOutDSLTest :
             }
 
             should("Send til fastlege da FNR er lagt til receiver") {
-                val PARENT_HER_ID = "1212"
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
                 val slot = slot<Int>()
@@ -125,17 +122,11 @@ class DphOutDSLTest :
                 val mockMessageOutWithFNR =
                     messageOutTemplate.modify {
                         sender { herid2 = HER_ID_ORG }
-                        reciever { herid2 = HER_ID_PERSON }
-                        fagmelding =
-                            Json {}
-                                .encodeToString(
-                                    (Json {}.decodeFromString(this.fagmelding) as Fagmelding).copy(
-                                        responsibleHealthcareProfessionalId = HER_ID_PERSON
-                                    )
-                                )
+                        receiver { herid2 = HER_ID_PERSON }
+                        fagmelding { responsibleHealthcareProfessionalId = HER_ID_PERSON }
                     }
 
-                val mockMessageOutWithoutFNR = mockMessageOutWithFNR.modify { reciever { patientFnr = null } }
+                val mockMessageOutWithoutFNR = mockMessageOutWithFNR.modify { receiver { patientFnr = null } }
 
                 webTestClient
                     .post()
@@ -161,7 +152,6 @@ class DphOutDSLTest :
             }
 
             should("Return EDI message referanse when valid document is sendt") {
-                val PARENT_HER_ID = "1212"
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
 
@@ -189,18 +179,12 @@ class DphOutDSLTest :
 
                 val mockMessageOut =
                     messageOutTemplate.modify {
-                        reciever { herid2 = HER_ID_PERSON }
+                        receiver { herid2 = HER_ID_PERSON }
                         sender { herid2 = HER_ID_ORG }
-                        fagmelding =
-                            Json {}
-                                .encodeToString(
-                                    (Json {}.decodeFromString(this.fagmelding) as Fagmelding).copy(
-                                        responsibleHealthcareProfessionalId = HER_ID_PERSON
-                                    )
-                                )
+                        fagmelding { responsibleHealthcareProfessionalId = HER_ID_PERSON }
                     }
 
-                val mockMessageOutWithoutFNR = mockMessageOut.modify { reciever { patientFnr = null } }
+                val mockMessageOutWithoutFNR = mockMessageOut.modify { receiver { patientFnr = null } }
 
                 var result =
                     webTestClient
@@ -234,6 +218,6 @@ class DphOutDSLTest :
 private val PARENT_HER_ID = "1212"
 
 private val messageOutTemplate = testMessageOut {
-    reciever { herid1 = PARENT_HER_ID }
+    receiver { herid1 = PARENT_HER_ID }
     sender { herid1 = PARENT_HER_ID }
 }
