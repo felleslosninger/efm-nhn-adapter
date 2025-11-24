@@ -10,6 +10,7 @@ data class MessageOut(
     val sender: Sender,
     val receiver: Receiver,
     val fagmelding: FagmeldingRaw,
+    val vedlegg: String,
 )
 
 typealias FagmeldingRaw = String

@@ -1,6 +1,11 @@
 spring:
   webflux:
     base-path: /nhn-adapter
+  codecs:
+    max-in-memory-size: 12MB
+  http:
+    codecs:
+      max-in-memory-size: 12MB
 server:
   port: 8080
   error:

@@ -144,7 +144,10 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "Not able to process, try later. ErrorCode: ${it.errorCode}",
                 )
-            is ResponseStatusException -> throw it
+            is ResponseStatusException -> {
+                logger.error("Unable to process request", it)
+                throw it
+            }
             is HttpException -> {
                 request.toApiError(HttpStatus.valueOf(it.status), it.message!!)
             }

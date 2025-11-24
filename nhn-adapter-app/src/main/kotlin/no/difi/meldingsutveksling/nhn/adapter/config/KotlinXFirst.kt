@@ -26,8 +26,15 @@ val jsonParser = Json {
 
 @Configuration
 class KotlinXFirst : CodecCustomizer {
+    companion object {
+        const val MAX_REQUEST_MEMORY_SIZE = 18 * 1024 * 1024
+    }
+
     override fun customize(cfg: CodecConfigurer) {
-        cfg.customCodecs().register(KotlinSerializationJsonDecoder(jsonParser))
+        cfg.customCodecs()
+            .register(
+                KotlinSerializationJsonDecoder(jsonParser).apply { this.maxInMemorySize = MAX_REQUEST_MEMORY_SIZE }
+            )
         cfg.customCodecs().register(KotlinSerializationJsonEncoder(jsonParser))
     }
 }

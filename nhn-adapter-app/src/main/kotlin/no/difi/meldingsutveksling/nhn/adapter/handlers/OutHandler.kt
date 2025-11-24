@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import java.io.ByteArrayInputStream
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.serialization.json.Json
@@ -32,6 +33,7 @@ import no.ks.fiks.nhn.msh.PersonReceiverDetails
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
 import no.ks.fiks.nhn.msh.RequestParameters
+import okio.ByteString.Companion.decodeBase64
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
@@ -59,6 +61,7 @@ object OutHandler {
     }
 
     suspend fun dphOut(request: ServerRequest, arClient: AdresseregisteretClient, mshClient: Client): ServerResponse {
+        logger.info("entering dph out")
         val messageOut = request.awaitBody<MessageOut>()
         val arDetailsSender = ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient)
 
@@ -144,19 +147,12 @@ object OutHandler {
                 OutgoingVedlegg(
                     OffsetDateTime.now(),
                     fagmelding.vedleggBeskrivelse,
-                    this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!,
+                    ByteArrayInputStream(messageOut.vedlegg.decodeBase64()!!.toByteArray()),
                 ),
                 DialogmeldingVersion.V1_1,
             )
 
-        logger.info {
-            outGoingDocument.copy(
-                vedlegg =
-                    outGoingDocument.vedlegg.copy(
-                        data = this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!
-                    )
-            )
-        }
+        logger.info { outGoingDocument }
         // outGoingDocument.copy(vedlegg = outGoingDocument.vedlegg.copy(data =
         // this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!))
         val messageReference =
