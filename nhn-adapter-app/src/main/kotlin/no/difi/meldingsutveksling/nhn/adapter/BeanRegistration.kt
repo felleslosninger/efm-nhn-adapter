@@ -112,6 +112,7 @@ class BeanRegistration() :
                     testAr(bean())
                     testDphOut(bean(), bean())
                     testRespondApprecFralegekontor(bean())
+                    testReadMessageFromFastlegekontoret(bean())
                 }
             }
         }

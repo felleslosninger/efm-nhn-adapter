@@ -1,8 +1,11 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import java.io.File
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+import kotlin.uuid.toJavaUuid
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableOutgoingApplicationReceipt
 import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
 import no.ks.fiks.hdir.Helsepersonell
@@ -80,6 +83,26 @@ fun CoRouterFunctionDsl.testRespondApprecFralegekontor(mshClient: Client) =
             return@POST ServerResponse.badRequest()
                 .bodyValueAndAwait(mapOf("error" to "Failed to process request: ${e.message}"))
         }
+    }
+
+@OptIn(ExperimentalUuidApi::class)
+fun CoRouterFunctionDsl.testReadMessageFromFastlegekontoret(mshClient: Client) =
+    GET("/messages/{messageId}") { request ->
+        val onBehalfOf =
+            request.queryParamOrNull("onBehalfOf")
+                ?: return@GET ServerResponse.badRequest()
+                    .bodyValueAndAwait(mapOf("error" to "Missing query parameter: onBehalfOf"))
+        val messageId = request.pathVariable("messageId")
+
+        val incomingBusinessDocument =
+            mshClient.getBusinessDocument(
+                Uuid.parse(messageId).toJavaUuid(),
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf))),
+            )
+        logger.info("Incoming business document $incomingBusinessDocument")
+        File("/Users/alexander/workspace/efm-integrasjonspunkt/testpdf${incomingBusinessDocument.id}.pdf")
+            .writeBytes(incomingBusinessDocument.vedlegg!!.data!!.readAllBytes())
+        ServerResponse.ok().bodyValueAndAwait(incomingBusinessDocument)
     }
 
 fun CoRouterFunctionDsl.testFlr(flrClient: DecoratingFlrClient) =
