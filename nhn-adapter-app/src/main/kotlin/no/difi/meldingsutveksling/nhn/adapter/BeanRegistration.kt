@@ -18,7 +18,9 @@ import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
+import no.ks.fiks.nhn.ar.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HttpException
 import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
@@ -140,14 +142,31 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
                     else -> request.toApiError(HttpStatus.BAD_REQUEST)
                 }
             }
-            is AdresseregisteretApiException ->
+            is AdresseregisteretApiException -> {
                 request.toApiError(
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "Not able to process, try later. ErrorCode: ${it.errorCode}",
                 )
-            is ResponseStatusException -> {
-                logger.error("Unable to process request", it)
-                throw it
+            }
+            is AdresseregisteretException -> {
+                logger.error(
+                    "Technical error occured against AddressRegisteret for ${request.path()}. Logging cause. ",
+                    it.cause,
+                )
+                request.toApiError(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Not able to process, try later. ErrorCode: E7778",
+                )
+            }
+            is FastlegeregisteretException -> {
+                logger.error(
+                    "Technical error occured against Fastlegeregisteret for ${request.path()}. Logging cause. ",
+                    it.cause,
+                )
+                request.toApiError(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Not able to process, try later. ErrorCode: E7779",
+                )
             }
             is HttpException -> {
                 request.toApiError(HttpStatus.valueOf(it.status), it.message!!)

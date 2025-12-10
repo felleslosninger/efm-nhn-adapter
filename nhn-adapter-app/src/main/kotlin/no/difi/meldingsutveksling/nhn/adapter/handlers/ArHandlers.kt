@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import jakarta.xml.ws.soap.SOAPFaultException
 import java.lang.IllegalArgumentException
 import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.logger
@@ -8,7 +9,9 @@ import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.idporten.validators.identifier.PersonIdentifierValidator
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.ar.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
+import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
@@ -41,8 +44,12 @@ object ArHandlers {
                 } else {
                     throw e
                 }
-            } catch (e: Exception) {
+            } catch (e: FastlegeregisteretException) {
+                if (e.cause is SOAPFaultException) throw e else throw e.cause!!
+            } catch (e: AdresseregisteretApiException) {
                 throw e
+            } catch (e: AdresseregisteretException) {
+                if (e.cause is SOAPFaultException) throw e else throw e.cause!!
             }
 
         return ServerResponse.ok().bodyValueAndAwait(arDetails)
