@@ -66,7 +66,7 @@ class RouterBootMockEnvTest(
             arDetails.herid2 shouldBeEqual HERID2
             arDetails.herid1 shouldBeEqual HERID1
             arDetails.orgNumber shouldBeEqual ORGNUM
-            arDetails.pemDigdirSertifikat.shouldNotBeNull()
+            arDetails.derDigdirSertifikat.shouldNotBeNull()
 
             verify(exactly = 1) { flr.getPatientGP(any()) }
             verify(exactly = 1) { arClient.lookupHerId(any()) }

@@ -21,6 +21,7 @@ object ArHandlers {
         request: ServerRequest,
         flrClient: DecoratingFlrClient,
         arClient: AdresseregisteretClient,
+        derCertificate: String,
     ): ServerResponse {
         logger.info("Entering AR lookup handler")
         val identifier = request.pathVariable("identifier")
@@ -35,8 +36,8 @@ object ArHandlers {
         val arDetails =
             try {
                 when (PersonIdentifierValidator.isValid(identifier)) {
-                    true -> arLookupByFnr(identifier, flrClient, arClient)
-                    false -> arLookupByHerId(identifier.toInt(), arClient)
+                    true -> arLookupByFnr(identifier, flrClient, arClient, derCertificate)
+                    false -> arLookupByHerId(identifier.toInt(), arClient, derCertificate)
                 }
             } catch (e: FastlegeregisteretApiException) {
                 if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt") {
@@ -59,12 +60,13 @@ object ArHandlers {
         fnr: String,
         flrClient: DecoratingFlrClient,
         arClient: AdresseregisteretClient,
+        derCertificate: String,
     ): ArDetails {
         val gpHerId = flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
-        return arLookupByHerId(gpHerId, arClient)
+        return arLookupByHerId(gpHerId, arClient, derCertificate)
     }
 
-    fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient): ArDetails =
+    fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient, derCertificate: String): ArDetails =
         try {
             val communicationParty =
                 arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
@@ -82,7 +84,7 @@ object ArHandlers {
                 herId,
                 comunicationPartyName,
                 "testedi-address",
-                "testsertifikat",
+                derCertificate,
             )
         } catch (e: AdresseregisteretApiException) {
             if ("InvalidHerIdSupplied" == e.errorCode) {

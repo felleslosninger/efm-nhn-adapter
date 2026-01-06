@@ -2,6 +2,8 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import kotlin.uuid.ExperimentalUuidApi
 import mu.KotlinLogging
+import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
+import no.difi.meldingsutveksling.nhn.adapter.crypto.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ArHandlers
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
@@ -26,7 +28,7 @@ fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
     testAr(bean())
     testDphOut(bean(), bean())
     testRespondApprecFralegekontor(bean())
-    arLookup(bean(), bean())
+    arLookup(bean(), bean(), bean())
     dphOut(bean(), bean())
     statusCheck(bean())
     incomingReciept(bean())
@@ -35,8 +37,14 @@ fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
 fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
     GET(Routes.STATUS_CHECK) { OutHandler.statusHandler(it, mshClient) }
 
-fun CoRouterFunctionDsl.arLookup(flrClient: DecoratingFlrClient, arClient: AdresseregisteretClient) =
-    GET(Routes.AR_LOOKUP) { ArHandlers.arLookup(it, flrClient, arClient) }
+fun CoRouterFunctionDsl.arLookup(
+    flrClient: DecoratingFlrClient,
+    arClient: AdresseregisteretClient,
+    keystoreManager: KeystoreManager,
+) {
+    val der = keystoreManager.getPublicCertificate().toBase64Der()
+    GET(Routes.AR_LOOKUP) { ArHandlers.arLookup(it, flrClient, arClient, der) }
+}
 
 @OptIn(ExperimentalUuidApi::class)
 fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =

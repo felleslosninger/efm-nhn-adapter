@@ -7,14 +7,17 @@ import kotlin.time.ExperimentalTime
 import kotlinx.serialization.Serializable
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.FLRCONFIG
+import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.CRYPTO_KEYSTORE
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_AR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_FLR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.OAUTH2_HELSE_ID
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SERVICES_MSH_URL
 import no.difi.meldingsutveksling.nhn.adapter.beans.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.beans.SecurityBeans
+import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
+import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
@@ -49,6 +52,7 @@ private object PropertyNames {
     const val NHN_SERVICE_FLR = "nhn.services.flr"
     const val OAUTH2_HELSE_ID = "oauth2.helse-id"
     const val SERVICES_MSH_URL = "nhn.services.msh.url"
+    const val CRYPTO_KEYSTORE = "crypto.keystore"
 }
 
 private fun properties() = BeanRegistrarDsl {
@@ -65,6 +69,11 @@ private fun properties() = BeanRegistrarDsl {
     registerBean<HelseId> {
         Binder.get(env).bind(OAUTH2_HELSE_ID, HelseId::class.java).orElseThrow {
             IllegalStateException("HelseId configuration was not found.")
+        }
+    }
+    registerBean<CryptoConfig> {
+        Binder.get(env).bind(CRYPTO_KEYSTORE, CryptoConfig::class.java).orElseThrow {
+            IllegalStateException("Cryptography configuration was not found.")
         }
     }
 }
@@ -91,6 +100,8 @@ private fun security() = BeanRegistrarDsl {
     }
 }
 
+private fun crypto() = BeanRegistrarDsl { registerBean<KeystoreManager> { KeystoreManager(bean()) } }
+
 private fun integrations() = BeanRegistrarDsl {
     registerBean { IntegrationBeans.arClient(this.bean<NhnConfig>(ARCONFIG)) }
     registerBean<HttpClient> { HttpClients.createDefault() }
@@ -104,6 +115,7 @@ private fun integrations() = BeanRegistrarDsl {
 class BeanRegistration() :
     BeanRegistrarDsl({
         this.register(properties())
+        this.register(crypto())
         this.register(security())
         this.register(integrations())
 
@@ -121,7 +133,7 @@ class BeanRegistration() :
 
         registerBean<RouterFunction<*>> {
             coRouter {
-                    arLookup(bean(), bean())
+                    arLookup(bean(), bean(), bean())
                     dphOut(bean(), bean())
                     statusCheck(bean())
                     incomingReciept(bean())

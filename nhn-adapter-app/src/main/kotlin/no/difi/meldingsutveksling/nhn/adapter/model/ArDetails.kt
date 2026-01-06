@@ -10,5 +10,5 @@ data class ArDetails(
     val herid2: Int,
     val communicationPartyName: String,
     val ediAdress: String,
-    val pemDigdirSertifikat: String,
+    val derDigdirSertifikat: String,
 )

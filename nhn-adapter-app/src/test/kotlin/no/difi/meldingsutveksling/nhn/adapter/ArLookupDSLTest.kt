@@ -7,6 +7,7 @@ import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.floats.exactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.ktor.util.encodeBase64
 import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.mockk
@@ -17,6 +18,8 @@ import jakarta.xml.ws.soap.SOAPFaultException
 import javax.xml.namespace.QName
 import kotlinx.coroutines.reactive.awaitFirst
 import no.difi.meldingsutveksling.nhn.adapter.beans.IntegrationBeans.arClient
+import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
+import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
@@ -41,7 +44,8 @@ class ArLookupDSLTest() :
                 registerBean<FastlegeregisteretClient> { mockk() }
                 registerBean<DecoratingFlrClient>() { DecoratingFlrClient(bean(), listOf()) }
                 registerBean<AdresseregisteretClient> { mockk() }
-                testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean()) }
+                registerBean<KeystoreManager>() { KeystoreManager(testCryptoConfig) }
+                testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean(), ctx.bean()) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {
@@ -82,7 +86,7 @@ class ArLookupDSLTest() :
                 arDetails.herid2 shouldBeEqual HERID2
                 arDetails.herid1 shouldBeEqual HERID1
                 arDetails.orgNumber shouldBeEqual ORGNUM
-                arDetails.pemDigdirSertifikat.shouldNotBeNull()
+                arDetails.derDigdirSertifikat.shouldNotBeNull()
 
                 verify(exactly = 1) { flr.getPatientGP(any()) }
                 verify(exactly = 1) { arClient.lookupHerId(any()) }
@@ -118,7 +122,7 @@ class ArLookupDSLTest() :
                 arDetails.herid2 shouldBeEqual HERID2
                 arDetails.herid1 shouldBeEqual HERID1
                 arDetails.orgNumber shouldBeEqual ORGNUM
-                arDetails.pemDigdirSertifikat.shouldNotBeNull()
+                arDetails.derDigdirSertifikat.shouldNotBeNull()
             }
 
             should("Respond with 404 when identifier is not found in Fastlegeregisteret") {
@@ -178,7 +182,8 @@ class ArLookupDSLTest() :
                 registerBean<DecoratingFlrClient>() { DecoratingFlrClient(bean(), listOf()) }
                 registerBean<AdresseregisteretService> { mockk() }
                 registerBean<AdresseregisteretClient> { AdresseregisteretClient(bean()) }
-                testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean()) }
+                registerBean<KeystoreManager>() { KeystoreManager(testCryptoConfig) }
+                testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean(), ctx.bean()) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {
@@ -325,3 +330,12 @@ inline fun <reified T> fakeJaxBElement(value: T): JAXBElement<T> {
     val qName = QName("http://test.com/test", "fakeJaxBElement")
     return JAXBElement<T>(qName, T::class.java, value)
 }
+
+val testCryptoConfig =
+    CryptoConfig(
+        "unit-test",
+        object {}.javaClass.getResourceAsStream("/unit-test-sertifikat.p12").readAllBytes().encodeBase64(),
+        password = "test",
+        file = null,
+        type = "PKCS12",
+    )

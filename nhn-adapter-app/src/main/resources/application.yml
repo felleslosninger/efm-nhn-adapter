@@ -48,6 +48,11 @@ oauth2:
     private-key: ${NHN_PRIVATE_KEY}
     issuer: "https://helseid-sts.test.nhn.no"
     audience: "https://helseid-sts.test.nhn.no"
+crypto:
+  keystore:
+    value: ${DIFI_MOVE_ORG_KEYSTORE_VALUE}
+    alias: ${DIFI_MOVE_ORG_KEYSTORE_ALIAS}
+    password: ${DIFI_MOVE_ORG_KEYSTORE_PA}
 logging:
   level:
     org.springframework.http.codec.json: INFO

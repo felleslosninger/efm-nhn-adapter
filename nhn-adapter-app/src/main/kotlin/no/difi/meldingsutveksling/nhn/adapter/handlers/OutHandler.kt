@@ -64,9 +64,11 @@ object OutHandler {
     suspend fun dphOut(request: ServerRequest, arClient: AdresseregisteretClient, mshClient: Client): ServerResponse {
         logger.info("entering dph out")
         val messageOut = request.awaitBody<MessageOut>()
-        val arDetailsSender = ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient)
+        val arDetailsSender =
+            ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient, "dummy-certificate")
 
-        val arDetailsReciever = ArHandlers.arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient)
+        val arDetailsReciever =
+            ArHandlers.arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient, "dummy-certificate")
 
         // The fagmelding needs to be decyrpted
         val fagmelding =
