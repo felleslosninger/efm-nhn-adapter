@@ -20,11 +20,11 @@ oauth2:
     audience: "https://helseid-sts.test.nhn.no"
 crypto:
   keystore:
-    file: "/Users/alexander/eformidling-test-auth.jks"
+    file: "./unit-test-sertifikat.p12"
     value: ""
     alias: "dummy"
-    password: "MeldingTeHumor2023!"
-    type: "JKS"
+    password: "test"
+    type: "PKCS12"
 
 
 
