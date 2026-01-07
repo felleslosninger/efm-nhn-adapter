@@ -50,9 +50,10 @@ oauth2:
     audience: "https://helseid-sts.test.nhn.no"
 crypto:
   keystore:
-    value: ${DIFI_MOVE_ORG_KEYSTORE_VALUE}
-    alias: ${DIFI_MOVE_ORG_KEYSTORE_ALIAS}
-    password: ${DIFI_MOVE_ORG_KEYSTORE_PA}
+    value: ${CRYPTO_KEYSTORE_VALUE}
+    alias: ${CRYPTO_KEYSTORE_ALIAS}
+    password: ${CRYPTO_KEYSTORE_PASSWORD}
+    type: "PKCS12"
 logging:
   level:
     org.springframework.http.codec.json: INFO
