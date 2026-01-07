@@ -1,7 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.serialization.json.Json
@@ -154,9 +153,6 @@ object OutHandler {
                 ),
                 DialogmeldingVersion.V1_1,
             )
-
-        File("/Users/alexander/workspace/efm-integrasjonspunkt/testpdf.pdf")
-            .writeBytes(messageOut.vedlegg.decodeBase64()!!.toByteArray())
 
         logger.info { outGoingDocument }
         // outGoingDocument.copy(vedlegg = outGoingDocument.vedlegg.copy(data =

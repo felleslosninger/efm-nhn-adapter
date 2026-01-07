@@ -97,7 +97,7 @@ class DphOutDSLTest :
                 verify(exactly = 3) { arService.lookupHerId(any()) }
             }
 
-            xshould("Send til fastlege da FNR er lagt til receiver") {
+            should("Send til fastlege da FNR er lagt til receiver") {
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
                 val slot = slot<Int>()
@@ -154,7 +154,7 @@ class DphOutDSLTest :
                 businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
             }
 
-            xshould("Return EDI message referanse when valid document is sendt") {
+            should("Return EDI message referanse when valid document is sendt") {
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
 
