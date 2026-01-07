@@ -334,7 +334,11 @@ inline fun <reified T> fakeJaxBElement(value: T): JAXBElement<T> {
 val testCryptoConfig =
     CryptoConfig(
         "unit-test",
-        object {}.javaClass.getResourceAsStream("/unit-test-sertifikat.p12").readAllBytes().encodeBase64(),
+        Thread.currentThread()
+            .contextClassLoader
+            .getResourceAsStream("unit-test-sertifikat.p12")
+            .readAllBytes()
+            .encodeBase64(),
         password = "test",
         file = null,
         type = "PKCS12",
