@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.clearMocks
@@ -215,7 +216,10 @@ class DphOutDSLTest :
                 businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
             }
         }
-    })
+    }) {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+}
 
 private val PARENT_HER_ID = "1212"
 
