@@ -1,7 +1,7 @@
 nhn:
   services:
     ar:
-      url: https://ws-web.test.nhn.no/v1/Ar
+      url: "https://ws-web.test.nhn.no/v1/Ar"
       username: dummyUser
       password: dummyPassword
     flr:
