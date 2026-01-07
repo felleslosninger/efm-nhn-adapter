@@ -17,7 +17,7 @@ data class CryptoConfig(
 
 fun CryptoConfig.keyStoreAsByteArray(): ByteArray {
     if (!this.base64Value.isNullOrBlank()) {
-        return base64Value.decodeBase64()!!.toByteArray()
+        return base64Value.substring(base64Value.indexOf(":") + 1).decodeBase64()!!.toByteArray()
     } else if (!this.file.isNullOrBlank()) {
         return File(file).readBytes()
     } else {

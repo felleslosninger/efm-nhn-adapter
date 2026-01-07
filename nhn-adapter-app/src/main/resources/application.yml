@@ -50,7 +50,7 @@ oauth2:
     audience: "https://helseid-sts.test.nhn.no"
 crypto:
   keystore:
-    value: ${CRYPTO_KEYSTORE_VALUE}
+    base64Value: ${CRYPTO_KEYSTORE_VALUE}
     alias: ${CRYPTO_KEYSTORE_ALIAS}
     password: ${CRYPTO_KEYSTORE_PASSWORD}
     type: "PKCS12"
