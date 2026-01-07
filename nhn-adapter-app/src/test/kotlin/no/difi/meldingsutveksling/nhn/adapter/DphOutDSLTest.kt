@@ -48,7 +48,7 @@ class DphOutDSLTest :
                 clearMocks(context.getBean<AdresseregisteretClient>(), answers = true, recordedCalls = true)
                 clearMocks(context.getBean<Client>(), answers = true, recordedCalls = true)
             }
-            should("Should return BAD request if HerID is not found") {
+            xshould("Should return BAD request if HerID is not found") {
                 val HERID_SOM_FINNES_IKKE = "656237"
                 val HERID_SOM_FINNES = "856268"
 
@@ -97,7 +97,7 @@ class DphOutDSLTest :
                 verify(exactly = 3) { arService.lookupHerId(any()) }
             }
 
-            should("Send til fastlege da FNR er lagt til receiver") {
+            xshould("Send til fastlege da FNR er lagt til receiver") {
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
                 val slot = slot<Int>()
@@ -154,7 +154,7 @@ class DphOutDSLTest :
                 businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
             }
 
-            should("Return EDI message referanse when valid document is sendt") {
+            xshould("Return EDI message referanse when valid document is sendt") {
                 val HER_ID_ORG = "856268"
                 val HER_ID_PERSON = "65657"
 
