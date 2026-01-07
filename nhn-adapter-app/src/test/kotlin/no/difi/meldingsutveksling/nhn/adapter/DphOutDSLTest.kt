@@ -43,8 +43,10 @@ class DphOutDSLTest :
 
             val webTestClient = webTestClient(context.getBean()) { this.responseTimeout(60.seconds.toJavaDuration()) }
 
-            afterTest() { clearMocks(context.getBean<AdresseregisteretClient>()) }
-
+            afterTest {
+                clearMocks(context.getBean<AdresseregisteretClient>(), answers = true, recordedCalls = true)
+                clearMocks(context.getBean<Client>(), answers = true, recordedCalls = true)
+            }
             should("Should return BAD request if HerID is not found") {
                 val HERID_SOM_FINNES_IKKE = "656237"
                 val HERID_SOM_FINNES = "856268"
