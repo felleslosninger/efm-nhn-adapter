@@ -25,10 +25,6 @@ class Kryptering {
 }
 
 private val encryptionAlgorithm: ASN1ObjectIdentifier = CMSAlgorithm.AES256_GCM
-private const val KEY_SIZE: Int = 168
-
-// private val encryptionAlgorithm: ASN1ObjectIdentifier = CMSAlgorithm.AES256_CBC
-// private const val keysize: Int = 256
 
 fun X509Certificate.erGyldig(): Boolean {
     try {
@@ -63,9 +59,7 @@ private fun krypterDokument(input: ByteArray, certificates: List<X509Certificate
         val envelopedData =
             dataGenerator.generate(
                 content,
-                JceCMSContentEncryptorBuilder(encryptionAlgorithm, KEY_SIZE)
-                    .setProvider(BouncyCastleProvider())
-                    .build(),
+                JceCMSContentEncryptorBuilder(encryptionAlgorithm).setProvider(BouncyCastleProvider()).build(),
             )
         envelopedData.encoded
     } catch (e: CertificateEncodingException) {

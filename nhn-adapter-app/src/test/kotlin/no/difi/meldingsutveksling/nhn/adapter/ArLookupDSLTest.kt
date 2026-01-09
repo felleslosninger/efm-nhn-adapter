@@ -7,7 +7,6 @@ import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.floats.exactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
-import io.ktor.util.encodeBase64
 import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.mockk
@@ -18,7 +17,6 @@ import jakarta.xml.ws.soap.SOAPFaultException
 import javax.xml.namespace.QName
 import kotlinx.coroutines.reactive.awaitFirst
 import no.difi.meldingsutveksling.nhn.adapter.beans.IntegrationBeans.arClient
-import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
@@ -330,16 +328,3 @@ inline fun <reified T> fakeJaxBElement(value: T): JAXBElement<T> {
     val qName = QName("http://test.com/test", "fakeJaxBElement")
     return JAXBElement<T>(qName, T::class.java, value)
 }
-
-val testCryptoConfig =
-    CryptoConfig(
-        "unit-test",
-        Thread.currentThread()
-            .contextClassLoader
-            .getResourceAsStream("unit-test-sertifikat.p12")
-            .readAllBytes()
-            .encodeBase64(),
-        password = "test",
-        file = null,
-        type = "PKCS12",
-    )
