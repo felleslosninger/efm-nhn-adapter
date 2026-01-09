@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
@@ -60,7 +61,12 @@ object OutHandler {
             )
     }
 
-    suspend fun dphOut(request: ServerRequest, arClient: AdresseregisteretClient, mshClient: Client): ServerResponse {
+    suspend fun dphOut(
+        request: ServerRequest,
+        arClient: AdresseregisteretClient,
+        mshClient: Client,
+        dekryptering: Dekrypter,
+    ): ServerResponse {
         logger.info("entering dph out")
         val messageOut = request.awaitBody<MessageOut>()
         val arDetailsSender =
@@ -70,8 +76,9 @@ object OutHandler {
             ArHandlers.arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient, "dummy-certificate")
 
         // The fagmelding needs to be decyrpted
+        val dekryptedFagmelding = dekryptering.dekrypter(messageOut.fagmelding.toByteArray()).decodeToString()
         val fagmelding =
-            Json { ignoreUnknownKeys = true }.decodeFromString(Fagmelding.serializer(), messageOut.fagmelding)
+            Json { ignoreUnknownKeys = true }.decodeFromString(Fagmelding.serializer(), dekryptedFagmelding)
 
         // @TODO Dette er her er ikke helt presis. Vi kan leve med det for øyebliket men
         // vi skall endre det å ta hensyn til det som kommer fra AR og ikke bruke fnr-en å besteme

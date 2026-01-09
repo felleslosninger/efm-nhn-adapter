@@ -34,7 +34,7 @@ class DphOutDSLTest :
             val arLookupContext = BeanRegistrarDsl {
                 registerBean<AdresseregisteretClient> { mockk() }
                 registerBean<Client> { mockk() }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean()) }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), dummyDekryptor) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {

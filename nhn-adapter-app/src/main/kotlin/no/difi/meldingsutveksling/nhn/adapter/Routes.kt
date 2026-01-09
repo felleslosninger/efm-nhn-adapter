@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import kotlin.uuid.ExperimentalUuidApi
 import mu.KotlinLogging
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.crypto.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ArHandlers
@@ -29,7 +30,7 @@ fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
     testDphOut(bean(), bean())
     testRespondApprecFralegekontor(bean())
     arLookup(bean(), bean(), bean())
-    dphOut(bean(), bean())
+    dphOut(bean(), bean(), bean())
     statusCheck(bean())
     incomingReciept(bean())
 }
@@ -52,5 +53,5 @@ fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =
         return@GET InHandler.incomingApprec(it, mshClient)
     }
 
-fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretClient) =
-    POST(Routes.DPH_OUT) { OutHandler.dphOut(it, arClient, mshClient) }
+fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretClient, dekryptor: Dekrypter) =
+    POST(Routes.DPH_OUT) { OutHandler.dphOut(it, arClient, mshClient, dekryptor) }

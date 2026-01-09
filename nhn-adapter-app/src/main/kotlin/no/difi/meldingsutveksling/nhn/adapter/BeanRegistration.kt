@@ -17,6 +17,8 @@ import no.difi.meldingsutveksling.nhn.adapter.beans.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.helseid.Configuration
@@ -100,7 +102,19 @@ private fun security() = BeanRegistrarDsl {
     }
 }
 
-private fun crypto() = BeanRegistrarDsl { registerBean<KeystoreManager> { KeystoreManager(bean()) } }
+private fun crypto() = BeanRegistrarDsl {
+    registerBean<KeystoreManager> { KeystoreManager(bean()) }
+
+    profile(expression = "unit-test") {
+        registerBean<Dekrypter> {
+            object : Dekrypter {
+                override fun dekrypter(byteArray: ByteArray): ByteArray = byteArray
+            }
+        }
+    }
+
+    profile(expression = "!unit-test") { registerBean<Dekrypter> { Dekryptering(bean()) } }
+}
 
 private fun integrations() = BeanRegistrarDsl {
     registerBean { IntegrationBeans.arClient(this.bean<NhnConfig>(ARCONFIG)) }
@@ -134,7 +148,7 @@ class BeanRegistration() :
         registerBean<RouterFunction<*>> {
             coRouter {
                     arLookup(bean(), bean(), bean())
-                    dphOut(bean(), bean())
+                    dphOut(bean(), bean(), bean())
                     statusCheck(bean())
                     incomingReciept(bean())
                 }

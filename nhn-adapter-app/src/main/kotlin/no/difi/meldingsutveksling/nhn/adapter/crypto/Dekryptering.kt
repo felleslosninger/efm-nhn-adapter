@@ -9,8 +9,12 @@ import org.bouncycastle.cms.RecipientInformation
 import org.bouncycastle.cms.RecipientInformationStore
 import org.bouncycastle.cms.jcajce.JceKeyTransEnvelopedRecipient
 
-class Dekryptering(private val keyStore: KeystoreManager) {
-    fun dekrypter(byteArray: ByteArray): ByteArray {
+interface Dekrypter {
+    fun dekrypter(byteArray: ByteArray): ByteArray
+}
+
+class Dekryptering(private val keyStore: KeystoreManager) : Dekrypter {
+    override fun dekrypter(byteArray: ByteArray): ByteArray {
         val bytes = Base64.decode(byteArray)
 
         try {

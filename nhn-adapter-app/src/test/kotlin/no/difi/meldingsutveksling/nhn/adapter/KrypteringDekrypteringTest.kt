@@ -10,6 +10,7 @@ import java.security.cert.X509Certificate
 import kotlin.io.encoding.Base64
 import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
@@ -77,3 +78,8 @@ val testCryptoConfig =
         file = null,
         type = "PKCS12",
     )
+
+val dummyDekryptor =
+    object : Dekrypter {
+        override fun dekrypter(byteArray: ByteArray): ByteArray = byteArray
+    }
