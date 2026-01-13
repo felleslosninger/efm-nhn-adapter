@@ -1,6 +1,5 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
-import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.clearMocks
@@ -8,6 +7,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.spyk
 import io.mockk.verify
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
@@ -15,6 +15,9 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
 import kotlinx.coroutines.reactive.awaitFirst
+import kotlinx.coroutines.reactive.awaitSingle
+import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.msh.Client
@@ -34,7 +37,8 @@ class DphOutDSLTest :
             val arLookupContext = BeanRegistrarDsl {
                 registerBean<AdresseregisteretClient> { mockk() }
                 registerBean<Client> { mockk() }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), dummyDekryptor) }
+                registerBean<Dekrypter> { spyk<Dekrypter>(dummyDekryptor) }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean()) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {
@@ -45,8 +49,9 @@ class DphOutDSLTest :
             val webTestClient = webTestClient(context.getBean()) { this.responseTimeout(60.seconds.toJavaDuration()) }
 
             afterTest {
-                clearMocks(context.getBean<AdresseregisteretClient>(), answers = true, recordedCalls = true)
-                clearMocks(context.getBean<Client>(), answers = true, recordedCalls = true)
+                clearMocks(context.getBean<AdresseregisteretClient>())
+                clearMocks(context.getBean<Client>())
+                clearMocks(context.getBean<Dekrypter>())
             }
             should("Should return BAD request if HerID is not found") {
                 val HERID_SOM_FINNES_IKKE = "656237"
@@ -91,7 +96,7 @@ class DphOutDSLTest :
                     .returnResult(String::class.java)
                     .status
                     .is4xxClientError shouldBe true
-
+                verify(exactly = 0) { context.getBean<Dekrypter>().dekrypter(any()) }
                 verify(exactly = 2) { arService.lookupHerId(HERID_SOM_FINNES_IKKE.toInt()) }
                 verify(exactly = 1) { arService.lookupHerId(HERID_SOM_FINNES.toInt()) }
                 verify(exactly = 3) { arService.lookupHerId(any()) }
@@ -151,6 +156,7 @@ class DphOutDSLTest :
                     .status
                     .is5xxServerError shouldBe true
 
+                verify(exactly = 2) { context.getBean<Dekrypter>().dekrypter(any()) }
                 businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
             }
 
@@ -213,13 +219,72 @@ class DphOutDSLTest :
                 result.status.is2xxSuccessful shouldBe true
                 Uuid.parse(result.responseBody.awaitFirst())
 
+                verify(exactly = 2) { context.getBean<Dekrypter>().dekrypter(any()) }
                 businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
             }
         }
-    }) {
 
-    override fun isolationMode() = IsolationMode.InstancePerTest
-}
+        context("Testing DPH with encryption context") {
+            val arLookupContext = BeanRegistrarDsl {
+                registerBean<AdresseregisteretClient> { mockk() }
+                registerBean<Client> { mockk() }
+                registerBean<Dekrypter>() {
+                    object : Dekrypter {
+                        override fun dekrypter(byteArray: ByteArray): ByteArray {
+                            throw DecryptionException("the decryption failure")
+                        }
+                    }
+                }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean()) }
+            }
+            val context =
+                AnnotationConfigApplicationContext().apply {
+                    register(arLookupContext)
+                    refresh()
+                }
+
+            val webTestClient = webTestClient(context.getBean()) { this.responseTimeout(60.seconds.toJavaDuration()) }
+
+            should("Retur BAD REQUEST when decryption fails") {
+                val HER_ID_ORG = "856268"
+                val HER_ID_PERSON = "65657"
+                val slot = slot<Int>()
+                val arService = context.getBean<AdresseregisteretClient>()
+                val mshClient = context.getBean<Client>()
+                every { arService.lookupHerId(capture(slot)) } answers
+                    {
+                        when (slot.captured.toString()) {
+                            HER_ID_ORG,
+                            HER_ID_PERSON ->
+                                testFastlegeCommunicationParty(
+                                    HER_ID_PERSON.toInt(),
+                                    PARENT_HER_ID.toInt(),
+                                    ON_BEHALF_OF_ORGNUM,
+                                )
+                            else -> throw HerIdNotFound()
+                        }
+                    }
+
+                val mockMessageOutWithFNR =
+                    messageOutTemplate.modify {
+                        sender { herid2 = HER_ID_ORG }
+                        receiver { herid2 = HER_ID_PERSON }
+                        fagmelding { responsibleHealthcareProfessionalId = HER_ID_PERSON }
+                    }
+
+                val response =
+                    webTestClient
+                        .post()
+                        .uri("/dph/out")
+                        .bodyValue(mockMessageOutWithFNR)
+                        .exchange()
+                        .returnResult(ApiError::class.java)
+
+                response.status.is4xxClientError shouldBe true
+                response.responseBody.awaitSingle().message shouldBe "Unable to decrypt message"
+            }
+        }
+    })
 
 private val PARENT_HER_ID = "1212"
 

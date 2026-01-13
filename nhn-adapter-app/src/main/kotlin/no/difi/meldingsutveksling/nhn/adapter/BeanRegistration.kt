@@ -17,6 +17,7 @@ import no.difi.meldingsutveksling.nhn.adapter.beans.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
+import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
@@ -193,6 +194,10 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "Not able to process, try later. ErrorCode: E7779",
                 )
+            }
+            is DecryptionException -> {
+                logger.error("Unable to decrypt message", it as Throwable)
+                request.toApiError(HttpStatus.BAD_REQUEST, "Unable to decrypt message")
             }
             is HttpException -> {
                 request.toApiError(HttpStatus.valueOf(it.status), it.message!!)
