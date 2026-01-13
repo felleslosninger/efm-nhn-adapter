@@ -13,7 +13,6 @@ import org.bouncycastle.cms.CMSTypedData
 import org.bouncycastle.cms.jcajce.JceCMSContentEncryptorBuilder
 import org.bouncycastle.cms.jcajce.JceKeyTransRecipientInfoGenerator
 import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.openssl.EncryptionException
 
 class Kryptering {
     fun krypter(byteArray: ByteArray, krypteringSertifikat: X509Certificate): ByteArray {

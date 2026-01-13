@@ -4,7 +4,6 @@ import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.datatest.withData
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.equals.shouldBeEqual
-import io.kotest.matchers.floats.exactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.clearMocks
@@ -16,8 +15,7 @@ import jakarta.xml.soap.SOAPFactory
 import jakarta.xml.ws.soap.SOAPFaultException
 import javax.xml.namespace.QName
 import kotlinx.coroutines.reactive.awaitFirst
-import no.difi.meldingsutveksling.nhn.adapter.beans.IntegrationBeans.arClient
-import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
@@ -42,7 +40,7 @@ class ArLookupDSLTest() :
                 registerBean<FastlegeregisteretClient> { mockk() }
                 registerBean<DecoratingFlrClient>() { DecoratingFlrClient(bean(), listOf()) }
                 registerBean<AdresseregisteretClient> { mockk() }
-                registerBean<KeystoreManager>() { KeystoreManager(testCryptoConfig) }
+                registerBean<NhnKeystore>() { NhnKeystore(testCryptoConfig) }
                 testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean(), ctx.bean()) }
             }
             val context =
@@ -180,7 +178,7 @@ class ArLookupDSLTest() :
                 registerBean<DecoratingFlrClient>() { DecoratingFlrClient(bean(), listOf()) }
                 registerBean<AdresseregisteretService> { mockk() }
                 registerBean<AdresseregisteretClient> { AdresseregisteretClient(bean()) }
-                registerBean<KeystoreManager>() { KeystoreManager(testCryptoConfig) }
+                registerBean<NhnKeystore>() { NhnKeystore(testCryptoConfig) }
                 testCoRouter { ctx -> arLookup(ctx.bean(), ctx.bean(), ctx.bean()) }
             }
             val context =

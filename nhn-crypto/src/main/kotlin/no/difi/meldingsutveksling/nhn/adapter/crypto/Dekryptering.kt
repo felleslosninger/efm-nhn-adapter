@@ -13,7 +13,7 @@ interface Dekrypter {
     fun dekrypter(byteArray: ByteArray): ByteArray
 }
 
-class Dekryptering(private val keyStore: KeystoreManager) : Dekrypter {
+class Dekryptering(private val keyStore: NhnKeystore) : Dekrypter {
     override fun dekrypter(byteArray: ByteArray): ByteArray {
         val bytes = Base64.decode(byteArray)
 

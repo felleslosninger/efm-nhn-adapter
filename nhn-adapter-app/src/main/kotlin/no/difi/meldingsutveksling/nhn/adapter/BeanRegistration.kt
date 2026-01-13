@@ -14,13 +14,13 @@ import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.OAUTH2_HELSE_ID
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SERVICES_MSH_URL
 import no.difi.meldingsutveksling.nhn.adapter.beans.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.beans.SecurityBeans
-import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
+import no.difi.meldingsutveksling.nhn.adapter.crypto.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
-import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
@@ -104,7 +104,7 @@ private fun security() = BeanRegistrarDsl {
 }
 
 private fun crypto() = BeanRegistrarDsl {
-    registerBean<KeystoreManager> { KeystoreManager(bean()) }
+    registerBean<NhnKeystore> { NhnKeystore(bean()) }
 
     profile(expression = "unit-test") {
         registerBean<Dekrypter> {

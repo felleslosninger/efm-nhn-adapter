@@ -8,18 +8,18 @@ import io.ktor.util.encodeBase64
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import kotlin.io.encoding.Base64
-import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
+import no.difi.meldingsutveksling.nhn.adapter.crypto.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
-import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.toBase64Der
 
 class KrypteringDekrypteringTest :
     FunSpec({
         context("Encryption Decryption") {
-            val keyStore = KeystoreManager(testCryptoConfig)
+            val keyStore = NhnKeystore(testCryptoConfig)
             val stringToEncript = "This is a string to encript"
 
             test("Should encypt data") {

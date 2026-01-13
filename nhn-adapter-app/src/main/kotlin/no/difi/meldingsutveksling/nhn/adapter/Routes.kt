@@ -3,7 +3,7 @@ package no.difi.meldingsutveksling.nhn.adapter
 import kotlin.uuid.ExperimentalUuidApi
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
-import no.difi.meldingsutveksling.nhn.adapter.crypto.KeystoreManager
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ArHandlers
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
@@ -41,7 +41,7 @@ fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
 fun CoRouterFunctionDsl.arLookup(
     flrClient: DecoratingFlrClient,
     arClient: AdresseregisteretClient,
-    keystoreManager: KeystoreManager,
+    keystoreManager: NhnKeystore,
 ) {
     val der = keystoreManager.getPublicCertificate().toBase64Der()
     GET(Routes.AR_LOOKUP) { ArHandlers.arLookup(it, flrClient, arClient, der) }

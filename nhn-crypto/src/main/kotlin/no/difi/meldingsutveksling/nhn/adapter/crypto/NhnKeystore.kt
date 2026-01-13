@@ -1,6 +1,5 @@
 package no.difi.meldingsutveksling.nhn.adapter.crypto
 
-import io.ktor.util.toCharArray
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.security.KeyStore
@@ -9,12 +8,10 @@ import java.security.Security
 import java.security.cert.X509Certificate
 import java.util.Enumeration
 import kotlin.io.encoding.Base64
-import no.difi.meldingsutveksling.nhn.adapter.config.CryptoConfig
-import no.difi.meldingsutveksling.nhn.adapter.config.keyStoreAsByteArray
-import no.difi.meldingsutveksling.nhn.adapter.logger
+import mu.KotlinLogging
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 
-class KeystoreManager(private val config: CryptoConfig) {
+class NhnKeystore(private val config: CryptoConfig, logger:org.slf4j.Logger = KotlinLogging.logger {}) {
     init {
         Security.addProvider(BouncyCastleProvider())
     }
@@ -22,7 +19,7 @@ class KeystoreManager(private val config: CryptoConfig) {
     private val keyStore =
         KeyStore.getInstance(config.type).apply {
             try {
-                load(ByteArrayInputStream(config.keyStoreAsByteArray()), config.password.toCharArray())
+                this.load(ByteArrayInputStream(config.keyStoreAsByteArray()), config.password.toCharArray())
             } catch (e: Exception) {
                 logger.error("Failed to load keystore", e)
             }
