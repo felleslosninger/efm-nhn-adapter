@@ -15,6 +15,8 @@ import org.bouncycastle.cms.jcajce.JceKeyTransRecipientInfoGenerator
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 
 class Kryptering {
+
+    @Throws(EncryptionException::class)
     fun krypter(byteArray: ByteArray, krypteringSertifikat: X509Certificate): ByteArray {
         if (byteArray.isEmpty()) {
             throw EncryptionException("Meldingen er tom.")
