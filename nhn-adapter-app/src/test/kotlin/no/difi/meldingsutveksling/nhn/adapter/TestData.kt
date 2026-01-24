@@ -3,8 +3,8 @@ package no.difi.meldingsutveksling.nhn.adapter
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.serialization.json.Json
+import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
-import no.difi.meldingsutveksling.nhn.adapter.model.FagmeldingRaw
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
 import no.difi.meldingsutveksling.nhn.adapter.model.Notat
 import no.difi.meldingsutveksling.nhn.adapter.model.Patient
@@ -101,7 +101,7 @@ class MessageOutBuilder() {
         sender = existing.sender
         receiver = existing.receiver
 
-        val parsed = Json.decodeFromString<Fagmelding>(existing.fagmelding)
+        val parsed = Json.decodeFromString<Fagmelding>(existing.fagmelding.message)
         patient = parsed.patient
         fagmelding = parsed
 
@@ -115,7 +115,7 @@ class MessageOutBuilder() {
             onBehalfOfOrgNum = onBehalfOfOrgNum,
             sender = sender,
             receiver = receiver,
-            fagmelding = Json.encodeToString(fagmelding),
+            fagmelding = EncryptedFagmelding("dummy-sertifikat", Json.encodeToString(fagmelding)),
             TEST_VEDLEG_TEST_PDF,
         )
 }
@@ -182,8 +182,10 @@ class NotatBuilder(private val source: Notat) {
     fun build() = Notat(subject, notatinnhold)
 }
 
-fun FagmeldingRaw.modify(block: TestFagmelding.() -> Unit): FagmeldingRaw =
-    TestFagmelding().from(this).apply(block).let { Json {}.encodeToString(it.build()) }
+fun EncryptedFagmelding.modify(block: TestFagmelding.() -> Unit): EncryptedFagmelding =
+    TestFagmelding().from(this).apply(block).let {
+        EncryptedFagmelding("test-certificate", Json {}.encodeToString(it.build()))
+    }
 
 class TestFagmelding() {
 
@@ -192,8 +194,8 @@ class TestFagmelding() {
     lateinit var responsibleHealthcareProfessionalId: String
     lateinit var vedleggBeskrivelse: String
 
-    fun from(fagmelding: FagmeldingRaw): TestFagmelding {
-        val fagmelding: Fagmelding = Json {}.decodeFromString(fagmelding)
+    fun from(fagmelding: EncryptedFagmelding): TestFagmelding {
+        val fagmelding: Fagmelding = Json {}.decodeFromString(fagmelding.message)
         notat = fagmelding.notat
         patient = fagmelding.patient
         responsibleHealthcareProfessionalId = fagmelding.responsibleHealthcareProfessionalId

@@ -9,11 +9,11 @@ data class MessageOut(
     val onBehalfOfOrgNum: String,
     val sender: Sender,
     val receiver: Receiver,
-    val fagmelding: FagmeldingRaw,
+    val fagmelding: EncryptedFagmelding,
     val vedlegg: String,
 )
 
-typealias FagmeldingRaw = String
+@Serializable data class EncryptedFagmelding(val base64DerEncryptionCertificate: String, val message: String)
 
 @Serializable
 data class Fagmelding(

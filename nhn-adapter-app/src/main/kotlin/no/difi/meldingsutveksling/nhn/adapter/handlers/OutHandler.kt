@@ -76,7 +76,7 @@ object OutHandler {
             ArHandlers.arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient, "dummy-certificate")
 
         // The fagmelding needs to be decyrpted
-        val dekryptedFagmelding = dekryptering.dekrypter(messageOut.fagmelding.toByteArray()).decodeToString()
+        val dekryptedFagmelding = dekryptering.dekrypter(messageOut.fagmelding.message.toByteArray()).decodeToString()
         val fagmelding =
             Json { ignoreUnknownKeys = true }.decodeFromString(Fagmelding.serializer(), dekryptedFagmelding)
 
