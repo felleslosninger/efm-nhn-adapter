@@ -21,6 +21,7 @@ import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
+import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
@@ -105,6 +106,7 @@ private fun security() = BeanRegistrarDsl {
 
 private fun crypto() = BeanRegistrarDsl {
     registerBean<NhnKeystore> { NhnKeystore(bean()) }
+    registerBean<SignatureValidator> { SignatureValidator(bean()) }
 
     profile(expression = "unit-test") {
         registerBean<Dekrypter> {
@@ -149,7 +151,7 @@ class BeanRegistration() :
         registerBean<RouterFunction<*>> {
             coRouter {
                     arLookup(bean(), bean(), bean())
-                    dphOut(bean(), bean(), bean())
+                    dphOut(bean(), bean(), bean(), bean())
                     statusCheck(bean())
                     incomingReciept(bean())
                 }

@@ -38,11 +38,20 @@ class Signer(
 
     fun sign(rawJson: String): String {
         val canonicalBytes = canonicalize(rawJson)
-        val jws = signCanonicalBytes(canonicalBytes)
+        val sigBytes = signCanonicalBytes(canonicalBytes)
+        val sigB64 = java.util.Base64.getEncoder().encodeToString(sigBytes)
 
         val root = json.parseToJsonElement(rawJson) as JsonObject
-        val signed = JsonObject(root + (signatureField to JsonPrimitive(jws)))
 
+        val sigObj = JsonObject(
+            mapOf(
+                "alg" to JsonPrimitive(alg.name),
+                "kid" to JsonPrimitive(cryptoConfig.alias),
+                "value" to JsonPrimitive(sigB64)
+            )
+        )
+
+        val signed = JsonObject(root + (signatureField to sigObj))
         return signed.toString()
     }
 
@@ -53,18 +62,23 @@ class Signer(
         return canonical.toByteArray(Charsets.UTF_8)
     }
 
-    private fun signCanonicalBytes(bytes: ByteArray): String {
-        val header = JWSHeader.Builder(alg).type(JOSEObjectType("JWS")).build()
-        val jws = JWSObject(header, Payload(bytes))
-
-        val signer: JWSSigner = when (privateKey) {
-            is RSAPrivateKey -> RSASSASigner(privateKey)
-            is ECPrivateKey -> ECDSASigner(privateKey)
-            else -> error("Support RSA or ECP private keys")
+    private fun signCanonicalBytes(bytes: ByteArray): ByteArray {
+        val signature = when (privateKey) {
+            is RSAPrivateKey -> {
+                val sig = java.security.Signature.getInstance("SHA256withRSA")
+                sig.initSign(privateKey)
+                sig.update(bytes)
+                sig.sign()
+            }
+            is ECPrivateKey -> {
+                val sig = java.security.Signature.getInstance("SHA256withECDSA")
+                sig.initSign(privateKey)
+                sig.update(bytes)
+                sig.sign()
+            }
+            else -> error("Support RSA or EC private keys")
         }
-
-        jws.sign(signer)
-        return jws.serialize()
+        return signature
     }
 
     private fun loadPrivateKeyEntry(config: CryptoConfig): KeyStore.PrivateKeyEntry {

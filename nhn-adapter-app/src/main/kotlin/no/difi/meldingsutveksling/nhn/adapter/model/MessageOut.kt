@@ -11,7 +11,10 @@ data class MessageOut(
     val receiver: Receiver,
     val fagmelding: EncryptedFagmelding,
     val vedlegg: String,
+    val signature: Signature,
 )
+
+@Serializable data class Signature(val alg: String, val kid: String? = null, val value: String)
 
 @Serializable data class EncryptedFagmelding(val base64DerEncryptionCertificate: String, val message: String)
 

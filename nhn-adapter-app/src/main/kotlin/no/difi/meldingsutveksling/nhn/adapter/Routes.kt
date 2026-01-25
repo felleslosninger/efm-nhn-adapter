@@ -4,6 +4,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
+import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.crypto.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ArHandlers
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
@@ -30,7 +31,7 @@ fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
     testDphOut(bean(), bean())
     testRespondApprecFralegekontor(bean())
     arLookup(bean(), bean(), bean())
-    dphOut(bean(), bean(), bean())
+    dphOut(bean(), bean(), bean(), bean())
     statusCheck(bean())
     incomingReciept(bean())
 }
@@ -53,5 +54,9 @@ fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =
         return@GET InHandler.incomingApprec(it, mshClient)
     }
 
-fun CoRouterFunctionDsl.dphOut(mshClient: Client, arClient: AdresseregisteretClient, dekryptor: Dekrypter) =
-    POST(Routes.DPH_OUT) { OutHandler.dphOut(it, arClient, mshClient, dekryptor) }
+fun CoRouterFunctionDsl.dphOut(
+    mshClient: Client,
+    arClient: AdresseregisteretClient,
+    dekryptor: Dekrypter,
+    signatureValidator: SignatureValidator,
+) = POST(Routes.DPH_OUT) { OutHandler.dphOut(it, arClient, mshClient, dekryptor, signatureValidator) }

@@ -3,8 +3,10 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import java.io.ByteArrayInputStream
 import java.time.OffsetDateTime
 import java.util.UUID
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.reactor.awaitSingle
+import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
+import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
@@ -38,7 +40,6 @@ import okio.ByteString.Companion.decodeBase64
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
-import org.springframework.web.reactive.function.server.awaitBody
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.queryParamOrNull
 
@@ -66,9 +67,13 @@ object OutHandler {
         arClient: AdresseregisteretClient,
         mshClient: Client,
         dekryptering: Dekrypter,
+        signatureValidator: SignatureValidator,
     ): ServerResponse {
         logger.info("entering dph out")
-        val messageOut = request.awaitBody<MessageOut>()
+        val incomingRaw = request.bodyToMono(String::class.java).awaitSingle()
+        signatureValidator.validate(incomingRaw)
+
+        val messageOut = jsonParser.decodeFromString<MessageOut>(incomingRaw)
         val arDetailsSender =
             ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient, "dummy-certificate")
 
@@ -77,8 +82,7 @@ object OutHandler {
 
         // The fagmelding needs to be decyrpted
         val dekryptedFagmelding = dekryptering.dekrypter(messageOut.fagmelding.message.toByteArray()).decodeToString()
-        val fagmelding =
-            Json { ignoreUnknownKeys = true }.decodeFromString(Fagmelding.serializer(), dekryptedFagmelding)
+        val fagmelding = jsonParser.decodeFromString(Fagmelding.serializer(), dekryptedFagmelding)
 
         // @TODO Dette er her er ikke helt presis. Vi kan leve med det for øyebliket men
         // vi skall endre det å ta hensyn til det som kommer fra AR og ikke bruke fnr-en å besteme

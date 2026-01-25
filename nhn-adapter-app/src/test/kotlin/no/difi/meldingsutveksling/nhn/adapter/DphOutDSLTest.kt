@@ -38,7 +38,7 @@ class DphOutDSLTest :
                 registerBean<AdresseregisteretClient> { mockk() }
                 registerBean<Client> { mockk() }
                 registerBean<Dekrypter> { spyk<Dekrypter>(dummyDekryptor) }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean()) }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), mockk()) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {
@@ -235,7 +235,7 @@ class DphOutDSLTest :
                         }
                     }
                 }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean()) }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), mockk()) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {

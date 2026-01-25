@@ -10,6 +10,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.Notat
 import no.difi.meldingsutveksling.nhn.adapter.model.Patient
 import no.difi.meldingsutveksling.nhn.adapter.model.Receiver
 import no.difi.meldingsutveksling.nhn.adapter.model.Sender
+import no.difi.meldingsutveksling.nhn.adapter.model.Signature
 import no.ks.fiks.nhn.ar.CommunicationPartyParent
 import no.ks.fiks.nhn.ar.OrganizationCommunicationParty
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
@@ -117,6 +118,7 @@ class MessageOutBuilder() {
             receiver = receiver,
             fagmelding = EncryptedFagmelding("dummy-sertifikat", Json.encodeToString(fagmelding)),
             TEST_VEDLEG_TEST_PDF,
+            signature = Signature("sfsd", "sdf", "sdf"),
         )
 }
 

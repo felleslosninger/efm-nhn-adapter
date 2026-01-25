@@ -7,8 +7,10 @@ import com.nimbusds.jose.*
 import com.nimbusds.jose.crypto.*
 import java.security.KeyStore
 import java.security.PublicKey
+import java.security.Signature
 import java.security.interfaces.RSAPublicKey
 import java.security.interfaces.ECPublicKey
+import java.util.Base64
 
 class SignatureValidator(
     private val cryptoConfig: CryptoConfig,
@@ -24,28 +26,39 @@ class SignatureValidator(
     }
 
     fun validate(rawJson: String): Boolean {
-        val root = json.parseToJsonElement(rawJson) as? JsonObject ?: return false
-        val sig = root[signatureField]?.jsonPrimitive?.content ?: return false
+        val root = json.parseToJsonElement(rawJson).jsonObject
+        val sigObj = root[signatureField]?.jsonObject ?: return false
+
+        val sigB64 = sigObj["value"]?.jsonPrimitive?.content ?: return false
+        val sigBytes = try {
+            Base64.getDecoder().decode(sigB64)
+        } catch (e: IllegalArgumentException) {
+            return false
+        }
 
         val canonicalBytes = canonicalize(rawJson)
-        val jws = JWSObject.parse(sig)
 
-        // Ensure payload matches canonical bytes (prevents signature swapping)
-        if (!jws.payload.toBytes().contentEquals(canonicalBytes)) return false
-
-        val verifier: JWSVerifier = when (publicKey) {
-            is RSAPublicKey -> RSASSAVerifier(publicKey)
-            is ECPublicKey -> ECDSAVerifier(publicKey)
+        val algo = when (publicKey) {
+            is RSAPublicKey -> "SHA256withRSA"
+            is ECPublicKey -> "SHA256withECDSA"
             else -> return false
         }
 
-        return jws.verify(verifier)
+        val verifier = Signature.getInstance(algo)
+        verifier.initVerify(publicKey)
+        verifier.update(canonicalBytes)
+
+        return verifier.verify(sigBytes)
+
     }
 
     private fun canonicalize(rawJson: String): ByteArray {
-        val element = json.parseToJsonElement(rawJson) as JsonObject
+        val element = json.parseToJsonElement(rawJson).jsonObject
         val withoutSig = JsonObject(element.filterKeys { it != signatureField })
-        val canonical = JsonCanonicalizer(withoutSig.toString()).encodedString
+
+        val stable = Json.encodeToString(JsonElement.serializer(), withoutSig)
+
+        val canonical = JsonCanonicalizer(stable).encodedString
         return canonical.toByteArray(Charsets.UTF_8)
     }
 
