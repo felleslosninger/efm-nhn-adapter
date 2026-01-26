@@ -8,14 +8,26 @@ import com.nimbusds.jose.crypto.*
 import java.security.KeyStore
 import java.security.PublicKey
 import java.security.Signature
+import java.security.SignatureException
 import java.security.interfaces.RSAPublicKey
 import java.security.interfaces.ECPublicKey
 import java.util.Base64
+import mu.KotlinLogging
+import org.slf4j.LoggerFactory
+
 
 class SignatureValidator(
     private val cryptoConfig: CryptoConfig,
     private val signatureField: String = "signature",
 ) {
+    private val log = KotlinLogging.logger {}
+
+    companion object {
+        const val SHA256withRSA:String = "SHA256withRSA"
+        const val SHA256withECDSA:String = "SHA256withECDSA"
+    }
+
+
 
     private val json = Json { ignoreUnknownKeys = true }
     private val publicKey: PublicKey
@@ -25,30 +37,45 @@ class SignatureValidator(
         publicKey = entry.certificate.publicKey
     }
 
-    fun validate(rawJson: String): Boolean {
-        val root = json.parseToJsonElement(rawJson).jsonObject
-        val sigObj = root[signatureField]?.jsonObject ?: return false
+    fun validate(rawJson: String) {
+        try {
+            val root = json.parseToJsonElement(rawJson).jsonObject
+            val sigObj = root[signatureField]?.jsonObject ?: throw InvalidSignatureException("Invalid signature json")
 
-        val sigB64 = sigObj["value"]?.jsonPrimitive?.content ?: return false
-        val sigBytes = try {
-            Base64.getDecoder().decode(sigB64)
-        } catch (e: IllegalArgumentException) {
-            return false
+            val sigB64 = sigObj["value"]?.jsonPrimitive?.content ?: throw InvalidSignatureException("Invalid signature json")
+            val sigBytes = try {
+                Base64.getDecoder().decode(sigB64)
+            } catch (e: IllegalArgumentException) {
+                log.error("Signature is not valid. Not able to base64 decode")
+                throw InvalidSignatureException("Signature is not valid. Not able to base64 decode",e)
+            }
+
+            val canonicalBytes = canonicalize(rawJson)
+
+            val algo = when (publicKey) {
+                is RSAPublicKey -> SHA256withRSA
+                is ECPublicKey -> SHA256withECDSA
+                else -> throw InvalidSignatureException(
+                    "Unsupported public key type: ${publicKey::class.java.name}"
+                )
+            }
+
+            val verifier = Signature.getInstance(algo)
+            verifier.initVerify(publicKey)
+            verifier.update(canonicalBytes)
+
+            if (!verifier.verify(sigBytes)) {
+                throw InvalidSignatureException("Signature verification failed")
+            }
         }
-
-        val canonicalBytes = canonicalize(rawJson)
-
-        val algo = when (publicKey) {
-            is RSAPublicKey -> "SHA256withRSA"
-            is ECPublicKey -> "SHA256withECDSA"
-            else -> return false
+        catch (e: InvalidSignatureException){
+            log.error("Signature validation failed: ${e.message}")
+            throw e
         }
-
-        val verifier = Signature.getInstance(algo)
-        verifier.initVerify(publicKey)
-        verifier.update(canonicalBytes)
-
-        return verifier.verify(sigBytes)
+        catch (e: Exception) {
+            log.error("Unexpected error occured during signature validation ${e.message}")
+            throw InvalidSignatureException("Signature is not valid",e)
+        }
 
     }
 

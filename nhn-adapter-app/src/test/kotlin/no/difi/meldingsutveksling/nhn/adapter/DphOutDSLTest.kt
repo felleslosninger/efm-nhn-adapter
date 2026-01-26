@@ -2,9 +2,11 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.Runs
 import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.spyk
@@ -18,6 +20,7 @@ import kotlinx.coroutines.reactive.awaitFirst
 import kotlinx.coroutines.reactive.awaitSingle
 import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
+import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.msh.Client
@@ -30,6 +33,8 @@ import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 
+val awaysValidSignatureValidator = mockk<SignatureValidator>().apply { every { this@apply.validate(any()) } just Runs }
+
 @OptIn(ExperimentalUuidApi::class)
 class DphOutDSLTest :
     ShouldSpec({
@@ -38,7 +43,7 @@ class DphOutDSLTest :
                 registerBean<AdresseregisteretClient> { mockk() }
                 registerBean<Client> { mockk() }
                 registerBean<Dekrypter> { spyk<Dekrypter>(dummyDekryptor) }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), mockk()) }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), awaysValidSignatureValidator) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {
@@ -235,7 +240,7 @@ class DphOutDSLTest :
                         }
                     }
                 }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), mockk()) }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), awaysValidSignatureValidator) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {

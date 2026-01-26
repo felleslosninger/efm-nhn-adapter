@@ -7,8 +7,11 @@ import io.kotest.extensions.spring.SpringAutowireConstructorExtension
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.verify
+import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.CommunicationPartyParent
@@ -29,6 +32,7 @@ class RouterBootMockEnvTest(
     @MockkBean val flr: FastlegeregisteretClient,
     @MockkBean val arClient: AdresseregisteretClient,
     @Autowired val webTestClient: WebTestClient,
+    @MockkBean val signatureValidator: SignatureValidator,
 ) :
     FunSpec({
         test("Load Application Context") {
@@ -36,6 +40,8 @@ class RouterBootMockEnvTest(
             val HERID2 = 454545
             val HERID1 = 1111
             val ORGNUM = "787878"
+
+            every { signatureValidator.validate(any()) } just Runs
 
             every { flr.getPatientGP(PATIENT_FNR) } returns PatientGP("dummyId", HERID2)
 
