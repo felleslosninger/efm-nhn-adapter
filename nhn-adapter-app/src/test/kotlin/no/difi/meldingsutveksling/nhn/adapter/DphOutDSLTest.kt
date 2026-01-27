@@ -20,6 +20,7 @@ import kotlinx.coroutines.reactive.awaitFirst
 import kotlinx.coroutines.reactive.awaitSingle
 import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
+import no.difi.meldingsutveksling.nhn.adapter.crypto.InvalidSignatureException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
@@ -32,6 +33,7 @@ import no.ks.fiks.nhn.msh.RequestParameters
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
+import org.springframework.http.HttpStatus
 
 val awaysValidSignatureValidator = mockk<SignatureValidator>().apply { every { this@apply.validate(any()) } just Runs }
 
@@ -229,7 +231,7 @@ class DphOutDSLTest :
             }
         }
 
-        context("Testing DPH with encryption context") {
+        context("Testing DPH with cryptography") {
             val arLookupContext = BeanRegistrarDsl {
                 registerBean<AdresseregisteretClient> { mockk() }
                 registerBean<Client> { mockk() }
@@ -240,7 +242,8 @@ class DphOutDSLTest :
                         }
                     }
                 }
-                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), awaysValidSignatureValidator) }
+                registerBean<SignatureValidator> { awaysValidSignatureValidator }
+                testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), ctx.bean()) }
             }
             val context =
                 AnnotationConfigApplicationContext().apply {
@@ -255,7 +258,6 @@ class DphOutDSLTest :
                 val HER_ID_PERSON = "65657"
                 val slot = slot<Int>()
                 val arService = context.getBean<AdresseregisteretClient>()
-                val mshClient = context.getBean<Client>()
                 every { arService.lookupHerId(capture(slot)) } answers
                     {
                         when (slot.captured.toString()) {
@@ -287,6 +289,61 @@ class DphOutDSLTest :
 
                 response.status.is4xxClientError shouldBe true
                 response.responseBody.awaitSingle().message shouldBe "Unable to decrypt message"
+            }
+
+            should("Validate signature") {
+                val HER_ID_ORG = "856268"
+                val HER_ID_PERSON = "65657"
+
+                val mockMessageOutWithFNR =
+                    messageOutTemplate.modify {
+                        sender { herid2 = HER_ID_ORG }
+                        receiver { herid2 = HER_ID_PERSON }
+                        fagmelding { responsibleHealthcareProfessionalId = HER_ID_PERSON }
+                    }
+
+                val response =
+                    webTestClient
+                        .post()
+                        .uri("/dph/out")
+                        .bodyValue(mockMessageOutWithFNR)
+                        .exchange()
+                        .returnResult(ApiError::class.java)
+                val validator = context.getBean<SignatureValidator>()
+
+                response.status.is5xxServerError shouldBe true
+
+                verify(exactly = 1) { validator.validate(any()) }
+            }
+
+            should("SignatureValidationException will cause 401") {
+                val validator = context.getBean<SignatureValidator>()
+
+                every { validator.validate(any()) } throws InvalidSignatureException("This is a test exception")
+
+                val HER_ID_ORG = "856268"
+                val HER_ID_PERSON = "65657"
+
+                val mockMessageOutWithFNR =
+                    messageOutTemplate.modify {
+                        sender { herid2 = HER_ID_ORG }
+                        receiver { herid2 = HER_ID_PERSON }
+                        fagmelding { responsibleHealthcareProfessionalId = HER_ID_PERSON }
+                    }
+
+                val response =
+                    webTestClient
+                        .post()
+                        .uri("/dph/out")
+                        .bodyValue(mockMessageOutWithFNR)
+                        .exchange()
+                        .returnResult(ApiError::class.java)
+
+                response.status.is4xxClientError shouldBe true
+                response.status shouldBe HttpStatus.UNAUTHORIZED
+                response.responseBody.awaitFirst().message shouldBe "This is a test exception"
+
+                verify(exactly = 1) { validator.validate(any()) }
             }
         }
     })

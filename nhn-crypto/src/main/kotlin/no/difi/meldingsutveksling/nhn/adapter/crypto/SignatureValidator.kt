@@ -3,21 +3,17 @@ package no.difi.meldingsutveksling.nhn.adapter.crypto
 
 import kotlinx.serialization.json.*
 import org.erdtman.jcs.JsonCanonicalizer
-import com.nimbusds.jose.*
-import com.nimbusds.jose.crypto.*
 import java.security.KeyStore
 import java.security.PublicKey
 import java.security.Signature
-import java.security.SignatureException
 import java.security.interfaces.RSAPublicKey
 import java.security.interfaces.ECPublicKey
 import java.util.Base64
 import mu.KotlinLogging
-import org.slf4j.LoggerFactory
 
 
 class SignatureValidator(
-    private val cryptoConfig: CryptoConfig,
+    cryptoConfig: CryptoConfig,
     private val signatureField: String = "signature",
 ) {
     private val log = KotlinLogging.logger {}
@@ -40,9 +36,9 @@ class SignatureValidator(
     fun validate(rawJson: String) {
         try {
             val root = json.parseToJsonElement(rawJson).jsonObject
-            val sigObj = root[signatureField]?.jsonObject ?: throw InvalidSignatureException("Invalid signature json")
+            val sigObj = root[signatureField]?.jsonObject ?: throw InvalidSignatureException("Json is not signed.")
 
-            val sigB64 = sigObj["value"]?.jsonPrimitive?.content ?: throw InvalidSignatureException("Invalid signature json")
+            val sigB64 = sigObj["value"]?.jsonPrimitive?.content ?: throw InvalidSignatureException("Signature should be placed in a value field.")
             val sigBytes = try {
                 Base64.getDecoder().decode(sigB64)
             } catch (e: IllegalArgumentException) {
