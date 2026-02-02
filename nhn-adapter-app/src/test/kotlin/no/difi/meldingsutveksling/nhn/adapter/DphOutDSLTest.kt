@@ -245,6 +245,7 @@ class DphOutDSLTest :
                 registerBean<SignatureValidator> { awaysValidSignatureValidator }
                 testCoRouter { ctx -> dphOut(ctx.bean(), ctx.bean(), ctx.bean(), ctx.bean()) }
             }
+
             val context =
                 AnnotationConfigApplicationContext().apply {
                     register(arLookupContext)
@@ -252,6 +253,12 @@ class DphOutDSLTest :
                 }
 
             val webTestClient = webTestClient(context.getBean()) { this.responseTimeout(60.seconds.toJavaDuration()) }
+
+            afterTest {
+                clearMocks(context.getBean<AdresseregisteretClient>())
+                clearMocks(context.getBean<Client>())
+                clearMocks(awaysValidSignatureValidator)
+            }
 
             should("Retur BAD REQUEST when decryption fails") {
                 val HER_ID_ORG = "856268"

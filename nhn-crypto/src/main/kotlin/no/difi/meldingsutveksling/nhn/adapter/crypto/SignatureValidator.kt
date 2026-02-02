@@ -13,7 +13,7 @@ import mu.KotlinLogging
 
 
 class SignatureValidator(
-    cryptoConfig: CryptoConfig,
+    val trustStore: NhnTrustStore,
     private val signatureField: String = "signature",
 ) {
     private val log = KotlinLogging.logger {}
@@ -22,16 +22,8 @@ class SignatureValidator(
         const val SHA256withRSA:String = "SHA256withRSA"
         const val SHA256withECDSA:String = "SHA256withECDSA"
     }
-
-
-
     private val json = Json { ignoreUnknownKeys = true }
-    private val publicKey: PublicKey
 
-    init {
-        val entry = loadPrivateKeyEntry(cryptoConfig)
-        publicKey = entry.certificate.publicKey
-    }
 
     fun validate(rawJson: String) {
         try {
@@ -39,6 +31,7 @@ class SignatureValidator(
             val sigObj = root[signatureField]?.jsonObject ?: throw InvalidSignatureException("Json is not signed.")
 
             val sigB64 = sigObj["value"]?.jsonPrimitive?.content ?: throw InvalidSignatureException("Signature should be placed in a value field.")
+            val kid = sigObj["kid"]?.jsonPrimitive?.content?: throw InvalidSignatureException("Signature is missing kid")
             val sigBytes = try {
                 Base64.getDecoder().decode(sigB64)
             } catch (e: IllegalArgumentException) {
@@ -47,7 +40,7 @@ class SignatureValidator(
             }
 
             val canonicalBytes = canonicalize(rawJson)
-
+            val publicKey = trustStore.getCertificateByKid(kid).publicKey
             val algo = when (publicKey) {
                 is RSAPublicKey -> SHA256withRSA
                 is ECPublicKey -> SHA256withECDSA
@@ -85,12 +78,4 @@ class SignatureValidator(
         return canonical.toByteArray(Charsets.UTF_8)
     }
 
-    private fun loadPrivateKeyEntry(config: CryptoConfig): KeyStore.PrivateKeyEntry {
-        val ks = KeyStore.getInstance(config.type)
-        ks.load(config.keyStoreAsByteArray().inputStream(), config.password.toCharArray())
-        return ks.getEntry(
-            config.alias,
-            KeyStore.PasswordProtection(config.password.toCharArray())
-        ) as KeyStore.PrivateKeyEntry
-    }
 }

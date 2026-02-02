@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import no.difi.meldingsutveksling.nhn.adapter.crypto.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.InvalidSignatureException
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
 import org.bouncycastle.asn1.x500.X500Name
@@ -70,26 +71,27 @@ class SignatureValideringTest :
             
             }""")
 
-            val signatureValidator = SignatureValidator(cryptoConfig)
+            val signatureValidator = SignatureValidator(cryptoConfig.let { NhnTrustStore(it) })
             signatureValidator.validate(signedJson)
         }
 
         should("unsigned signature should not validate") {
-            val cryptoConfig =
+            val trustStore =
                 CryptoConfig(
-                    "unit-test",
-                    null,
-                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-sertifikat.p12").file,
-                    "test",
-                    "PKCS12",
-                )
+                        "unit-test",
+                        null,
+                        SignatureValideringTest::class.java.classLoader.getResource("unit-test-sertifikat.p12").file,
+                        "test",
+                        "PKCS12",
+                    )
+                    .let { NhnTrustStore(it) }
 
             val unsigned = """{
                 "testKey":"testValue"
             
             }"""
 
-            val signatureValidator = SignatureValidator(cryptoConfig)
+            val signatureValidator = SignatureValidator(trustStore)
             var ex = shouldThrow<InvalidSignatureException> { signatureValidator.validate(unsigned) }
 
             ex.message shouldBe "Json is not signed."
@@ -124,7 +126,7 @@ class SignatureValideringTest :
 
             val validatingConfig = CryptoConfig("unit-test", null, unitTestP12Path, "test", "PKCS12")
 
-            val validator = SignatureValidator(validatingConfig)
+            val validator = SignatureValidator(NhnTrustStore(validatingConfig))
 
             val ex = shouldThrow<InvalidSignatureException> { validator.validate(signedJson) }
             ex.message shouldBe "Signature verification failed"

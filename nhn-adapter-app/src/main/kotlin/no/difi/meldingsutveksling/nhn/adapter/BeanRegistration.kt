@@ -20,6 +20,7 @@ import no.difi.meldingsutveksling.nhn.adapter.crypto.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
@@ -99,6 +100,7 @@ private fun security() = BeanRegistrarDsl {
 
 private fun crypto() = BeanRegistrarDsl {
     registerBean<NhnKeystore> { NhnKeystore(bean()) }
+    registerBean<NhnTrustStore> { NhnTrustStore(bean()) }
     registerBean<SignatureValidator> { SignatureValidator(bean()) }
 
     profile(expression = "unit-test") {
