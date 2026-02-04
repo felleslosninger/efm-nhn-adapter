@@ -3,7 +3,9 @@ package no.difi.meldingsutveksling.nhn.adapter
 import kotlin.uuid.ExperimentalUuidApi
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.crypto.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ArHandlers
@@ -33,7 +35,7 @@ fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
     arLookup(bean(), bean(), bean())
     dphOut(bean(), bean(), bean(), bean())
     statusCheck(bean())
-    incomingReciept(bean())
+    incomingReciept(bean(), bean(), bean())
 }
 
 fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
@@ -49,9 +51,9 @@ fun CoRouterFunctionDsl.arLookup(
 }
 
 @OptIn(ExperimentalUuidApi::class)
-fun CoRouterFunctionDsl.incomingReciept(mshClient: Client) =
+fun CoRouterFunctionDsl.incomingReciept(mshClient: Client, kryptering: Kryptering, trustStore: NhnTrustStore) =
     GET(Routes.INCOMING_RECEIPT) {
-        return@GET InHandler.incomingApprec(it, mshClient)
+        return@GET InHandler.incomingApprec(it, mshClient, kryptering, trustStore)
     }
 
 fun CoRouterFunctionDsl.dphOut(

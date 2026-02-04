@@ -8,7 +8,7 @@ import java.util.Base64
 class NhnTrustStore(
     private val config: CryptoConfig,
 ) {
-    private final val kidToCertificate: Map<String, X509Certificate> = buildMap {
+    private val kidToCertificate: Map<String, X509Certificate> = buildMap {
          val trustStore = loadKeyStore(config)
         val aliases = trustStore.aliases()
         while (aliases.hasMoreElements()) {

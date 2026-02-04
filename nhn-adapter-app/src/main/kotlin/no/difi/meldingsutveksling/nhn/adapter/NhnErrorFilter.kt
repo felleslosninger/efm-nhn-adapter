@@ -1,6 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import no.difi.meldingsutveksling.nhn.adapter.crypto.DecryptionException
+import no.difi.meldingsutveksling.nhn.adapter.crypto.EncryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.InvalidSignatureException
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
@@ -52,6 +53,10 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
             is DecryptionException -> {
                 logger.error("Unable to decrypt message", it as Throwable)
                 request.toApiError(HttpStatus.BAD_REQUEST, "Unable to decrypt message")
+            }
+            is EncryptionException -> {
+                logger.error("Unable to encrypt message", it as Throwable)
+                request.toApiError(HttpStatus.BAD_REQUEST, "Unable to encrypt message")
             }
             is HttpException -> {
                 request.toApiError(HttpStatus.valueOf(it.status), it.message!!)

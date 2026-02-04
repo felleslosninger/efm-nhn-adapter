@@ -7,15 +7,21 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeTypeOf
+import io.ktor.util.decodeBase64String
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import java.security.cert.X509Certificate
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.serialization.builtins.ListSerializer
+import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
+import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
+import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
 import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
@@ -34,7 +40,9 @@ class InHandlerDSLTest :
         context("Test reciept") {
             val receiptContext = BeanRegistrarDsl {
                 registerBean<Client>() { mockk() }
-                testCoRouter { ctx -> this.incomingReciept(ctx.bean()) }
+                registerBean<Kryptering>() { mockk() }
+                registerBean<NhnTrustStore> { mockk() }
+                testCoRouter { ctx -> this.incomingReciept(ctx.bean(), ctx.bean(), ctx.bean()) }
             }
 
             val context =
@@ -75,6 +83,26 @@ class InHandlerDSLTest :
                     ?.shouldBe("On behalf of organisation is not provided.")
             }
 
+            should("missing kid responds with BAD REQUEST") {
+                webTestClient
+                    .get()
+                    .uri { uriBuilder ->
+                        uriBuilder
+                            .path(Routes.INCOMING_RECEIPT)
+                            .queryParam("onBehalfOf", "234234324")
+                            .build(Uuid.random().toString())
+                    }
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+                    .expectBody(ApiError::class.java)
+                    .returnResult()
+                    .responseBody
+                    .shouldNotBeNull()
+                    .message
+                    ?.shouldBe("Unable to encrypt message")
+            }
+
             should("When input is valid getApplicationReceiptsForMessage is invoked with correct arguments") {
                 val validIdentifier = Uuid.random()
                 val onBehalfOfOrgnummer = "234234324"
@@ -86,10 +114,10 @@ class InHandlerDSLTest :
                             match { it.toString() == validIdentifier.toString() },
                             match {
                                 (it.helseId?.tenant as MultiTenantHelseIdTokenParameters).parentOrganization ==
-                                    onBehalfOfOrgnummer.toString()
+                                    onBehalfOfOrgnummer
                             },
                         )
-                } returns listOf<ApplicationReceiptInfo>()
+                } returns listOf()
 
                 webTestClient
                     .get()
@@ -97,6 +125,7 @@ class InHandlerDSLTest :
                         uriBuilder
                             .path(Routes.INCOMING_RECEIPT)
                             .queryParam("onBehalfOf", onBehalfOfOrgnummer)
+                            .queryParam("kid", "456546")
                             .build(validIdentifier.toString())
                     }
                     .exchange()
@@ -144,12 +173,19 @@ class InHandlerDSLTest :
                         )
                 } returns listOf(applicationReceipt)
 
+                val encryptionCertificate: X509Certificate = mockk()
+                coEvery { encryptionCertificate.encoded } returns "encryption certificate".toByteArray()
+
+                coEvery { context.getBean<NhnTrustStore>().getCertificateByKid(any()) } returns encryptionCertificate
+                coEvery { context.getBean<Kryptering>().krypter(any(), any()) } answers { firstArg() }
+
                 webTestClient
                     .get()
                     .uri { uriBuilder ->
                         uriBuilder
                             .path(Routes.INCOMING_RECEIPT)
                             .queryParam("onBehalfOf", onBehalfOfOrgnummer)
+                            .queryParam("kid", "456546")
                             .build(validIdentifier.toString())
                     }
                     .exchange()
@@ -160,24 +196,31 @@ class InHandlerDSLTest :
                     .responseBody
                     .run {
                         this.shouldNotBeNull()
-                        println(this.toString(Charsets.UTF_8))
                         val response =
                             jsonNhn.decodeFromString(
-                                ListSerializer(SerializableApplicationReceiptInfo.serializer()),
+                                ListSerializer(EncryptedFagmelding.serializer()),
                                 this.toString(Charsets.UTF_8),
                             )
                         response.shouldNotBeNull()
                         response.shouldHaveSize(1)
-                        with(response.first()) {
+
+                        with(
+                            response
+                                .map {
+                                    jsonParser.decodeFromString<SerializableApplicationReceiptInfo>(
+                                        it.message.decodeBase64String()
+                                    )
+                                }
+                                .first()
+                        ) {
                             shouldNotBeNull()
-                            shouldBeTypeOf<SerializableApplicationReceiptInfo>()
                             recieverHerId shouldBeEqual applicationReceipt.receiverHerId
                             status.shouldNotBeNull()
                             status shouldBeEqual applicationReceipt.status!!
                             errors.map { it.toOriginal() } shouldBe applicationReceipt.errors
                         }
                         response.first().shouldNotBeNull()
-                        response.first().shouldBeTypeOf<SerializableApplicationReceiptInfo>()
+                        response.first().shouldBeTypeOf<EncryptedFagmelding>()
                     }
 
                 coVerify(exactly = 1) {

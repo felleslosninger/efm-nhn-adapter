@@ -7,7 +7,10 @@ import kotlin.time.ExperimentalTime
 import kotlinx.serialization.Serializable
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.FLRCONFIG
+import no.difi.meldingsutveksling.nhn.adapter.Names.KEYSTORE_CONFIG
+import no.difi.meldingsutveksling.nhn.adapter.Names.TRUSTSTORE_CONFIG
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.CRYPTO_KEYSTORE
+import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.CRYPTO_TRUSTSTORE
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_AR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_FLR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.OAUTH2_HELSE_ID
@@ -19,6 +22,7 @@ import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.CryptoConfig
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekryptering
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
@@ -43,6 +47,8 @@ import reactor.core.publisher.Mono
 private object Names {
     const val ARCONFIG = "ArConfig"
     const val FLRCONFIG = "FlrConfig"
+    const val KEYSTORE_CONFIG = "KeystoreConfig"
+    const val TRUSTSTORE_CONFIG = "TrustStoreConfig"
 }
 
 private object PropertyNames {
@@ -51,6 +57,7 @@ private object PropertyNames {
     const val OAUTH2_HELSE_ID = "oauth2.helse-id"
     const val SERVICES_MSH_URL = "nhn.services.msh.url"
     const val CRYPTO_KEYSTORE = "crypto.keystore"
+    const val CRYPTO_TRUSTSTORE = "crypto.truststore"
 }
 
 private fun properties() = BeanRegistrarDsl {
@@ -69,8 +76,13 @@ private fun properties() = BeanRegistrarDsl {
             IllegalStateException("HelseId configuration was not found.")
         }
     }
-    registerBean<CryptoConfig> {
+    registerBean<CryptoConfig>(KEYSTORE_CONFIG) {
         Binder.get(env).bind(CRYPTO_KEYSTORE, CryptoConfig::class.java).orElseThrow {
+            IllegalStateException("Cryptography configuration was not found.")
+        }
+    }
+    registerBean<CryptoConfig>(TRUSTSTORE_CONFIG) {
+        Binder.get(env).bind(CRYPTO_TRUSTSTORE, CryptoConfig::class.java).orElseThrow {
             IllegalStateException("Cryptography configuration was not found.")
         }
     }
@@ -99,9 +111,10 @@ private fun security() = BeanRegistrarDsl {
 }
 
 private fun crypto() = BeanRegistrarDsl {
-    registerBean<NhnKeystore> { NhnKeystore(bean()) }
-    registerBean<NhnTrustStore> { NhnTrustStore(bean()) }
+    registerBean<NhnKeystore> { NhnKeystore(bean(KEYSTORE_CONFIG)) }
+    registerBean<NhnTrustStore> { NhnTrustStore(bean(TRUSTSTORE_CONFIG)) }
     registerBean<SignatureValidator> { SignatureValidator(bean()) }
+    registerBean { Kryptering() }
 
     profile(expression = "unit-test") {
         registerBean<Dekrypter> {
@@ -148,7 +161,7 @@ class BeanRegistration() :
                     arLookup(bean(), bean(), bean())
                     dphOut(bean(), bean(), bean(), bean())
                     statusCheck(bean())
-                    incomingReciept(bean())
+                    incomingReciept(bean(), bean(), bean())
                 }
                 .filter(nhnErrorFilter())
         }
