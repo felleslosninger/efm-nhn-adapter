@@ -9,7 +9,7 @@ class NhnTrustStore(
     private val config: CryptoConfig,
 ) {
     private val kidToCertificate: Map<String, X509Certificate> = buildMap {
-         val trustStore = loadKeyStore(config)
+        val trustStore = loadKeyStore(config)
         val aliases = trustStore.aliases()
         while (aliases.hasMoreElements()) {
             val alias = aliases.nextElement()

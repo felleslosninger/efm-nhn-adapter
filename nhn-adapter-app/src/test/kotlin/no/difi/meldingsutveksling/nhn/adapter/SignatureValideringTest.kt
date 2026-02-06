@@ -34,7 +34,7 @@ class SignatureValideringTest :
                 CryptoConfig(
                     "unit-test",
                     null,
-                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-sertifikat.p12").file,
+                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12").file,
                     "test",
                     "PKCS12",
                 )
@@ -60,7 +60,7 @@ class SignatureValideringTest :
                 CryptoConfig(
                     "unit-test",
                     null,
-                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-sertifikat.p12").file,
+                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12").file,
                     "test",
                     "PKCS12",
                 )
@@ -80,7 +80,7 @@ class SignatureValideringTest :
                 CryptoConfig(
                         "unit-test",
                         null,
-                        SignatureValideringTest::class.java.classLoader.getResource("unit-test-sertifikat.p12").file,
+                        SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12").file,
                         "test",
                         "PKCS12",
                     )
@@ -122,14 +122,14 @@ class SignatureValideringTest :
             val signedJson = Signer(signingConfig).sign("""{ "testKey":"testValue" }""")
 
             val unitTestP12Path =
-                SignatureValideringTest::class.java.classLoader.getResource("unit-test-sertifikat.p12")!!.file
+                SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12")!!.file
 
             val validatingConfig = CryptoConfig("unit-test", null, unitTestP12Path, "test", "PKCS12")
 
             val validator = SignatureValidator(NhnTrustStore(validatingConfig))
 
             val ex = shouldThrow<InvalidSignatureException> { validator.validate(signedJson) }
-            ex.message shouldBe "Signature verification failed"
+            ex.message shouldBe "Can not find certificate for given kid"
         }
     })
 

@@ -71,7 +71,7 @@ val testCryptoConfig =
         "unit-test",
         Thread.currentThread()
             .contextClassLoader
-            .getResourceAsStream("unit-test-sertifikat.p12")
+            .getResourceAsStream("unit-test-keystore.p12")
             .readAllBytes()
             .encodeBase64(),
         password = "test",
