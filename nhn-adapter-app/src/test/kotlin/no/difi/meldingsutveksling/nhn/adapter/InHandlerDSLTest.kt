@@ -1,12 +1,10 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import io.kotest.core.spec.style.ShouldSpec
-import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeTypeOf
 import io.ktor.util.decodeBase64String
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -18,9 +16,11 @@ import kotlin.time.toJavaDuration
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlinx.serialization.builtins.ListSerializer
-import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
 import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
 import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
@@ -33,6 +33,7 @@ import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
+import tools.jackson.databind.ser.jdk.MapSerializer
 
 @OptIn(ExperimentalUuidApi::class)
 class InHandlerDSLTest :
@@ -42,7 +43,8 @@ class InHandlerDSLTest :
                 registerBean<Client>() { mockk() }
                 registerBean<Kryptering>() { mockk() }
                 registerBean<NhnTrustStore> { mockk() }
-                testCoRouter { ctx -> this.incomingReciept(ctx.bean(), ctx.bean(), ctx.bean()) }
+                registerBean<Signer>() { mockk() }
+                testCoRouter { ctx -> this.incomingReciept(ctx.bean(), ctx.bean(), ctx.bean(), ctx.bean()) }
             }
 
             val context =
@@ -178,6 +180,7 @@ class InHandlerDSLTest :
 
                 coEvery { context.getBean<NhnTrustStore>().getCertificateByKid(any()) } returns encryptionCertificate
                 coEvery { context.getBean<Kryptering>().krypter(any(), any()) } answers { firstArg() }
+                coEvery { context.getBean<Signer>().sign(any()) } answers { firstArg() }
 
                 webTestClient
                     .get()
@@ -198,29 +201,23 @@ class InHandlerDSLTest :
                         this.shouldNotBeNull()
                         val response =
                             jsonNhn.decodeFromString(
-                                ListSerializer(EncryptedFagmelding.serializer()),
-                                this.toString(Charsets.UTF_8),
+                                deserializer = MapSerializer(String.serializer(), EncryptedFagmelding.serializer()),
+                                this.decodeToString(),
                             )
-                        response.shouldNotBeNull()
-                        response.shouldHaveSize(1)
-
-                        with(
-                            response
-                                .map {
-                                    jsonParser.decodeFromString<SerializableApplicationReceiptInfo>(
-                                        it.message.decodeBase64String()
-                                    )
-                                }
-                                .first()
-                        ) {
+                        response["receipts"].shouldNotBeNull()
+                        response["receipts"]?.message.shouldNotBeNull()
+                        val receipts =
+                            jsonNhn.decodeFromString(
+                                ListSerializer(SerializableApplicationReceiptInfo.serializer()),
+                                response["receipts"]?.message!!.decodeBase64String(),
+                            )
+                        with(receipts.first()) {
                             shouldNotBeNull()
                             recieverHerId shouldBeEqual applicationReceipt.receiverHerId
                             status.shouldNotBeNull()
                             status shouldBeEqual applicationReceipt.status!!
                             errors.map { it.toOriginal() } shouldBe applicationReceipt.errors
                         }
-                        response.first().shouldNotBeNull()
-                        response.first().shouldBeTypeOf<EncryptedFagmelding>()
                     }
 
                 coVerify(exactly = 1) {

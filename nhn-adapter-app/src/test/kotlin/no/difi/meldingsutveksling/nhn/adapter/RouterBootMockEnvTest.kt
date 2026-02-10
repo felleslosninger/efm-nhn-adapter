@@ -12,6 +12,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.verify
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.CommunicationPartyParent
@@ -33,6 +34,7 @@ class RouterBootMockEnvTest(
     @MockkBean val arClient: AdresseregisteretClient,
     @Autowired val webTestClient: WebTestClient,
     @MockkBean val signatureValidator: SignatureValidator,
+    @MockkBean val signer: Signer,
 ) :
     FunSpec({
         test("Load Application Context") {

@@ -26,6 +26,7 @@ import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnKeystore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
+import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
 import no.ks.fiks.helseid.Configuration
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import org.apache.hc.client5.http.classic.HttpClient
@@ -115,6 +116,7 @@ private fun crypto() = BeanRegistrarDsl {
     registerBean<NhnTrustStore> { NhnTrustStore(bean(TRUSTSTORE_CONFIG)) }
     registerBean<SignatureValidator> { SignatureValidator(bean()) }
     registerBean { Kryptering() }
+    registerBean<Signer> { Signer(bean(KEYSTORE_CONFIG)) }
 
     profile(expression = "unit-test") {
         registerBean<Dekrypter> {
@@ -161,7 +163,7 @@ class BeanRegistration() :
                     arLookup(bean(), bean(), bean())
                     dphOut(bean(), bean(), bean(), bean())
                     statusCheck(bean())
-                    incomingReciept(bean(), bean(), bean())
+                    incomingReciept(bean(), bean(), bean(), bean())
                 }
                 .filter(nhnErrorFilter())
         }
