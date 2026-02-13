@@ -49,11 +49,18 @@ oauth2:
     issuer: "https://helseid-sts.test.nhn.no"
     audience: "https://helseid-sts.test.nhn.no"
 crypto:
-  keystore:
-    base64Value: ${CRYPTO_KEYSTORE_VALUE}
-    alias: ${CRYPTO_KEYSTORE_ALIAS}
-    password: ${CRYPTO_KEYSTORE_PASSWORD}
-    type: "PKCS12"
+  encryption:
+    keystore:
+      base64Value: ${CRYPTO_KEYSTORE_VALUE}
+      alias: ${CRYPTO_KEYSTORE_ALIAS}
+      password: ${CRYPTO_KEYSTORE_PASSWORD}
+      type: "PKCS12"
+  signature:
+    keystore:
+      base64Value: ${CRYPTO_KEYSTORE_VALUE}
+      alias: ${CRYPTO_KEYSTORE_ALIAS}
+      password: ${CRYPTO_KEYSTORE_PASSWORD}
+      type: "PKCS12"
   truststore:
     base64Value: ${CRYPTO_KEYSTORE_VALUE}
     alias: ${CRYPTO_KEYSTORE_ALIAS}

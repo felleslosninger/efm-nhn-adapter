@@ -6,8 +6,9 @@ import java.util.Date
 import kotlin.time.ExperimentalTime
 import kotlinx.serialization.Serializable
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
+import no.difi.meldingsutveksling.nhn.adapter.Names.ENCRYPTION_KEYSTORE_CONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.FLRCONFIG
-import no.difi.meldingsutveksling.nhn.adapter.Names.KEYSTORE_CONFIG
+import no.difi.meldingsutveksling.nhn.adapter.Names.SIGNATURE_KEYSTORE_CONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.TRUSTSTORE_CONFIG
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.CRYPTO_KEYSTORE
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.CRYPTO_TRUSTSTORE
@@ -15,6 +16,7 @@ import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_AR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_FLR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.OAUTH2_HELSE_ID
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SERVICES_MSH_URL
+import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SIGNATURE_KEYSTORE
 import no.difi.meldingsutveksling.nhn.adapter.beans.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.beans.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
@@ -48,7 +50,8 @@ import reactor.core.publisher.Mono
 private object Names {
     const val ARCONFIG = "ArConfig"
     const val FLRCONFIG = "FlrConfig"
-    const val KEYSTORE_CONFIG = "KeystoreConfig"
+    const val ENCRYPTION_KEYSTORE_CONFIG = "EncyrptionKeystoreConfig"
+    const val SIGNATURE_KEYSTORE_CONFIG = "SigningKeystoreConfig"
     const val TRUSTSTORE_CONFIG = "TrustStoreConfig"
 }
 
@@ -57,7 +60,8 @@ private object PropertyNames {
     const val NHN_SERVICE_FLR = "nhn.services.flr"
     const val OAUTH2_HELSE_ID = "oauth2.helse-id"
     const val SERVICES_MSH_URL = "nhn.services.msh.url"
-    const val CRYPTO_KEYSTORE = "crypto.keystore"
+    const val CRYPTO_KEYSTORE = "crypto.encryption.keystore"
+    const val SIGNATURE_KEYSTORE = "crypto.signature.keystore"
     const val CRYPTO_TRUSTSTORE = "crypto.truststore"
 }
 
@@ -77,8 +81,13 @@ private fun properties() = BeanRegistrarDsl {
             IllegalStateException("HelseId configuration was not found.")
         }
     }
-    registerBean<CryptoConfig>(KEYSTORE_CONFIG) {
+    registerBean<CryptoConfig>(ENCRYPTION_KEYSTORE_CONFIG) {
         Binder.get(env).bind(CRYPTO_KEYSTORE, CryptoConfig::class.java).orElseThrow {
+            IllegalStateException("Cryptography configuration was not found.")
+        }
+    }
+    registerBean<CryptoConfig>(SIGNATURE_KEYSTORE_CONFIG) {
+        Binder.get(env).bind(SIGNATURE_KEYSTORE, CryptoConfig::class.java).orElseThrow {
             IllegalStateException("Cryptography configuration was not found.")
         }
     }
@@ -112,11 +121,11 @@ private fun security() = BeanRegistrarDsl {
 }
 
 private fun crypto() = BeanRegistrarDsl {
-    registerBean<NhnKeystore> { NhnKeystore(bean(KEYSTORE_CONFIG)) }
+    registerBean<NhnKeystore> { NhnKeystore(bean(ENCRYPTION_KEYSTORE_CONFIG)) }
     registerBean<NhnTrustStore> { NhnTrustStore(bean(TRUSTSTORE_CONFIG)) }
     registerBean<SignatureValidator> { SignatureValidator(bean()) }
     registerBean { Kryptering() }
-    registerBean<Signer> { Signer(bean(KEYSTORE_CONFIG)) }
+    registerBean<Signer> { Signer(bean(SIGNATURE_KEYSTORE_CONFIG)) }
 
     profile(expression = "unit-test") {
         registerBean<Dekrypter> {

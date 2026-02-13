@@ -19,12 +19,20 @@ oauth2:
     issuer: "https://helseid-sts.test.nhn.no"
     audience: "https://helseid-sts.test.nhn.no"
 crypto:
-  keystore:
-    file: "./unit-test-keystore.p12"
-    value: ""
-    alias: "dummy"
-    password: "test"
-    type: "PKCS12"
+  encryption:
+    keystore:
+      file: "./unit-test-keystore.p12"
+      value: ""
+      alias: "dummy"
+      password: "test"
+      type: "PKCS12"
+  signature:
+    keystore:
+      file: "./unit-test-keystore.p12"
+      value: ""
+      alias: "dummy"
+      password: "test"
+      type: "PKCS12"
   truststore:
     file: "./unit-test-truststore.p12"
     value: ""
