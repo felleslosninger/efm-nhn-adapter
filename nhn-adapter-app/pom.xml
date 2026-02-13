@@ -91,7 +91,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-kotlin-serialization</artifactId>
+            <artifactId>spring-boot-starter-kotlinx-serialization-json</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

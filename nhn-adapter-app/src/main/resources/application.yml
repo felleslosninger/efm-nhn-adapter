@@ -51,20 +51,20 @@ oauth2:
 crypto:
   encryption:
     keystore:
-      base64Value: ${CRYPTO_KEYSTORE_VALUE}
-      alias: ${CRYPTO_KEYSTORE_ALIAS}
-      password: ${CRYPTO_KEYSTORE_PASSWORD}
+      base64Value: ${ENCRYPTION_KEYSTORE_VALUE}
+      alias: ${ENCRYPTION_KEYSTORE_ALIAS}
+      password: ${ENCRYPTION_KEYSTORE_PASSWORD}
       type: "PKCS12"
   signature:
     keystore:
-      base64Value: ${CRYPTO_KEYSTORE_VALUE}
-      alias: ${CRYPTO_KEYSTORE_ALIAS}
-      password: ${CRYPTO_KEYSTORE_PASSWORD}
+      base64Value: ${SIGNATURE_KEYSTORE_VALUE}
+      alias: ${SIGNATURE_KEYSTORE_ALIAS}
+      password: ${SIGNATURE_KEYSTORE_PASSWORD}
       type: "PKCS12"
   truststore:
-    base64Value: ${CRYPTO_KEYSTORE_VALUE}
-    alias: ${CRYPTO_KEYSTORE_ALIAS}
-    password: ${CRYPTO_KEYSTORE_PASSWORD}
+    base64Value: ${TRUSTORE_VALUE}
+    alias: ${TRUSTSTORE_ALIAS}
+    password: ${TRUSTORE_PASSWORD}
     type: "PKCS12"
 logging:
   level:
