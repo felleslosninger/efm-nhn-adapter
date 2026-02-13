@@ -62,9 +62,9 @@ crypto:
       password: ${SIGNATURE_KEYSTORE_PASSWORD}
       type: "PKCS12"
   truststore:
-    base64Value: ${TRUSTORE_VALUE}
-    alias: ${TRUSTSTORE_ALIAS}
-    password: ${TRUSTORE_PASSWORD}
+    base64Value: ${SIGNATURE_TRUSTSTORE_VALUE}
+    alias: ${SIGNATURE_TRUSTSTORE_ALIAS}
+    password: ${SIGNATURE_TRUSTSTORE_PASSWORD}
     type: "PKCS12"
 logging:
   level:
