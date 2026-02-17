@@ -26,9 +26,9 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
-import no.ks.fiks.nhn.msh.OrganizationReceiverDetails
+import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
-import no.ks.fiks.nhn.msh.PersonReceiverDetails
+import no.ks.fiks.nhn.msh.PersonCommunicationParty
 import no.ks.fiks.nhn.msh.RequestParameters
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.beans.factory.getBean
@@ -152,7 +152,7 @@ class DphOutDSLTest :
                     .status
                     .is5xxServerError shouldBe true
 
-                businessDocumentSlot.captured.receiver.child::class shouldBe PersonReceiverDetails::class
+                businessDocumentSlot.captured.receiver.child::class shouldBe PersonCommunicationParty::class
 
                 webTestClient
                     .post()
@@ -164,7 +164,7 @@ class DphOutDSLTest :
                     .is5xxServerError shouldBe true
 
                 verify(exactly = 2) { context.getBean<Dekrypter>().dekrypter(any()) }
-                businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
+                businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationCommunicationParty::class
             }
 
             should("Return EDI message referanse when valid document is sendt") {
@@ -214,7 +214,7 @@ class DphOutDSLTest :
 
                 (slotRequestParam.captured.helseId!!.tenant as MultiTenantHelseIdTokenParameters)
                     .parentOrganization shouldBe ON_BEHALF_OF_ORGNUM
-                businessDocumentSlot.captured.receiver.child::class shouldBe PersonReceiverDetails::class
+                businessDocumentSlot.captured.receiver.child::class shouldBe PersonCommunicationParty::class
 
                 result =
                     webTestClient
@@ -227,7 +227,7 @@ class DphOutDSLTest :
                 Uuid.parse(result.responseBody.awaitFirst())
 
                 verify(exactly = 2) { context.getBean<Dekrypter>().dekrypter(any()) }
-                businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationReceiverDetails::class
+                businessDocumentSlot.captured.receiver.child::class shouldBe OrganizationCommunicationParty::class
             }
         }
 
