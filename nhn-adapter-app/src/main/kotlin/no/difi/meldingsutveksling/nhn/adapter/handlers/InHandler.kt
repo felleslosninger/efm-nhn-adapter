@@ -6,15 +6,16 @@ import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
-import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.crypto.EncryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
 import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
+import no.difi.meldingsutveksling.nhn.adapter.model.toSerializeable
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.IncomingBusinessDocument
@@ -116,7 +117,7 @@ object InHandler {
 
         val businessDokument: IncomingBusinessDocument = mshClient.getBusinessDocument(messageId, requestParameters)
 
-        return ServerResponse.ok().bodyValueAndAwait(businessDokument)
+        return ServerResponse.ok().bodyValueAndAwait(businessDokument.toSerializeable())
     }
 
     suspend fun markAsRead(request: ServerRequest): ServerResponse = ServerResponse.ok().bodyValueAndAwait("")

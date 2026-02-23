@@ -215,7 +215,7 @@ class InHandlerDSLTest :
                             shouldNotBeNull()
                             recieverHerId shouldBeEqual applicationReceipt.receiverHerId
                             status.shouldNotBeNull()
-                            status shouldBeEqual applicationReceipt.status!!
+                            status!! shouldBeEqual applicationReceipt.status!!
                             errors.map { it.toOriginal() } shouldBe applicationReceipt.errors
                         }
                     }

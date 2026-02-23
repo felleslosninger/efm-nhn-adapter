@@ -9,7 +9,6 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
     <artifactId>nhn-crypto</artifactId>
     <packaging>jar</packaging>
     <name>NHN message level security</name>

@@ -4,12 +4,12 @@ import java.io.ByteArrayInputStream
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.coroutines.reactor.awaitSingle
-import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
