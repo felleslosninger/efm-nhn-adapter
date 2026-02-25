@@ -72,7 +72,7 @@ object OutHandler {
         val incomingRaw = request.bodyToMono(String::class.java).awaitSingle()
         signatureValidator.validate(incomingRaw)
 
-        val messageOut = jsonParser.decodeFromString<MessageOut>(incomingRaw)
+        val messageOut = jsonParser.decodeFromString<MessageOut.Signed>(incomingRaw)
         val arDetailsSender =
             ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient, "dummy-certificate")
 

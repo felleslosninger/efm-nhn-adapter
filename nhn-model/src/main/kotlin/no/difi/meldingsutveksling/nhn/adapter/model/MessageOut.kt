@@ -1,18 +1,45 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class MessageOut(
-    val messageId: String,
-    val conversationId: String,
-    val onBehalfOfOrgNum: String,
-    val sender: Sender,
-    val receiver: Receiver,
-    val fagmelding: EncryptedFagmelding,
-    val vedlegg: String,
-    val signature: Signature,
-)
+sealed class MessageOut {
+
+    abstract val messageId: String
+    abstract val conversationId: String
+    abstract val onBehalfOfOrgNum: String
+    abstract val sender: Sender
+    abstract val receiver: Receiver
+    abstract val fagmelding: EncryptedFagmelding
+    abstract val vedlegg: String
+
+    @Serializable
+    @SerialName("Unsigned")
+    data class Unsigned(
+        override val messageId: String,
+        override val conversationId: String,
+        override val onBehalfOfOrgNum: String,
+        override val sender: Sender,
+        override val receiver: Receiver,
+        override val fagmelding: EncryptedFagmelding,
+        override val vedlegg: String,
+    ) : MessageOut()
+
+    @Serializable
+    @SerialName("Signed")
+    data class Signed(
+        override val messageId: String,
+        override val conversationId: String,
+        override val onBehalfOfOrgNum: String,
+        override val sender: Sender,
+        override val receiver: Receiver,
+        override val fagmelding: EncryptedFagmelding,
+        override val vedlegg: String,
+        val signature: Signature,
+    ) : MessageOut()
+}
+
 
 @Serializable data class Signature(val alg: String, val kid: String? = null, val value: String)
 

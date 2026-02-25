@@ -110,7 +110,7 @@ class MessageOutBuilder() {
     }
 
     fun build(): MessageOut =
-        MessageOut(
+        MessageOut.Signed(
             messageId = messageId,
             conversationId = conversationId,
             onBehalfOfOrgNum = onBehalfOfOrgNum,

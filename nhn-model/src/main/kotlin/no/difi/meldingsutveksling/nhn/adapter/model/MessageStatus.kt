@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter.model
 
 import kotlinx.serialization.Serializable
 
+
 @Serializable
 data class MessageStatus(
     val receiverHerId: Int,
