@@ -19,7 +19,6 @@ import no.ks.fiks.nhn.ar.AddressComponent
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.msh.Client
-import no.ks.fiks.nhn.msh.ConversationRef
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
 import no.ks.fiks.nhn.msh.HealthcareProfessional
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
@@ -164,7 +163,7 @@ object OutHandler {
                     ByteArrayInputStream(messageOut.vedlegg.decodeBase64()!!.toByteArray()),
                 ),
                 DialogmeldingVersion.V1_1,
-                conversationRef = ConversationRef(null, null),
+                null,
             )
 
         logger.info { outGoingDocument }
