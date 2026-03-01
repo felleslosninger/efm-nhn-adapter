@@ -101,7 +101,7 @@ object InHandler {
         return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(inMessages)
     }
 
-    suspend fun readMessages(request: ServerRequest, mshClient: Client): ServerResponse {
+    suspend fun incomingBusinessDocument(request: ServerRequest, mshClient: Client): ServerResponse {
         val messageId =
             try {
                 UUID.fromString(request.pathVariable("messageId"))

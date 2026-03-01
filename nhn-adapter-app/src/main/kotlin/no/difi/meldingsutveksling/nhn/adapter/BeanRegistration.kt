@@ -172,6 +172,8 @@ class BeanRegistration() :
                     arLookup(bean(), bean(), bean())
                     dphOut(bean(), bean(), bean(), bean())
                     statusCheck(bean())
+                    incomingMessages(bean())
+                    incomingBusinessDocument(bean())
                     incomingReciept(bean(), bean(), bean(), bean())
                 }
                 .filter(nhnErrorFilter())

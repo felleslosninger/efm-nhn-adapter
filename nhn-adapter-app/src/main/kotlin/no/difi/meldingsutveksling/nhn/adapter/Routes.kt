@@ -14,10 +14,7 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.msh.Client
-import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
-import org.springframework.web.reactive.function.server.RouterFunction
-import org.springframework.web.reactive.function.server.coRouter
 
 val logger = KotlinLogging.logger {}
 
@@ -25,18 +22,9 @@ object Routes {
     const val STATUS_CHECK = "/dph/status/{messageId}"
     const val AR_LOOKUP = "/arlookup/{identifier}"
     const val INCOMING_RECEIPT = "/dph/in/{messageId}/receipt"
+    const val INCOMING_MESSAGES = "/dph/in/{herId2}"
+    const val INCOMING_BUSINESS_DOCUMENT = "/dph/in/{messageId}/businessDocument"
     const val DPH_OUT = "/dph/out"
-}
-
-fun BeanRegistrarDsl.SupplierContextDsl<RouterFunction<*>>.routes() = coRouter {
-    testFlr(bean())
-    testAr(bean())
-    testDphOut(bean(), bean())
-    testRespondApprecFralegekontor(bean())
-    arLookup(bean(), bean(), bean())
-    dphOut(bean(), bean(), bean(), bean())
-    statusCheck(bean())
-    incomingReciept(bean(), bean(), bean(), bean())
 }
 
 fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
@@ -50,6 +38,12 @@ fun CoRouterFunctionDsl.arLookup(
     val der = keystoreManager.getPublicCertificate().toBase64Der()
     GET(Routes.AR_LOOKUP) { ArHandlers.arLookup(it, flrClient, arClient, der) }
 }
+
+fun CoRouterFunctionDsl.incomingMessages(mshClient: Client) =
+    GET(Routes.INCOMING_MESSAGES) { InHandler.incomingMessages(it, mshClient) }
+
+fun CoRouterFunctionDsl.incomingBusinessDocument(mshClient: Client) =
+    GET(Routes.INCOMING_BUSINESS_DOCUMENT) { InHandler.incomingBusinessDocument(it, mshClient) }
 
 @OptIn(ExperimentalUuidApi::class)
 fun CoRouterFunctionDsl.incomingReciept(
