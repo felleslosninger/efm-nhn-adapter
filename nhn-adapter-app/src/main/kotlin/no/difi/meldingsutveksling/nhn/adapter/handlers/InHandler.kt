@@ -3,6 +3,8 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import io.ktor.util.encodeBase64
 import java.lang.IllegalArgumentException
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -10,6 +12,7 @@ import no.difi.meldingsutveksling.nhn.adapter.crypto.EncryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
+import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
@@ -115,7 +118,9 @@ object InHandler {
                 RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
             } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
 
-        val businessDokument: IncomingBusinessDocument = mshClient.getBusinessDocument(messageId, requestParameters)
+        val businessDokument: IncomingBusinessDocument =
+            withContext(Dispatchers.IO) { mshClient.getBusinessDocument(messageId, requestParameters) }
+        logger.info("I was able to get the business document $businessDokument")
 
         return ServerResponse.ok().bodyValueAndAwait(businessDokument.toSerializeable())
     }

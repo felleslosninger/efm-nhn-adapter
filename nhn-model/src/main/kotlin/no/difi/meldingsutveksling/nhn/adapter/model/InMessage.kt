@@ -30,6 +30,7 @@ import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.CommunicationParty
+import no.ks.fiks.nhn.msh.ConversationRef
 import no.ks.fiks.nhn.msh.Dialogmelding
 import no.ks.fiks.nhn.msh.Foresporsel
 import no.ks.fiks.nhn.msh.Id
@@ -48,9 +49,8 @@ import no.ks.fiks.nhn.msh.Sender
 
 @Serializable
 data class InMessage
-@OptIn(ExperimentalUuidApi::class)
 constructor(
-    val id: Uuid,
+    val id: String,
     val contentType: String,
     val receiverHerId: Int,
     val senderHerId: Int,
@@ -61,7 +61,7 @@ constructor(
 @OptIn(ExperimentalUuidApi::class)
 fun MessageWithMetadata.toInMessage(): InMessage =
     InMessage(
-        this.id.toKotlinUuid(),
+        this.id.toString(),
         this.contentType,
         this.receiverHerId,
         this.senderHerId,
@@ -78,6 +78,7 @@ data class SerializeableIncomingBusinessDocument(
     val receiver: SerializeableReceiver,
     val message: SerializeableDialogmelding?,
     val vedlegg: SerializeableIncomingVedlegg?,
+    val conversationRef: SerializeableConversationRef?
 )
 
 @Serializable data class SerializeableMeldingensFunksjon(val verdi: String, val navn: String, val kodeverk: String)
@@ -161,6 +162,12 @@ data class SerializeableOrganizationReceiverDetails(
 ) : SerializeableReceiverDetails
 
 @Serializable
+data class SerializeableConversationRef(
+    val refToParent: String?,
+    val refToConversation: String?,
+)
+
+@Serializable
 @SerialName("person")
 data class SerializeablePersonReceiverDetails(
     @Serializable(with = IdListSerializer::class) override val ids: List<Id>,
@@ -175,6 +182,8 @@ data class SerializeableIncomingVedlegg
 constructor(@Contextual val date: Instant?, val description: String?, val mimeType: String?, val data: ByteArray?)
 
 fun ChildOrganization.toSerializeable() = SerializeableChildOrganization(name = name, ids = ids)
+
+fun ConversationRef.toSerializeable() = SerializeableConversationRef(this.refToParent,this.refToConversation)
 
 fun Organization.toSerializable() =
     SerializeableOrganization(name = name, ids = ids, childOrganization = childOrganization?.toSerializeable())
@@ -221,6 +230,7 @@ fun IncomingBusinessDocument.toSerializeable() =
         this.receiver.toSerializable(),
         this.message?.toSerializeable(),
         this.vedlegg?.toSerializeable(),
+        this.conversationRef?.toSerializeable(),
     )
 
 object IdListSerializer : KSerializer<List<Id>> {
@@ -249,8 +259,8 @@ object IdSerializer : KSerializer<Id> {
                 descriptor,
                 1,
                 when (value) {
-                    is PersonId -> value.type.toString() // Adjust based on PersonIdType
-                    is OrganizationId -> value.type.toString() // Adjust based on OrganizationIdType
+                    is PersonId -> "PERSON_ID:${value.type}" // Adjust based on PersonIdType
+                    is OrganizationId -> "ORGANIZATION_ID:${value.type}" // Adjust based on OrganizationIdType
                     else -> throw IllegalArgumentException("Unknown Id subtype: ${value::class}")
                 },
             )
@@ -273,10 +283,11 @@ object IdSerializer : KSerializer<Id> {
                 throw IllegalArgumentException("Missing id or type")
             }
             // Adjust based on actual PersonIdType and OrganizationIdType values
-            when (type) {
+            val pair: Pair<String,String> = Pair(type.split(":").first(),type.split(":").last())
+            when (pair.first) {
                 // Example: Replace with actual PersonIdType/OrganizationIdType string values
-                "PERSON_ID" -> PersonId(id, PersonIdType.valueOf(type)) // Adjust enum
-                "ORGANIZATION_ID" -> OrganizationId(id, OrganizationIdType.valueOf(type)) // Adjust enum
+                "PERSON_ID" -> PersonId(id, PersonIdType.valueOf(pair.second)) // Adjust enum
+                "ORGANIZATION_ID" -> OrganizationId(id, OrganizationIdType.valueOf(pair.second)) // Adjust enum
                 else -> throw IllegalArgumentException("Unknown Id type: $type")
             }
         }
