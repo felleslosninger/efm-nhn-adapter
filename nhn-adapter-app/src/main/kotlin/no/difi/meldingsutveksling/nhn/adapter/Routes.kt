@@ -25,6 +25,7 @@ object Routes {
     const val INCOMING_MESSAGES = "/dph/in/{herId2}"
     const val INCOMING_BUSINESS_DOCUMENT = "/dph/in/{messageId}/businessDocument"
     const val DPH_OUT = "/dph/out"
+    const val MARK_AS_READ = "/dph/in/{herId2}/{messageId}/markAsRead"
 }
 
 fun CoRouterFunctionDsl.statusCheck(mshClient: Client) =
@@ -62,3 +63,6 @@ fun CoRouterFunctionDsl.dphOut(
     dekryptor: Dekrypter,
     signatureValidator: SignatureValidator,
 ) = POST(Routes.DPH_OUT) { OutHandler.dphOut(it, arClient, mshClient, dekryptor, signatureValidator) }
+
+fun CoRouterFunctionDsl.markAsRead(mshClient: Client, kryptering: Kryptering, signer: Signer) =
+    POST(Routes.MARK_AS_READ) { InHandler.markAsRead(it, mshClient, kryptering, signer) }

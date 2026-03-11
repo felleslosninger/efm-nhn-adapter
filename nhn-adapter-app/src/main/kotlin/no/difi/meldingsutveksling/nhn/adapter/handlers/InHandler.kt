@@ -3,8 +3,6 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import io.ktor.util.encodeBase64
 import java.lang.IllegalArgumentException
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -118,12 +116,39 @@ object InHandler {
                 RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
             } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
 
-        val businessDokument: IncomingBusinessDocument =
-            withContext(Dispatchers.IO) { mshClient.getBusinessDocument(messageId, requestParameters) }
+        val businessDokument: IncomingBusinessDocument = mshClient.getBusinessDocument(messageId, requestParameters)
         logger.info("I was able to get the business document $businessDokument")
 
         return ServerResponse.ok().bodyValueAndAwait(businessDokument.toSerializeable())
     }
 
-    suspend fun markAsRead(request: ServerRequest): ServerResponse = ServerResponse.ok().bodyValueAndAwait("")
+    suspend fun markAsRead(
+        request: ServerRequest,
+        mshClient: Client,
+        kryptering: Kryptering,
+        signer: Signer,
+    ): ServerResponse {
+        val receiverId =
+            try {
+                Integer.parseInt(request.pathVariable("herId2"))
+            } catch (e: NumberFormatException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
+        val messageId =
+            try {
+                UUID.fromString(request.pathVariable("messageId"))
+            } catch (e: NumberFormatException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
+
+        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
+        val requestParameters =
+            onBehalfOf?.let { onBehalfOf ->
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
+            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
+
+        mshClient.markMessageRead(messageId, receiverId, requestParameters)
+
+        return ServerResponse.ok().bodyValueAndAwait("Message deleted")
+    }
 }

@@ -175,6 +175,7 @@ class BeanRegistration() :
                     incomingMessages(bean())
                     incomingBusinessDocument(bean())
                     incomingReciept(bean(), bean(), bean(), bean())
+                    markAsRead(bean(), bean(), bean())
                 }
                 .filter(nhnErrorFilter())
         }

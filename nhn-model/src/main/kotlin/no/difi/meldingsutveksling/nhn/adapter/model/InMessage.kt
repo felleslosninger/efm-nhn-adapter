@@ -140,7 +140,7 @@ data class SerializeableSender(
 )
 
 fun Sender.toSerializeable(): SerializeableSender =
-    SerializeableSender(this.parent.toSerializeable(), this.parent.toSerializeable())
+    SerializeableSender(this.parent.toSerializeable(), this.child.toSerializeable())
 
 @Serializable
 data class SerializeableReceiver(
