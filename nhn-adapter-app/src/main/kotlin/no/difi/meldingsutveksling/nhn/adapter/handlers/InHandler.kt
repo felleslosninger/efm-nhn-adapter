@@ -6,16 +6,20 @@ import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
-import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.crypto.EncryptionException
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
 import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
+import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
+import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
+import no.difi.meldingsutveksling.nhn.adapter.model.toSerializeable
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
+import no.ks.fiks.nhn.msh.IncomingBusinessDocument
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.RequestParameters
 import org.springframework.http.MediaType
@@ -75,5 +79,76 @@ object InHandler {
         val signedReceipts = signer.sign(json)
 
         return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(signedReceipts)
+    }
+
+    suspend fun incomingMessages(request: ServerRequest, mshClient: Client): ServerResponse {
+        val herId2 =
+            try {
+                request.pathVariable("herId2").toInt()
+            } catch (e: NumberFormatException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
+        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
+        val requestParameters =
+            onBehalfOf?.let { onBehalfOf ->
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
+            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
+
+        // vi bruker status endepunkt for å hente Apprec
+        val notApprecMessages =
+            mshClient.getMessagesWithMetadata(herId2, requestParameters).filter { it.isAppRec == false }
+        val inMessages = notApprecMessages.map { it.toInMessage() }
+
+        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(inMessages)
+    }
+
+    suspend fun incomingBusinessDocument(request: ServerRequest, mshClient: Client): ServerResponse {
+        val messageId =
+            try {
+                UUID.fromString(request.pathVariable("messageId"))
+            } catch (e: NumberFormatException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
+
+        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
+        val requestParameters =
+            onBehalfOf?.let { onBehalfOf ->
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
+            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
+
+        val businessDokument: IncomingBusinessDocument = mshClient.getBusinessDocument(messageId, requestParameters)
+        logger.info("I was able to get the business document $businessDokument")
+
+        return ServerResponse.ok().bodyValueAndAwait(businessDokument.toSerializeable())
+    }
+
+    suspend fun markAsRead(
+        request: ServerRequest,
+        mshClient: Client,
+        kryptering: Kryptering,
+        signer: Signer,
+    ): ServerResponse {
+        val receiverId =
+            try {
+                Integer.parseInt(request.pathVariable("herId2"))
+            } catch (e: NumberFormatException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
+        val messageId =
+            try {
+                UUID.fromString(request.pathVariable("messageId"))
+            } catch (e: NumberFormatException) {
+                throw IllegalArgumentException("Message id is wrong format", e)
+            }
+
+        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
+        val requestParameters =
+            onBehalfOf?.let { onBehalfOf ->
+                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
+            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
+
+        mshClient.markMessageRead(messageId, receiverId, requestParameters)
+
+        return ServerResponse.ok().bodyValueAndAwait("Message deleted")
     }
 }

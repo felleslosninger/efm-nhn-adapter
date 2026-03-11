@@ -17,18 +17,17 @@ import no.ks.fiks.helseid.TenancyType
 import no.ks.fiks.helseid.TokenType
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.edi.BusinessDocumentSerializer.serializeNhnMessage
-import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.ClientFactory
 import no.ks.fiks.nhn.msh.Configuration
+import no.ks.fiks.nhn.msh.ConversationRef
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
 import no.ks.fiks.nhn.msh.HealthcareProfessional
 import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
-import no.ks.fiks.nhn.msh.Organization
+import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OrganizationId
-import no.ks.fiks.nhn.msh.OrganizationReceiverDetails
 import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
 import no.ks.fiks.nhn.msh.OutgoingMessage
 import no.ks.fiks.nhn.msh.OutgoingVedlegg
@@ -36,6 +35,7 @@ import no.ks.fiks.nhn.msh.Patient
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
 import no.ks.fiks.nhn.msh.RequestParameters
+import no.ks.fiks.nhn.msh.Sender
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 import org.springframework.web.reactive.function.server.ServerResponse
@@ -151,25 +151,29 @@ fun CoRouterFunctionDsl.testDphOut(
         val outgoingBusinessDocument =
             OutgoingBusinessDocument(
                 UUID.randomUUID(),
-                Organization(
-                    "KS-DIGITALE FELLESTJENESTER AS",
-                    listOf(OrganizationId("8142987", OrganizationIdType.HER_ID)),
-                    ChildOrganization(
-                        "Digdir multi-tenant test",
-                        listOf(OrganizationId("8143154", OrganizationIdType.HER_ID)),
+                sender =
+                    Sender(
+                        OrganizationCommunicationParty(
+                            listOf(OrganizationId("8142987", OrganizationIdType.HER_ID)),
+                            "KS-DIGITALE FELLESTJENESTER AS",
+                        ),
+                        OrganizationCommunicationParty(
+                            listOf(OrganizationId("8143154", OrganizationIdType.HER_ID)),
+                            "Digdir multi-tenant test",
+                        ),
                     ),
-                ),
-                Receiver(
-                    OrganizationReceiverDetails(
-                        name = "Digidir test fastlegekontor",
-                        ids = listOf(OrganizationId("8143541", OrganizationIdType.HER_ID)),
+                receiver =
+                    Receiver(
+                        OrganizationCommunicationParty(
+                            name = "Digidir test fastlegekontor",
+                            ids = listOf(OrganizationId("8143541", OrganizationIdType.HER_ID)),
+                        ),
+                        OrganizationCommunicationParty(
+                            name = "Peter Peterson",
+                            ids = listOf(OrganizationId("8143548", OrganizationIdType.HER_ID)),
+                        ),
+                        Patient("14038342168", "Aleksander", null, "Petterson"),
                     ),
-                    OrganizationReceiverDetails(
-                        name = "Peter Peterson",
-                        ids = listOf(OrganizationId("8143548", OrganizationIdType.HER_ID)),
-                    ),
-                    Patient("14038342168", "Aleksander", null, "Petterson"),
-                ),
                 OutgoingMessage(
                     "<Message subject>",
                     "<Message body>",
@@ -192,6 +196,7 @@ fun CoRouterFunctionDsl.testDphOut(
                     this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!,
                 ),
                 DialogmeldingVersion.V1_1,
+                conversationRef = ConversationRef(null, null),
             )
         println(serializeNhnMessage(outgoingBusinessDocument))
 
@@ -213,7 +218,6 @@ fun CoRouterFunctionDsl.testDphOut(
             messageID,
             RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters("310673145"))),
         )
-
         //  val messageOut = it.awaitBody<MessageOut>()
         //  println("MessageOut recieved ${messageOut.conversationId}")
         ServerResponse.ok().buildAndAwait()

@@ -241,7 +241,7 @@ class ArLookupDSLTest() :
                 webTestClient.get().uri("/arlookup/$HER_ID").exchange().returnResult(ApiError::class.java).also {
                     it.status shouldBe HttpStatus.INTERNAL_SERVER_ERROR
                     it.responseBody.awaitFirst().message.shouldNotBeNull() shouldBeEqual
-                        "Not able to process, try later. ErrorCode: E7777"
+                        "Not able to process, try later. ErrorCode: E7778"
                 }
             }
 

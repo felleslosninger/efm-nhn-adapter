@@ -4,12 +4,12 @@ import java.io.ByteArrayInputStream
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlinx.coroutines.reactor.awaitSingle
-import no.difi.meldingsutveksling.nhn.adapter.config.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
 import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
@@ -18,24 +18,22 @@ import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.nhn.ar.AddressComponent
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
-import no.ks.fiks.nhn.msh.ChildOrganization
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
 import no.ks.fiks.nhn.msh.HealthcareProfessional
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
-import no.ks.fiks.nhn.msh.Organization
+import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OrganizationId
-import no.ks.fiks.nhn.msh.OrganizationReceiverDetails
 import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
 import no.ks.fiks.nhn.msh.OutgoingMessage
 import no.ks.fiks.nhn.msh.OutgoingVedlegg
 import no.ks.fiks.nhn.msh.Patient
 import no.ks.fiks.nhn.msh.PersonId
-import no.ks.fiks.nhn.msh.PersonReceiverDetails
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
 import no.ks.fiks.nhn.msh.RequestParameters
+import no.ks.fiks.nhn.msh.Sender
 import okio.ByteString.Companion.decodeBase64
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
@@ -73,7 +71,7 @@ object OutHandler {
         val incomingRaw = request.bodyToMono(String::class.java).awaitSingle()
         signatureValidator.validate(incomingRaw)
 
-        val messageOut = jsonParser.decodeFromString<MessageOut>(incomingRaw)
+        val messageOut = jsonParser.decodeFromString<MessageOut.Signed>(incomingRaw)
         val arDetailsSender =
             ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient, "dummy-certificate")
 
@@ -92,16 +90,16 @@ object OutHandler {
                 arClient
                     .lookupHerId(messageOut.receiver.herid2.toInt())
                     .let { it as PersonCommunicationParty }
-                    .let { fastlege ->
-                        PersonReceiverDetails(
-                            ids = listOf(PersonId(id = fastlege.herId.toString(), type = PersonIdType.HER_ID)),
-                            firstName = fastlege.firstName,
-                            middleName = fastlege.middleName,
-                            lastName = fastlege.lastName,
+                    .let {
+                        no.ks.fiks.nhn.msh.PersonCommunicationParty(
+                            ids = listOf(PersonId(it.herId.toString(), PersonIdType.HER_ID)),
+                            firstName = it.firstName,
+                            lastName = it.lastName,
+                            middleName = it.middleName,
                         )
                     }
             } else {
-                OrganizationReceiverDetails(
+                OrganizationCommunicationParty(
                     name = arDetailsReciever.communicationPartyName,
                     ids = listOf(OrganizationId(messageOut.receiver.herid2, OrganizationIdType.HER_ID)),
                 )
@@ -121,17 +119,19 @@ object OutHandler {
         val outGoingDocument =
             OutgoingBusinessDocument(
                 UUID.randomUUID(),
-                Organization(
-                    arDetailsSender.communicationPartyParentName,
-                    listOf(OrganizationId(messageOut.sender.herid1, OrganizationIdType.HER_ID)),
-                    ChildOrganization(
-                        arDetailsSender.communicationPartyName,
-                        listOf(OrganizationId(messageOut.sender.herid2, OrganizationIdType.HER_ID)),
+                Sender(
+                    OrganizationCommunicationParty(
+                        name = arDetailsSender.communicationPartyParentName,
+                        ids = listOf(OrganizationId(messageOut.sender.herid1, OrganizationIdType.HER_ID)),
+                    ),
+                    OrganizationCommunicationParty(
+                        name = arDetailsSender.communicationPartyName,
+                        ids = listOf(OrganizationId(messageOut.sender.herid2, OrganizationIdType.HER_ID)),
                     ),
                 ),
                 receiver =
                     Receiver(
-                        OrganizationReceiverDetails(
+                        OrganizationCommunicationParty(
                             name = arDetailsReciever.communicationPartyParentName,
                             ids = listOf(OrganizationId(messageOut.receiver.herid1, OrganizationIdType.HER_ID)),
                         ),
@@ -163,6 +163,7 @@ object OutHandler {
                     ByteArrayInputStream(messageOut.vedlegg.decodeBase64()!!.toByteArray()),
                 ),
                 DialogmeldingVersion.V1_1,
+                null,
             )
 
         logger.info { outGoingDocument }

@@ -2,6 +2,8 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import jakarta.xml.ws.soap.SOAPFaultException
 import java.lang.IllegalArgumentException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
@@ -56,7 +58,7 @@ object ArHandlers {
         return ServerResponse.ok().bodyValueAndAwait(arDetails)
     }
 
-    private fun arLookupByFnr(
+    private suspend fun arLookupByFnr(
         fnr: String,
         flrClient: DecoratingFlrClient,
         arClient: AdresseregisteretClient,
@@ -66,10 +68,13 @@ object ArHandlers {
         return arLookupByHerId(gpHerId, arClient, derCertificate)
     }
 
-    fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient, derCertificate: String): ArDetails =
+    suspend fun arLookupByHerId(herId: Int, arClient: AdresseregisteretClient, derCertificate: String): ArDetails =
         try {
             val communicationParty =
-                arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
+                withContext(Dispatchers.IO) {
+                    arClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
+                }
+
             val comunicationPartyName = communicationParty.name
             // @TODO fix orElseThrowNotFound either you use HerIdNotFound or ResponseStatusException
             // but not both
