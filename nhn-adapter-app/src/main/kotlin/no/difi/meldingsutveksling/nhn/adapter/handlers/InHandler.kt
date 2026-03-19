@@ -12,6 +12,7 @@ import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
 import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
+import no.difi.meldingsutveksling.nhn.adapter.model.InMessageWithEncyrptedDocument
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
@@ -102,24 +103,43 @@ object InHandler {
         return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(inMessages)
     }
 
-    suspend fun incomingBusinessDocument(request: ServerRequest, mshClient: Client): ServerResponse {
+    suspend fun incomingBusinessDocument(
+        request: ServerRequest,
+        mshClient: Client,
+        trustStore: NhnTrustStore,
+        kryptering: Kryptering,
+        signer: Signer,
+    ): ServerResponse {
         val messageId =
             try {
                 UUID.fromString(request.pathVariable("messageId"))
             } catch (e: NumberFormatException) {
                 throw IllegalArgumentException("Message id is wrong format", e)
             }
+        val kid =
+            request.queryParamOrNull("kid")
+                ?: throw EncryptionException("Request is missing encryption certificate kid.")
 
         val onBehalfOf = request.queryParamOrNull("onBehalfOf")
         val requestParameters =
             onBehalfOf?.let { onBehalfOf ->
                 RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
             } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
-
+        val messageMetadata = mshClient.getMessage(messageId, requestParameters)
         val businessDokument: IncomingBusinessDocument = mshClient.getBusinessDocument(messageId, requestParameters)
         logger.info("I was able to get the business document $businessDokument")
-
-        return ServerResponse.ok().bodyValueAndAwait(businessDokument.toSerializeable())
+        val certificate = trustStore.getCertificateByKid(kid)
+        val encryptedDokument =
+            kryptering.krypter(
+                jsonParser.encodeToString(businessDokument.toSerializeable()).toByteArray(),
+                certificate,
+            )
+        val encryptedFagmelding =
+            EncryptedFagmelding(certificate.encoded.encodeBase64(), encryptedDokument.encodeBase64())
+        val messageWithDocument = InMessageWithEncyrptedDocument(messageMetadata.toInMessage(), encryptedFagmelding)
+        val response = jsonParser.encodeToString(messageWithDocument)
+        signer.sign(response)
+        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(response)
     }
 
     suspend fun markAsRead(

@@ -5,8 +5,6 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 import kotlin.time.toKotlinInstant
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
-import kotlin.uuid.toKotlinUuid
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.toKotlinLocalDate
@@ -68,6 +66,24 @@ fun MessageWithMetadata.toInMessage(): InMessage =
         this.businessDocumentId,
         this.businessDocumentDate,
     )
+
+@Serializable
+data class InMessageWithEncyrptedDocument(
+    val messageMetadata: InMessage,
+    val encryptedFagmelding: EncryptedFagmelding
+){
+}
+
+@Serializable
+data class InMessageWithDocument(
+    val messageMetadata: InMessage,
+    val businessDocument: SerializeableIncomingBusinessDocument
+){
+}
+
+
+fun InMessageWithEncyrptedDocument.decryptedFagmelding(dekryptionService:(EncryptedFagmelding)-> SerializeableIncomingBusinessDocument): InMessageWithDocument =
+    InMessageWithDocument(this.messageMetadata,dekryptionService.invoke(this.encryptedFagmelding))
 
 @Serializable
 data class SerializeableIncomingBusinessDocument(

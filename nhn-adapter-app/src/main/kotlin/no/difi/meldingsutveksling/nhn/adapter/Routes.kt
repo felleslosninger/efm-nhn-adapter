@@ -43,8 +43,15 @@ fun CoRouterFunctionDsl.arLookup(
 fun CoRouterFunctionDsl.incomingMessages(mshClient: Client) =
     GET(Routes.INCOMING_MESSAGES) { InHandler.incomingMessages(it, mshClient) }
 
-fun CoRouterFunctionDsl.incomingBusinessDocument(mshClient: Client) =
-    GET(Routes.INCOMING_BUSINESS_DOCUMENT) { InHandler.incomingBusinessDocument(it, mshClient) }
+fun CoRouterFunctionDsl.incomingBusinessDocument(
+    mshClient: Client,
+    trustStore: NhnTrustStore,
+    kryptering: Kryptering,
+    signer: Signer,
+) =
+    GET(Routes.INCOMING_BUSINESS_DOCUMENT) {
+        InHandler.incomingBusinessDocument(it, mshClient, trustStore, kryptering, signer)
+    }
 
 @OptIn(ExperimentalUuidApi::class)
 fun CoRouterFunctionDsl.incomingReciept(

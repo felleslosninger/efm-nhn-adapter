@@ -173,7 +173,7 @@ class BeanRegistration() :
                     dphOut(bean(), bean(), bean(), bean())
                     statusCheck(bean())
                     incomingMessages(bean())
-                    incomingBusinessDocument(bean())
+                    incomingBusinessDocument(bean(), bean(), bean(), bean())
                     incomingReciept(bean(), bean(), bean(), bean())
                     markAsRead(bean(), bean(), bean())
                 }
