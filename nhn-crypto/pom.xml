@@ -6,83 +6,60 @@
     <parent>
         <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
         <artifactId>parent-pom</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>DEV-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>nhn-crypto</artifactId>
     <packaging>jar</packaging>
     <name>NHN message level security</name>
 
-    
-    <scm>
-        <connection>scm:git:https://github.com/felleslosninger/efm-nhn-adapter</connection>
-        <developerConnection>scm:git:https://github.com/felleslosninger/efm-nhn-adapter</developerConnection>
-        <url>https://github.com/felleslosninger/efm-nhn-adapter</url>
-    </scm>
-
-    <licenses>
-        <license>
-            <name>The Apache License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-        </license>
-    </licenses>
-
-    <developers>
-        <developer>
-            <name>Digdir</name>
-            <email>servicedesk@digdir.no</email>
-            <organization>Digdir</organization>
-            <organizationUrl>https://www.digdir.no</organizationUrl>
-        </developer>
-    </developers>
-
-
     <dependencies>
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
-            <version>10.0.2</version>
+<!--            <version>10.0.2</version>-->
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-serialization-json</artifactId>
-            <version>1.9.0</version>
+<!--            <version>1.9.0</version>-->
         </dependency>
         <dependency>
             <groupId>io.github.erdtman</groupId>
             <artifactId>java-json-canonicalization</artifactId>
-            <version>1.1</version>
+<!--            <version>1.1</version>-->
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-datetime-jvm</artifactId>
-            <version>0.7.1</version>
+<!--            <version>0.7.1</version>-->
         </dependency>
         <dependency>
             <groupId>io.github.microutils</groupId>
             <artifactId>kotlin-logging-jvm</artifactId>
-            <version>3.0.5</version>
+<!--            <version>3.0.5</version>-->
         </dependency>
         <dependency>
             <groupId>com.squareup.okio</groupId>
             <artifactId>okio</artifactId>
-            <version>3.6.0</version>
+<!--            <version>3.6.0</version>-->
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
             <artifactId>kotlin-stdlib-jdk8</artifactId>
-            <version>${kotlin.version}</version>
+<!--            <version>${kotlin.version}</version>-->
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>1.83</version>
+<!--            <version>1.83</version>-->
         </dependency>
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
-            <version>7.4</version>
+<!--            <version>7.4</version>-->
         </dependency>
        
     </dependencies>

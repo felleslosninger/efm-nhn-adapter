@@ -186,7 +186,7 @@ class NotatBuilder(private val source: Notat) {
 
 fun EncryptedFagmelding.modify(block: TestFagmelding.() -> Unit): EncryptedFagmelding =
     TestFagmelding().from(this).apply(block).let {
-        EncryptedFagmelding("test-certificate", Json {}.encodeToString(it.build()))
+        EncryptedFagmelding("test-certificate", Json.encodeToString(it.build()))
     }
 
 class TestFagmelding() {
@@ -197,7 +197,7 @@ class TestFagmelding() {
     lateinit var vedleggBeskrivelse: String
 
     fun from(fagmelding: EncryptedFagmelding): TestFagmelding {
-        val fagmelding: Fagmelding = Json {}.decodeFromString(fagmelding.message)
+        val fagmelding: Fagmelding = Json.decodeFromString(fagmelding.message)
         notat = fagmelding.notat
         patient = fagmelding.patient
         responsibleHealthcareProfessionalId = fagmelding.responsibleHealthcareProfessionalId
@@ -219,7 +219,7 @@ fun testMessageOut(block: MessageOutBuilder.() -> Unit): MessageOut = MessageOut
 fun testMessageOut(fromTemplate: MessageOut, block: MessageOutBuilder.() -> Unit): MessageOut =
     MessageOutBuilder().from(fromTemplate).apply(block).build()
 
-private val TEST_VEDLEG_TEST_PDF: String =
+private const val TEST_VEDLEG_TEST_PDF: String =
     """JVBERi0xLjIgDQol4uPP0w0KIA0KOSAwIG9iag0KPDwNCi9MZW5ndGggMTAgMCBSDQovRmlsdGVyIC9GbGF0ZURlY29kZSANCj4+
 DQpzdHJlYW0NCkiJzZDRSsMwFIafIO/we6eyZuckTZPtbtIWBi0UjYKQGxFbJmpliuLb26QM8X6CJBfJyf99ycmFF6xJagWrrMxz
 wJeCEMd+gFjWBC1dLPeCJFkbl/fTKfwnTqt1CK0xIZyEwFYZ2T+fwT8KnmIxUmJinNKJyUiyW7mZVEQ6I54m2K3ZzFiupvgPaee7

@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import com.ninjasquad.springmockk.MockkBean
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.extensions.spring.SpringExtension
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -36,14 +37,17 @@ class TestSecurityConfig {
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["spring.security.user.name=testuser", "spring.security.user.password=testpass"],
+    classes = [Main::class, TestSecurityConfig::class],
 )
 @ActiveProfiles("unit-test")
-class SecurityTest2(
-    @MockkBean val flr: FastlegeregisteretClient,
-    @MockkBean val arClient: AdresseregisteretClient,
-    @Value("\${local.server.port}") val port: Int,
-) :
-    FunSpec({
+class SecurityTest2 : FunSpec() {
+    @MockkBean lateinit var flr: FastlegeregisteretClient
+    @MockkBean lateinit var arClient: AdresseregisteretClient
+    @MockkBean lateinit var signer: no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
+    @Value("\${local.server.port}") var port: Int = 0
+
+    init {
+        extension(SpringExtension())
         test("Load Application Context") {
             val webTestClient =
                 WebTestClient.bindToServer()
@@ -90,4 +94,5 @@ class SecurityTest2(
             verify(exactly = 1) { flr.getPatientGP(any()) }
             verify(exactly = 1) { arClient.lookupHerId(any()) }
         }
-    })
+    }
+}

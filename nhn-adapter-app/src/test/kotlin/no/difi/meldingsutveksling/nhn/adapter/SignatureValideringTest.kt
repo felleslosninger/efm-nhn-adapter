@@ -11,7 +11,7 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.Security
-import java.util.Date
+import java.util.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -27,17 +27,14 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 
+private val jsonMapper = Json { ignoreUnknownKeys = true }
+
+private val keystore = SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12")
+
 class SignatureValideringTest :
     ShouldSpec({
         should("Should sign a json") {
-            val cryptoConfig =
-                CryptoConfig(
-                    "unit-test",
-                    null,
-                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12").file,
-                    "test",
-                    "PKCS12",
-                )
+            val cryptoConfig = CryptoConfig("unit-test", null, keystore?.file, "test", "PKCS12")
             val signer = Signer(cryptoConfig)
 
             val signedJson = signer.sign("""{
@@ -45,7 +42,7 @@ class SignatureValideringTest :
             
             }""")
             println(signedJson)
-            val json = Json { ignoreUnknownKeys = true }.decodeFromString<JsonObject>(signedJson)
+            val json = jsonMapper.decodeFromString<JsonObject>(signedJson)
 
             json["testKey"]!!.jsonPrimitive.content shouldBe "testValue"
 
@@ -56,14 +53,7 @@ class SignatureValideringTest :
         }
 
         should("should validate a signature") {
-            val cryptoConfig =
-                CryptoConfig(
-                    "unit-test",
-                    null,
-                    SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12").file,
-                    "test",
-                    "PKCS12",
-                )
+            val cryptoConfig = CryptoConfig("unit-test", null, keystore?.file, "test", "PKCS12")
             val signer = Signer(cryptoConfig)
 
             val signedJson = signer.sign("""{
@@ -77,14 +67,7 @@ class SignatureValideringTest :
 
         should("unsigned signature should not validate") {
             val trustStore =
-                CryptoConfig(
-                        "unit-test",
-                        null,
-                        SignatureValideringTest::class.java.classLoader.getResource("unit-test-keystore.p12").file,
-                        "test",
-                        "PKCS12",
-                    )
-                    .let { NhnTrustStore(it) }
+                CryptoConfig("unit-test", null, keystore?.file, "test", "PKCS12").let { NhnTrustStore(it) }
 
             val unsigned = """{
                 "testKey":"testValue"
