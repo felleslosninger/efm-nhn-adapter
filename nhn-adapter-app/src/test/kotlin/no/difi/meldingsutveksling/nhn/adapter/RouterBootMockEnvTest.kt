@@ -1,9 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import com.ninjasquad.springmockk.MockkBean
-import io.kotest.core.extensions.Extension
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.extensions.spring.SpringAutowireConstructorExtension
+import io.kotest.extensions.spring.SpringExtension
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -29,14 +28,15 @@ import org.springframework.test.web.reactive.server.WebTestClient
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @ActiveProfiles("unit-test")
 @AutoConfigureWebTestClient
-class RouterBootMockEnvTest(
-    @MockkBean val flr: FastlegeregisteretClient,
-    @MockkBean val arClient: AdresseregisteretClient,
-    @Autowired val webTestClient: WebTestClient,
-    @MockkBean val signatureValidator: SignatureValidator,
-    @MockkBean val signer: Signer,
-) :
-    FunSpec({
+class RouterBootMockEnvTest : FunSpec() {
+    @MockkBean lateinit var flr: FastlegeregisteretClient
+    @MockkBean lateinit var arClient: AdresseregisteretClient
+    @Autowired lateinit var webTestClient: WebTestClient
+    @MockkBean lateinit var signatureValidator: SignatureValidator
+    @MockkBean lateinit var signer: Signer
+
+    init {
+        extension(SpringExtension())
         test("Load Application Context") {
             val PATIENT_FNR = "16822449879"
             val HERID2 = 454545
@@ -79,7 +79,5 @@ class RouterBootMockEnvTest(
             verify(exactly = 1) { flr.getPatientGP(any()) }
             verify(exactly = 1) { arClient.lookupHerId(any()) }
         }
-    }) {
-
-    override fun extensions(): List<Extension> = listOf(SpringAutowireConstructorExtension)
+    }
 }

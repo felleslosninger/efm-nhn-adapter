@@ -1,0 +1,21 @@
+name: Build and scan containers
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  call-workflow-maven-build:
+    uses: felleslosninger/github-workflows/.github/workflows/ci-maven-build.yml@main
+    with:
+      java-version: 21
+      maven-lifecycle: 'verify'
+    secrets: inherit
+
+  call-container-scan-web:
+    uses: felleslosninger/github-workflows/.github/workflows/ci-spring-boot-container-scan.yml@main
+    with:
+      java-version: 21
+      module-name: nhn-adapter-app
+    secrets: inherit
+    needs: [ call-workflow-maven-build ]

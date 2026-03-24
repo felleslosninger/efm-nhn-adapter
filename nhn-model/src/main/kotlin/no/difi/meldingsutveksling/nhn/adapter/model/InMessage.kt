@@ -5,8 +5,6 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 import kotlin.time.toKotlinInstant
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
-import kotlin.uuid.toKotlinUuid
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.toKotlinLocalDate
@@ -81,7 +79,8 @@ data class SerializeableIncomingBusinessDocument(
     val conversationRef: SerializeableConversationRef?
 )
 
-@Serializable data class SerializeableMeldingensFunksjon(val verdi: String, val navn: String, val kodeverk: String)
+@Serializable
+data class SerializeableMeldingensFunksjon(val verdi: String, val navn: String, val kodeverk: String)
 
 fun MeldingensFunksjon.toSerializeable() =
     SerializeableMeldingensFunksjon(verdi = this.verdi, navn = this.navn, kodeverk = this.kodeverk)
@@ -101,7 +100,8 @@ data class SerializeableChildOrganization(
 
 @Serializable
 sealed class SerializeableCommunicationParty {
-    @Serializable(with = IdListSerializer::class) abstract val ids: List<Id>
+    @Serializable(with = IdListSerializer::class)
+    abstract val ids: List<Id>
 
     @Serializable
     @SerialName("organization")
@@ -124,6 +124,7 @@ fun CommunicationParty.toSerializeable(): SerializeableCommunicationParty =
     when (this) {
         is OrganizationCommunicationParty ->
             SerializeableCommunicationParty.Organization(ids = this.ids, name = this.name)
+
         is PersonCommunicationParty ->
             SerializeableCommunicationParty.Person(
                 ids = this.ids,
@@ -151,7 +152,8 @@ data class SerializeableReceiver(
 
 @Serializable
 sealed interface SerializeableReceiverDetails {
-    @Serializable(with = IdListSerializer::class) val ids: List<Id>
+    @Serializable(with = IdListSerializer::class)
+    val ids: List<Id>
 }
 
 @Serializable
@@ -183,7 +185,7 @@ constructor(@Contextual val date: Instant?, val description: String?, val mimeTy
 
 fun ChildOrganization.toSerializeable() = SerializeableChildOrganization(name = name, ids = ids)
 
-fun ConversationRef.toSerializeable() = SerializeableConversationRef(this.refToParent,this.refToConversation)
+fun ConversationRef.toSerializeable() = SerializeableConversationRef(this.refToParent, this.refToConversation)
 
 fun Organization.toSerializable() =
     SerializeableOrganization(name = name, ids = ids, childOrganization = childOrganization?.toSerializeable())
@@ -261,7 +263,6 @@ object IdSerializer : KSerializer<Id> {
                 when (value) {
                     is PersonId -> "PERSON_ID:${value.type}" // Adjust based on PersonIdType
                     is OrganizationId -> "ORGANIZATION_ID:${value.type}" // Adjust based on OrganizationIdType
-                    else -> throw IllegalArgumentException("Unknown Id subtype: ${value::class}")
                 },
             )
         }
@@ -283,7 +284,7 @@ object IdSerializer : KSerializer<Id> {
                 throw IllegalArgumentException("Missing id or type")
             }
             // Adjust based on actual PersonIdType and OrganizationIdType values
-            val pair: Pair<String,String> = Pair(type.split(":").first(),type.split(":").last())
+            val pair: Pair<String, String> = Pair(type.split(":").first(), type.split(":").last())
             when (pair.first) {
                 // Example: Replace with actual PersonIdType/OrganizationIdType string values
                 "PERSON_ID" -> PersonId(id, PersonIdType.valueOf(pair.second)) // Adjust enum

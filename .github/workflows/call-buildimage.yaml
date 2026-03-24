@@ -1,34 +1,23 @@
-name: CI Workflow
+name: Build, publish and deploy
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-  pull_request:
-    types: [ ] # Empty list ensures PRs are not triggered. Trigger nytt bygg............
+    branches: [ main ]
 
 jobs:
-  release-to-github-packages:
-    uses: felleslosninger/github-workflows/.github/workflows/ci-maven-install-deploy-lib.yml@main
-    with:
-      java-version: 21
-      sbom-path: nhn-adapter-app/target/
-    secrets: inherit
-
+  #Publish Image
   call-workflow-image-build-publish:
-    needs: [ release-to-github-packages ]
     uses: felleslosninger/github-workflows/.github/workflows/ci-spring-boot-build-publish-image.yml@main
     with:
-      application-path: nhn-adapter-app/
+      module-name: nhn-adapter-app
       image-name: efm-nhn-adapter
       java-version: 21
       slack-channel-id: C05NLQCFR41
-      update-versions: "false"
     secrets: inherit
 
-  call-update-image:
-    needs: [ call-workflow-image-build-publish ]
+  #Oppdatere Manifest
+  call-update-image-version:
+    needs: [call-workflow-image-build-publish]
     if: github.ref == 'refs/heads/main'
     uses: felleslosninger/github-workflows/.github/workflows/ci-call-update-image.yml@main
     with:
