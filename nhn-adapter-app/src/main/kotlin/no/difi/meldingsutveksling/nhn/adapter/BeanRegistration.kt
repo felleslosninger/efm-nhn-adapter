@@ -101,7 +101,7 @@ private fun properties() = BeanRegistrarDsl {
 private fun security() = BeanRegistrarDsl {
     registerBean<PasswordEncoder> { BCryptPasswordEncoder() }
     registerBean<MapReactiveUserDetailsService> {
-        SecurityBeans.userDetailsService(bean()) as MapReactiveUserDetailsService
+        SecurityBeans.userDetailsService(bean())
     }
     registerBean { SecurityBeans.userDetailsRepositoryReactiveAuthenticationManager(bean<PasswordEncoder>(), bean()) }
     profile(expression = "local || dev || unit-test") {

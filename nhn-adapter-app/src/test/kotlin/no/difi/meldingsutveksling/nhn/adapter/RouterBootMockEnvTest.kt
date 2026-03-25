@@ -1,9 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import com.ninjasquad.springmockk.MockkBean
-import io.kotest.core.extensions.ApplyExtension
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.extensions.spring.SpringExtension
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -25,11 +23,11 @@ import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTest
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.reactive.server.WebTestClient
+import org.springframework.test.web.reactive.server.returnResult
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @ActiveProfiles("unit-test")
 @AutoConfigureWebTestClient
-@ApplyExtension(SpringExtension::class)
 class RouterBootMockEnvTest(
     @MockkBean val flr: FastlegeregisteretClient,
     @MockkBean val arClient: AdresseregisteretClient,
@@ -66,7 +64,7 @@ class RouterBootMockEnvTest(
                     .uri("/arlookup/16822449879")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
-                    .returnResult(ArDetails::class.java)
+                    .returnResult<ArDetails>()
 
             result.status.is2xxSuccessful.shouldBeTrue()
 
