@@ -83,6 +83,12 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
+                <groupId>io.kotest</groupId>
+                <artifactId>kotest-extensions-spring</artifactId>
+                <version>${kotest.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
                 <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
                 <artifactId>nhn-model</artifactId>
                 <version>${project.version}</version>
