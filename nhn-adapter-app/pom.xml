@@ -217,7 +217,7 @@
                             <version>0.47</version>
                             <style>KOTLINLANG</style>
                             <maxWidth>119</maxWidth>
-                            <manageTrailingCommas>true</manageTrailingCommas>
+                            <trailingCommaManagementStrategy>COMPLETE</trailingCommaManagementStrategy>
                         </ktfmt>
                     </kotlin>
                 </configuration>
