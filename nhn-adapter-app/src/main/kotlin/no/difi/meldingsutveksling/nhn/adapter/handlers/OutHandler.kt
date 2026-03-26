@@ -38,6 +38,7 @@ import okio.ByteString.Companion.decodeBase64
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.reactive.function.server.bodyToMono
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.queryParamOrNull
 
@@ -68,7 +69,7 @@ object OutHandler {
         signatureValidator: SignatureValidator,
     ): ServerResponse {
         logger.info("entering dph out")
-        val incomingRaw = request.bodyToMono(String::class.java).awaitSingle()
+        val incomingRaw = request.bodyToMono<String>().awaitSingle()
         signatureValidator.validate(incomingRaw)
 
         val messageOut = jsonParser.decodeFromString<MessageOut.Signed>(incomingRaw)
