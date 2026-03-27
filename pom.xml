@@ -189,20 +189,6 @@
                 </executions>
             </plugin>
 
-            <!-- Attach Sources -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-source-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>attach-sources</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
             <!-- Attach Javadoc Jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
