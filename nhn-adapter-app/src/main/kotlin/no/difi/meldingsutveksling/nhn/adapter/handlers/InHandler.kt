@@ -1,154 +1,142 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
-import io.ktor.util.encodeBase64
-import java.lang.IllegalArgumentException
-import java.util.UUID
+import java.util.*
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
-import no.difi.meldingsutveksling.nhn.adapter.crypto.EncryptionException
-import no.difi.meldingsutveksling.nhn.adapter.crypto.Kryptering
-import no.difi.meldingsutveksling.nhn.adapter.crypto.NhnTrustStore
-import no.difi.meldingsutveksling.nhn.adapter.crypto.Signer
+import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.logger
-import no.difi.meldingsutveksling.nhn.adapter.model.EncryptedFagmelding
+import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
+import no.difi.meldingsutveksling.nhn.adapter.model.FileNames
+import no.difi.meldingsutveksling.nhn.adapter.model.IncomingMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.SerializableApplicationReceiptInfo
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
-import no.difi.meldingsutveksling.nhn.adapter.model.toSerializeable
-import no.ks.fiks.nhn.msh.Client
-import no.ks.fiks.nhn.msh.HelseIdTokenParameters
+import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
+import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
+import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
+import no.ks.fiks.nhn.msh.Dialogmelding
 import no.ks.fiks.nhn.msh.IncomingBusinessDocument
-import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
-import no.ks.fiks.nhn.msh.RequestParameters
+import no.ks.fiks.nhn.msh.IncomingVedlegg
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.core.io.InputStreamResource
+import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
-import org.springframework.web.reactive.function.server.ServerRequest
+import org.springframework.http.client.MultipartBodyBuilder
+import org.springframework.util.MimeType
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
-import org.springframework.web.reactive.function.server.queryParamOrNull
 
-object InHandler {
-    suspend fun incomingApprec(
-        request: ServerRequest,
-        mshClient: Client,
-        kryptering: Kryptering,
-        trustStore: NhnTrustStore,
-        signer: Signer,
-    ): ServerResponse {
-        val messageId =
-            try {
-                UUID.fromString(request.pathVariable("messageId"))
-            } catch (e: IllegalArgumentException) {
-                throw IllegalArgumentException("Message id is wrong format", e)
-            }
-        // @TODO to use onBehalfOf as request parameter exposes details of next
-        // authentication/authorization step
-        // potentialy put the onBehalfOf orgnummeret enten som Body eller som ekstra claim i maskin
-        // to maski tokenet
-        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
-        val requestParameters =
-            onBehalfOf?.let { onBehalfOf ->
-                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
-            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
-
-        val kid =
-            request.queryParamOrNull("kid")
-                ?: throw EncryptionException("Request is missing encryption certificate kid.")
-
-        val incomingApplicationReceipt = mshClient.getApplicationReceiptsForMessage(messageId, requestParameters)
-
-        val encryptedReceipts =
-            jsonParser
-                .encodeToString(
-                    ListSerializer(SerializableApplicationReceiptInfo.serializer()),
-                    incomingApplicationReceipt.map { it.toSerializable() }.toList(),
+class InHandler(
+    private val mshService: MshService,
+    private val parcelService: ParcelService,
+    private val securityService: SecurityService,
+    private val adresseregisteretService: AdresseregisteretService
+) {
+    suspend fun getApplicationReceiptsForMessage(messageId: UUID, clientContext: ClientContext): ServerResponse {
+        val incomingApplicationReceipt = mshService.getApplicationReceiptsForMessage(messageId, clientContext)
+            .filter {
+                securityService.hasAccess(
+                    clientContext,
+                    adresseregisteretService.lookupByHerId(it.receiverHerId)
                 )
-                .let {
-                    val certificate = trustStore.getCertificateByKid(kid)
-                    val encryptedReceipts = kryptering.krypter(it.toByteArray(), certificate).encodeBase64()
-                    EncryptedFagmelding(certificate.encoded.encodeBase64(), encryptedReceipts)
-                }
+            }
 
-        val json =
-            jsonParser.encodeToString(
-                MapSerializer(String.serializer(), EncryptedFagmelding.serializer()),
-                mapOf("receipts" to encryptedReceipts),
-            )
+        val json = jsonParser.encodeToString(
+            ListSerializer(SerializableApplicationReceiptInfo.serializer()),
+            incomingApplicationReceipt.map { it.toSerializable() }.toList(),
+        )
 
-        val signedReceipts = signer.sign(json)
+        parcelService.signAndEncrypt(json, clientContext)
 
-        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(signedReceipts)
+        return ServerResponse.ok()
+            .contentType(MediaTypes.APPLICATION_JOSE)
+            .bodyValueAndAwait(json)
     }
 
-    suspend fun incomingMessages(request: ServerRequest, mshClient: Client): ServerResponse {
-        val herId2 =
-            try {
-                request.pathVariable("herId2").toInt()
-            } catch (e: NumberFormatException) {
-                throw IllegalArgumentException("Message id is wrong format", e)
-            }
-        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
-        val requestParameters =
-            onBehalfOf?.let { onBehalfOf ->
-                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
-            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
-
+    suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): ServerResponse {
+        securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
         // vi bruker status endepunkt for å hente Apprec
         val notApprecMessages =
-            mshClient.getMessagesWithMetadata(herId2, requestParameters).filter { it.isAppRec == false }
+            mshService.getMessagesWithMetadata(receiverHerId, clientContext).filter { !it.isAppRec }
         val inMessages = notApprecMessages.map { it.toInMessage() }
+        val json = jsonParser.encodeToString(ListSerializer(IncomingMessage.serializer()), inMessages)
 
-        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValueAndAwait(inMessages)
+        return ServerResponse.ok()
+            .contentType(MediaTypes.APPLICATION_JOSE)
+            .bodyValueAndAwait(parcelService.signAndEncrypt(json, clientContext))
     }
 
-    suspend fun incomingBusinessDocument(request: ServerRequest, mshClient: Client): ServerResponse {
-        val messageId =
-            try {
-                UUID.fromString(request.pathVariable("messageId"))
-            } catch (e: NumberFormatException) {
-                throw IllegalArgumentException("Message id is wrong format", e)
-            }
-
-        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
-        val requestParameters =
-            onBehalfOf?.let { onBehalfOf ->
-                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
-            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
-
-        val businessDokument: IncomingBusinessDocument = mshClient.getBusinessDocument(messageId, requestParameters)
+    suspend fun getBusinessDocument(messageId: UUID, clientContext: ClientContext): ServerResponse {
+        val businessDokument: IncomingBusinessDocument =
+            mshService.getBusinessDocument(messageId, clientContext)
         logger.info("I was able to get the business document $businessDokument")
+        val receiverHerId =
+            businessDokument.receiver.parent.herId.orElseThrowNotFound("ReceiverHerId not found in SBDH!")
+        securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
 
-        return ServerResponse.ok().bodyValueAndAwait(businessDokument.toSerializeable())
+        val multipart = MultipartBodyBuilder().apply {
+            part(MultipartNames.forretningsmelding, getForretningsmelding(businessDokument, clientContext))
+                .filename(FileNames.forretningsmelding)
+                .contentType(MediaTypes.APPLICATION_JOSE)
+
+            val vedlegg = ArrayList<IncomingVedlegg>()
+            businessDokument.vedlegg?.let { vedlegg.add(it) }
+
+            part(
+                MultipartNames.dokumentpakke,
+                getDokumentpakke(clientContext, businessDokument.message!!, vedlegg)
+            )
+                .filename(FileNames.dokumentpakke)
+                .contentType(MediaTypes.APPLICATION_ASICE)
+        }
+
+        return ServerResponse.ok()
+            .contentType(MediaType.MULTIPART_MIXED)
+            .bodyValueAndAwait(multipart)
     }
 
-    suspend fun markAsRead(
-        request: ServerRequest,
-        mshClient: Client,
-        kryptering: Kryptering,
-        signer: Signer,
-    ): ServerResponse {
-        val receiverId =
-            try {
-                Integer.parseInt(request.pathVariable("herId2"))
-            } catch (e: NumberFormatException) {
-                throw IllegalArgumentException("Message id is wrong format", e)
-            }
-        val messageId =
-            try {
-                UUID.fromString(request.pathVariable("messageId"))
-            } catch (e: NumberFormatException) {
-                throw IllegalArgumentException("Message id is wrong format", e)
-            }
-
-        val onBehalfOf = request.queryParamOrNull("onBehalfOf")
-        val requestParameters =
-            onBehalfOf?.let { onBehalfOf ->
-                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
-            } ?: throw IllegalArgumentException("On behalf of organisation is not provided.")
-
-        mshClient.markMessageRead(messageId, receiverId, requestParameters)
-
-        return ServerResponse.ok().bodyValueAndAwait("Message deleted")
+    private fun getForretningsmelding(
+        businessDokument: IncomingBusinessDocument,
+        clientContext: ClientContext
+    ): String {
+        val json = jsonParser.encodeToString(businessDokument.toSerializable())
+        return parcelService.signAndEncrypt(json, clientContext)
     }
+
+    private fun getDokumentpakke(
+        clientContext: ClientContext,
+        dialogmelding: Dialogmelding,
+        vedlegg: List<IncomingVedlegg>
+    ): Resource {
+        val dialogmeldingJson = jsonParser.encodeToString(dialogmelding.toSerializable())
+
+        val attachments = ArrayList<Attachment>()
+        attachments.add(
+            Attachment(
+                AttachmentNames.dialogmelding, ByteArrayResource(dialogmeldingJson.encodeToByteArray()),
+                MimeType.valueOf("application/json")
+            )
+        )
+        attachments.addAll(vedlegg.mapIndexed { index, vedlegg ->
+            Attachment(
+                AttachmentNames.vedlegg(index),
+                InputStreamResource(vedlegg.data!!),
+                MimeType.valueOf(vedlegg.mimeType!!)
+            )
+        })
+
+        return parcelService.createAndEncryptAsic(clientContext, attachments)
+    }
+
+    suspend fun markMessageRead(messageId: UUID, receiverHerId: Int, clientContext: ClientContext): ServerResponse {
+        securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
+        mshService.markMessageRead(messageId, receiverHerId, clientContext)
+
+        return ServerResponse.ok()
+            .contentType(MediaType.TEXT_PLAIN)
+            .bodyValueAndAwait("Message deleted")
+    }
+
 }

@@ -4,7 +4,12 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import kotlin.uuid.toJavaUuid
 import kotlin.uuid.toKotlinUuid
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.msh.Department
@@ -20,12 +25,25 @@ import no.ks.fiks.nhn.msh.OutgoingApplicationReceiptError
 data class SerializableOutgoingApplicationReceipt
 @OptIn(ExperimentalUuidApi::class)
 constructor(
-    val acknowledgedId: Uuid,
+    @Serializable(with = UUIDSerializer::class) val acknowledgedId: Uuid,
     val senderHerId: Int,
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
     val errors: List<SerializeableOutgoingApplicationReceiptError>? = null,
     val recieverHerId: Int? = null,
 )
+
+@OptIn(ExperimentalUuidApi::class)
+object UUIDSerializer : KSerializer<Uuid> {
+    override val descriptor = PrimitiveSerialDescriptor("Uuid", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): Uuid {
+        return Uuid.parse(decoder.decodeString())
+    }
+
+    override fun serialize(encoder: Encoder, value: Uuid) {
+        encoder.encodeString(value.toString())
+    }
+}
 
 @OptIn(ExperimentalUuidApi::class)
 fun OutgoingApplicationReceipt.toSerializable(): SerializableOutgoingApplicationReceipt =

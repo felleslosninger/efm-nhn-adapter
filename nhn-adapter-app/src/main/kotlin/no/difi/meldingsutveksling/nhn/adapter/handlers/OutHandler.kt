@@ -1,187 +1,258 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
-import java.io.ByteArrayInputStream
+import java.nio.charset.StandardCharsets
 import java.time.OffsetDateTime
-import java.util.UUID
+import java.util.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.reactive.awaitSingle
 import kotlinx.coroutines.reactor.awaitSingle
-import no.difi.meldingsutveksling.nhn.adapter.crypto.Dekrypter
-import no.difi.meldingsutveksling.nhn.adapter.crypto.SignatureValidator
+import kotlinx.coroutines.withContext
+import no.difi.meldingsutveksling.domain.NhnIdentifier
+import no.difi.meldingsutveksling.domain.PartnerIdentifier
+import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.logger
-import no.difi.meldingsutveksling.nhn.adapter.model.Fagmelding
-import no.difi.meldingsutveksling.nhn.adapter.model.MessageOut
+import no.difi.meldingsutveksling.nhn.adapter.model.Dialogmelding
+import no.difi.meldingsutveksling.nhn.adapter.model.DialogmeldingMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.FileNames
+import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
+import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.Person
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
+import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
+import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
+import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
+import no.difi.move.common.dokumentpakking.domain.Document
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.nhn.ar.AddressComponent
-import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.ar.CommunicationParty
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
-import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DialogmeldingVersion
 import no.ks.fiks.nhn.msh.HealthcareProfessional
-import no.ks.fiks.nhn.msh.HelseIdTokenParameters
-import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OrganizationId
 import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
-import no.ks.fiks.nhn.msh.OutgoingMessage
 import no.ks.fiks.nhn.msh.OutgoingVedlegg
 import no.ks.fiks.nhn.msh.Patient
 import no.ks.fiks.nhn.msh.PersonId
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RecipientContact
-import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.Sender
-import okio.ByteString.Companion.decodeBase64
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
-import org.springframework.web.reactive.function.server.bodyToMono
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
-import org.springframework.web.reactive.function.server.queryParamOrNull
 
-object OutHandler {
-    suspend fun statusHandler(it: ServerRequest, mshClient: Client): ServerResponse {
-        val messageId = it.pathVariable("messageId")
-        // @TODO to use onBehalfOf as request parameter exposes details of next
-        // authentication/authorization step
-        // potentialy put the onBehalfOf orgnummeret enten som Body eller som ekstra claim i maskin
-        // to maski tokenet
-        val onBehalfOf = it.queryParamOrNull("onBehalfOf")
+class OutHandler(
+    private val mshService: MshService,
+    private val parcelService: ParcelService,
+    private val securityService: SecurityService,
+    private val adresseregisteretService: AdresseregisteretService
+) {
+    suspend fun getStatus(messageId: UUID, clientContext: ClientContext): ServerResponse {
+        val data = mshService.getStatus(messageId, clientContext).map { it.toMessageStatus() }
+        data.firstOrNull()?.let {
+            val communicationParty = adresseregisteretService.lookupByHerId(it.receiverHerId)
+            securityService.assertAccess(clientContext, communicationParty)
+        }
 
-        val requestParameters =
-            onBehalfOf?.let { onBehalfOf ->
-                RequestParameters(HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(onBehalfOf)))
-            }
         return ServerResponse.ok()
-            .bodyValueAndAwait(
-                mshClient.getStatus(UUID.fromString(messageId), requestParameters).map { it.toMessageStatus() }.first()
-            )
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValueAndAwait(data)
     }
 
-    suspend fun dphOut(
+    suspend fun sendApplicationReceipt(
         request: ServerRequest,
-        arClient: AdresseregisteretClient,
-        mshClient: Client,
-        dekryptering: Dekrypter,
-        signatureValidator: SignatureValidator,
+        messageId: UUID,
+        clientContext: ClientContext
     ): ServerResponse {
-        logger.info("entering dph out")
-        val incomingRaw = request.bodyToMono<String>().awaitSingle()
-        signatureValidator.validate(incomingRaw)
+//        return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN)
+//            .bodyValueAndAwait(withClientContext { clientContext ->
+//                runBlocking {
+//                    val jweToken = request.awaitBody<String>()
+//                    val payload = parcelService.decryptAndVerify(jweToken)
+//                    val messageOut = jsonParser.decodeFromString<SerializedOutgoingApplicationReceipt>(payload)
+//
+//                    val receipt = OutgoingApplicationReceipt(
+//                        acknowledgedId = messageId,
+//                        )
+//
+//                    val messageReference = mshService.sendApplicationReceipt(receipt)
+//                    messageReference.toString()
+//                }
+//            }.awaitSingle())
 
-        val messageOut = jsonParser.decodeFromString<MessageOut.Signed>(incomingRaw)
-        val arDetailsSender =
-            ArHandlers.arLookupByHerId(messageOut.sender.herid2.toInt(), arClient, "dummy-certificate")
+        return ServerResponse.ok().bodyValueAndAwait("NOT IMPLEMENTED!")
+    }
 
-        val arDetailsReciever =
-            ArHandlers.arLookupByHerId(messageOut.receiver.herid2.toInt(), arClient, "dummy-certificate")
+    suspend fun sendMessage(request: ServerRequest, clientContext: ClientContext): ServerResponse {
+        logger.info("Starting sendMessage")
 
-        // The fagmelding needs to be decyrpted
-        val dekryptedFagmelding = dekryptering.dekrypter(messageOut.fagmelding.message.toByteArray()).decodeToString()
-        val fagmelding = jsonParser.decodeFromString(Fagmelding.serializer(), dekryptedFagmelding)
+        val multipartData = request.multipartData().awaitSingle()
 
-        // @TODO Dette er her er ikke helt presis. Vi kan leve med det for øyebliket men
-        // vi skall endre det å ta hensyn til det som kommer fra AR og ikke bruke fnr-en å besteme
+        val jweToken =
+            multipartData.getFirst(MultipartNames.forretningsmelding)!!.content().awaitSingle()
+                .toString(StandardCharsets.UTF_8)
+        val payload = parcelService.decryptAndVerify(jweToken, clientContext)
+        val outgoingMessage = jsonParser.decodeFromString<OutgoingMessage>(payload)
+        val dialogmeldingMessage = outgoingMessage.payload
 
-        val receiver =
-            if (messageOut.receiver.patientFnr != null) {
-                arClient
-                    .lookupHerId(messageOut.receiver.herid2.toInt())
-                    .let { it as PersonCommunicationParty }
-                    .let {
-                        no.ks.fiks.nhn.msh.PersonCommunicationParty(
-                            ids = listOf(PersonId(it.herId.toString(), PersonIdType.HER_ID)),
-                            firstName = it.firstName,
-                            lastName = it.lastName,
-                            middleName = it.middleName,
-                        )
-                    }
-            } else {
-                OrganizationCommunicationParty(
-                    name = arDetailsReciever.communicationPartyName,
-                    ids = listOf(OrganizationId(messageOut.receiver.herid2, OrganizationIdType.HER_ID)),
+        val dokumentpakke = multipartData.getFirst(MultipartNames.dokumentpakke)!!
+        val asicFiles = withContext(Dispatchers.IO) {
+            dokumentpakke.content().awaitSingle().asInputStream()
+                .use { inputStream -> parcelService.getAttachments(inputStream) }
+        }
+
+        val dialogmelding = getDialogmelding(asicFiles)
+        val vedlegg = getVedlegg(asicFiles)
+
+        val sender =
+            securityService.assertAccess(
+                clientContext, adresseregisteretService.lookupByHerId(
+                    NhnIdentifier.parse(
+                        outgoingMessage.sender
+                    ).identifier.toInt()
                 )
-            }
-
-        val patient =
-            Patient(
-                fagmelding.patient.fnr,
-                fagmelding.patient.firstName,
-                fagmelding.patient.middleName,
-                fagmelding.patient.lastName,
             )
 
-        val healthcareProfessional: PersonCommunicationParty =
-            arClient.lookupHerId(fagmelding.responsibleHealthcareProfessionalId.toInt()) as PersonCommunicationParty
+        val receiver =
+            adresseregisteretService.lookupByPartnerIdentifier(PartnerIdentifier.parse(outgoingMessage.receiver))
 
         val outGoingDocument =
             OutgoingBusinessDocument(
                 UUID.randomUUID(),
-                Sender(
-                    OrganizationCommunicationParty(
-                        name = arDetailsSender.communicationPartyParentName,
-                        ids = listOf(OrganizationId(messageOut.sender.herid1, OrganizationIdType.HER_ID)),
-                    ),
-                    OrganizationCommunicationParty(
-                        name = arDetailsSender.communicationPartyName,
-                        ids = listOf(OrganizationId(messageOut.sender.herid2, OrganizationIdType.HER_ID)),
-                    ),
-                ),
-                receiver =
-                    Receiver(
-                        OrganizationCommunicationParty(
-                            name = arDetailsReciever.communicationPartyParentName,
-                            ids = listOf(OrganizationId(messageOut.receiver.herid1, OrganizationIdType.HER_ID)),
-                        ),
-                        receiver,
-                        patient,
-                    ),
-                message =
-                    OutgoingMessage(
-                        fagmelding.notat.subject,
-                        fagmelding.notat.notatinnhold,
-                        with(healthcareProfessional) {
-                            HealthcareProfessional(
-                                this.firstName,
-                                this.middleName,
-                                this.lastName,
-                                this.electronicAddresses.find { it.type == AddressComponent.TELEFONNUMMER }?.address
-                                    ?: "not found",
-                                HelsepersonellsFunksjoner.FASTLEGE,
-                            )
-                        },
-                        RecipientContact(
-                            Helsepersonell.LEGE
-                            // message
-                        ),
-                    ),
-                OutgoingVedlegg(
-                    OffsetDateTime.now(),
-                    fagmelding.vedleggBeskrivelse,
-                    ByteArrayInputStream(messageOut.vedlegg.decodeBase64()!!.toByteArray()),
-                ),
+                getSender(sender),
+                receiver = getReceiver(receiver, dialogmeldingMessage.pasient),
+                message = getOutgoingMessage(dialogmeldingMessage, dialogmelding),
+                getOutgoingAttachment(vedlegg, dialogmeldingMessage.metadataFiler),
                 DialogmeldingVersion.V1_1,
                 null,
             )
 
         logger.info { outGoingDocument }
-        // outGoingDocument.copy(vedlegg = outGoingDocument.vedlegg.copy(data =
-        // this.javaClass.getClassLoader().getResourceAsStream("small.pdf")!!))
-        val messageReference =
-            mshClient.sendMessage(
-                outGoingDocument,
-                RequestParameters(
-                    HelseIdTokenParameters(MultiTenantHelseIdTokenParameters(messageOut.onBehalfOfOrgNum))
-                ),
-            )
+        val messageReference = mshService.sendMessage(outGoingDocument, clientContext)
 
         logger.info("EDI 2.0 message referance: $messageReference")
         logger.info("dialogmeldin messageId:${outGoingDocument.id}")
 
         logger.info { "MessageOut recieved with messageReferance = $messageReference" }
-        return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
+
+        return ServerResponse.ok()
+            .contentType(MediaType.TEXT_PLAIN)
+            .bodyValueAndAwait(messageReference.toString())
+    }
+
+    private suspend fun getDialogmelding(attachments: List<Document>): Dialogmelding {
+        val document = attachments.find { it.filename == FileNames.forretningsmelding }
+            .orElseThrowNotFound("forretningsmelding mangler i ASiC-E filen!")
+
+        val jsonString = withContext(Dispatchers.IO) {
+            document.resource.inputStream.bufferedReader().use { it.readText() }
+        }
+
+        return jsonParser.decodeFromString<Dialogmelding>(jsonString)
+    }
+
+    private fun getVedlegg(attachments: List<Document>): List<Document> {
+        return attachments.filter { it.filename != FileNames.forretningsmelding }
+    }
+
+    private fun getSender(communicationParty: CommunicationParty): Sender {
+        return Sender(
+            OrganizationCommunicationParty(
+                name = communicationParty.parent!!.name,
+                ids = listOf(
+                    OrganizationId(
+                        communicationParty.parent!!.herId.toString(),
+                        OrganizationIdType.HER_ID
+                    )
+                ),
+            ),
+            OrganizationCommunicationParty(
+                name = communicationParty.name,
+                ids = listOf(OrganizationId(communicationParty.herId.toString(), OrganizationIdType.HER_ID)),
+            ),
+        )
+    }
+
+    private fun getReceiver(communicationParty: CommunicationParty, patient: Person): Receiver {
+        return Receiver(
+            OrganizationCommunicationParty(
+                name = communicationParty.parent!!.name,
+                ids = listOf(
+                    OrganizationId(
+                        communicationParty.parent!!.herId.toString(),
+                        OrganizationIdType.HER_ID
+                    )
+                ),
+            ), if (communicationParty is PersonCommunicationParty) {
+                no.ks.fiks.nhn.msh.PersonCommunicationParty(
+                    ids = listOf(PersonId(communicationParty.herId.toString(), PersonIdType.HER_ID)),
+                    firstName = communicationParty.firstName,
+                    lastName = communicationParty.lastName,
+                    middleName = communicationParty.middleName,
+                )
+            } else {
+                OrganizationCommunicationParty(
+                    name = communicationParty.name,
+                    ids = listOf(OrganizationId(communicationParty.herId.toString(), OrganizationIdType.HER_ID)),
+                )
+            },
+            Patient(
+                patient.fnr,
+                patient.firstName,
+                patient.middleName,
+                patient.lastName
+            )
+        )
+    }
+
+    private suspend fun getHealthcareProfessional(herId: Int): HealthcareProfessional {
+        val professional: PersonCommunicationParty =
+            adresseregisteretService.lookupByHerId(herId) as PersonCommunicationParty
+
+        return HealthcareProfessional(
+            professional.firstName,
+            professional.middleName,
+            professional.lastName,
+            professional.electronicAddresses.find { it.type == AddressComponent.TELEFONNUMMER }?.address
+                ?: "not found",
+            HelsepersonellsFunksjoner.FASTLEGE,
+        )
+    }
+
+    private suspend fun getOutgoingMessage(
+        dialogmeldingMessage: DialogmeldingMessage,
+        dialogmelding: Dialogmelding
+    ): no.ks.fiks.nhn.msh.OutgoingMessage {
+        val notat = dialogmelding.notat
+
+        return no.ks.fiks.nhn.msh.OutgoingMessage(
+            notat.temaBeskrivelse,
+            notat.innhold,
+            getHealthcareProfessional(dialogmeldingMessage.fastlege),
+            RecipientContact(Helsepersonell.LEGE),
+        )
+    }
+
+    private suspend fun getOutgoingAttachment(
+        vedlegg: List<Document>,
+        metadata: Map<String, String>
+    ): OutgoingVedlegg {
+        val vedlegg0 = vedlegg.single()
+
+        return withContext(Dispatchers.IO) {
+            vedlegg0.resource.inputStream.use { inputStream ->
+                OutgoingVedlegg(
+                    OffsetDateTime.now(),
+                    metadata.getValue(vedlegg0.filename),
+                    inputStream,
+                )
+            }
+        }
     }
 }

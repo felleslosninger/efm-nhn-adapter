@@ -13,7 +13,8 @@
 
     <artifactId>nhn-model</artifactId>
     <packaging>jar</packaging>
-    <name>NHN transport model</name>
+    <name>nhn-model</name>
+    <description>NHN transport model</description>
 
     <dependencies>
         <dependency>
@@ -34,66 +35,62 @@
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-datetime-jvm</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib-jdk8</artifactId>
-        </dependency>
     </dependencies>
 
-    <build>
-        <sourceDirectory>src/main/kotlin</sourceDirectory>
-        <plugins>
-            <plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>compile</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                        <configuration>
-                            <sourceDirs>
-                                <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>
-                            </sourceDirs>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>test-compile</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>test-compile</goal>
-                        </goals>
-                        <configuration>
-                            <sourceDirs>
-                                <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>
-                            </sourceDirs>
-                        </configuration>
-                    </execution>
-                </executions>
+<!--    <build>-->
+<!--        <sourceDirectory>src/main/kotlin</sourceDirectory>-->
+<!--        <plugins>-->
+<!--            <plugin>-->
+<!--                <groupId>org.jetbrains.kotlin</groupId>-->
+<!--                <artifactId>kotlin-maven-plugin</artifactId>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>compile</id>-->
+<!--                        <phase>compile</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>compile</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <sourceDirs>-->
+<!--                                <sourceDir>${project.basedir}/src/main/kotlin</sourceDir>-->
+<!--                            </sourceDirs>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
+<!--                    <execution>-->
+<!--                        <id>test-compile</id>-->
+<!--                        <phase>test-compile</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>test-compile</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <sourceDirs>-->
+<!--                                <sourceDir>${project.basedir}/src/test/kotlin</sourceDir>-->
+<!--                            </sourceDirs>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
+<!--                </executions>-->
 
-                <configuration>
-                    <jvmTarget>${java.version}</jvmTarget>
-                    <compilerPlugins>
-                        <plugin>kotlinx-serialization</plugin>
-                    </compilerPlugins>
-                </configuration>
+<!--                <configuration>-->
+<!--                    <jvmTarget>${java.version}</jvmTarget>-->
+<!--                    <compilerPlugins>-->
+<!--                        <plugin>kotlinx-serialization</plugin>-->
+<!--                    </compilerPlugins>-->
+<!--                </configuration>-->
 
-                <dependencies>
-                    <dependency>
-                        <groupId>org.jetbrains.kotlin</groupId>
-                        <artifactId>kotlin-maven-serialization</artifactId>
-                        <version>${kotlin.version}</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>no.ks.fiks</groupId>
-                        <artifactId>msh-client</artifactId>
-                        <version>${msh-client.version}</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-        </plugins>
-    </build>
+<!--                <dependencies>-->
+<!--                    <dependency>-->
+<!--                        <groupId>org.jetbrains.kotlin</groupId>-->
+<!--                        <artifactId>kotlin-maven-serialization</artifactId>-->
+<!--                        <version>${kotlin.version}</version>-->
+<!--                    </dependency>-->
+<!--                    <dependency>-->
+<!--                        <groupId>no.ks.fiks</groupId>-->
+<!--                        <artifactId>msh-client</artifactId>-->
+<!--                        <version>${msh-client.version}</version>-->
+<!--                    </dependency>-->
+<!--                </dependencies>-->
+<!--            </plugin>-->
+<!--        </plugins>-->
+<!--    </build>-->
 
 </project>

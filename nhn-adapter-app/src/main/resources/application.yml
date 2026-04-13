@@ -1,15 +1,16 @@
 spring:
   webflux:
-    base-path: /nhn-adapter
+    base-path: /api
   codecs:
     max-in-memory-size: 12MB
   http:
     codecs:
       max-in-memory-size: 12MB
+  web:
+    error:
+      include-message: always
 server:
   port: 8080
-  error:
-    include-message: always
 management:
   server:
     port: 8090
@@ -48,28 +49,19 @@ oauth2:
     private-key: ${NHN_PRIVATE_KEY}
     issuer: "https://helseid-sts.test.nhn.no"
     audience: "https://helseid-sts.test.nhn.no"
-crypto:
-  encryption:
-    keystore:
-      base64Value: ${ENCRYPTION_KEYSTORE_VALUE}
-      alias: ${ENCRYPTION_KEYSTORE_ALIAS}
-      password: ${ENCRYPTION_KEYSTORE_PASSWORD}
-      type: "PKCS12"
-  signature:
-    keystore:
-      base64Value: ${SIGNATURE_KEYSTORE_VALUE}
-      alias: ${SIGNATURE_KEYSTORE_ALIAS}
-      password: ${SIGNATURE_KEYSTORE_PASSWORD}
-      type: "PKCS12"
-  truststore:
-    base64Value: ${SIGNATURE_TRUSTSTORE_VALUE}
-    alias: ${SIGNATURE_TRUSTSTORE_ALIAS}
-    password: ${SIGNATURE_TRUSTSTORE_PASSWORD}
-    type: "PKCS12"
+keystore:
+  base64Value: ${ENCRYPTION_KEYSTORE_VALUE}
+  alias: ${ENCRYPTION_KEYSTORE_ALIAS}
+  password: ${ENCRYPTION_KEYSTORE_PASSWORD}
+  type: "PKCS12"
 logging:
   level:
     org.springframework.http.codec.json: INFO
     org.springframework.core.codec: INFO
-
+virksert:
+  process: "cenbii-procid-ubl::urn:no:difi:profile:dpo:ver1.0"
+temp:
+  threshold: 10000000
+  initial-buffer-size: 100000
 
 

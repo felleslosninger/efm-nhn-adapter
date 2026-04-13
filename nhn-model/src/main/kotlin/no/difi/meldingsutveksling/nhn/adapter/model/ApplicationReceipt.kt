@@ -19,7 +19,7 @@ enum class ApprecStatus(val value: String) {
 
     companion object {
         fun fromValue(value: String?): ApprecStatus {
-            for (b in ApprecStatus.values()) {
+            for (b in entries) {
                 if (b.value.equals(value, true)) {
                     return b
                 }
@@ -31,7 +31,7 @@ enum class ApprecStatus(val value: String) {
 
 @Serializable
 data class SerializableApplicationReceiptInfo(
-    val recieverHerId: Int,
+    val receiverHerId: Int,
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding?,
     val errors: List<SerializableIncomingApplicationReceiptError>,
 )

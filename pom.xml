@@ -36,10 +36,11 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <kotlin.version>2.3.20</kotlin.version>
-        <kotest.version>6.1.9</kotest.version>
-        <msh-client.version>1.4.0</msh-client.version>
-        <helseid.version>1.0.1</helseid.version>
-        <idporten-validators.version>1.6.1</idporten-validators.version>
+        <kotest.version>6.1.10</kotest.version>
+        <msh-client.version>1.5.1</msh-client.version>
+        <helseid.version>1.1.0</helseid.version>
+        <virksert.version>2.0.6</virksert.version>
+        <efm-common.version>DEV-SNAPSHOT</efm-common.version>
     </properties>
 
     <profiles>
@@ -47,7 +48,6 @@
             <id>lib</id>
             <modules>
                 <module>nhn-model</module>
-                <module>nhn-crypto</module>
             </modules>
         </profile>
         <profile>
@@ -58,7 +58,6 @@
 
             <modules>
                 <module>nhn-model</module>
-                <module>nhn-crypto</module>
                 <module>nhn-adapter-app</module>
             </modules>
         </profile>
@@ -66,6 +65,13 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>4.0.5</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-bom</artifactId>
@@ -81,6 +87,13 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
+                <groupId>no.difi.move-common</groupId>
+                <artifactId>move-common-bom</artifactId>
+                <version>${efm-common.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
                 <groupId>io.kotest</groupId>
                 <artifactId>kotest-extensions-spring</artifactId>
                 <version>${kotest.version}</version>
@@ -89,11 +102,6 @@
             <dependency>
                 <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
                 <artifactId>nhn-model</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
-                <artifactId>nhn-crypto</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -107,9 +115,9 @@
                 <version>${helseid.version}</version>
             </dependency>
             <dependency>
-                <groupId>no.idporten.validators</groupId>
-                <artifactId>idporten-validators</artifactId>
-                <version>${idporten-validators.version}</version>
+                <groupId>no.difi.virksert</groupId>
+                <artifactId>virksert-client</artifactId>
+                <version>${virksert.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlinx</groupId>
@@ -161,8 +169,46 @@
         </dependencies>
     </dependencyManagement>
 
+    <dependencies>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib</artifactId>
+            <version>${kotlin.version}</version>
+        </dependency>
+    </dependencies>
+
     <build>
+        <sourceDirectory>src/main/kotlin</sourceDirectory>
+        <testSourceDirectory>src/test/kotlin</testSourceDirectory>
         <plugins>
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+                <version>${kotlin.version}</version>
+                <executions>
+                    <execution>
+                        <id>compile</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>test-compile</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>test-compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <jvmTarget>${java.version}</jvmTarget>
+                    <compilerPlugins>
+                        <plugin>spring</plugin>
+                        <plugin>kotlinx-serialization</plugin>
+                    </compilerPlugins>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
