@@ -19,41 +19,28 @@ interface ClientContext {
 }
 
 data class ClientContextImpl(val jwt: Jwt) : ClientContext {
+    override val orgNumber: String by lazy { supplier?.organizationIdentifier ?: onBehalfOfOrgNumber }
 
-    override val orgNumber: String by lazy {
-        supplier?.organizationIdentifier ?: onBehalfOfOrgNumber
-    }
+    override val onBehalfOfOrgNumber: String by lazy { consumer.organizationIdentifier }
 
-    override val onBehalfOfOrgNumber: String by lazy {
-        consumer.organizationIdentifier
-    }
+    override val consumer: Iso6523 by lazy { AccessToken.getConsumer(jwt) }
 
-    override val consumer: Iso6523 by lazy {
-        AccessToken.getConsumer(jwt)
-    }
+    override val supplier: Iso6523? by lazy { AccessToken.getSupplier(jwt) }
 
-    override val supplier: Iso6523? by lazy {
-        AccessToken.getSupplier(jwt)
-    }
-
-    override val delegationSource: String? by lazy {
-        AccessToken.getDelegationSource(jwt)
-    }
+    override val delegationSource: String? by lazy { AccessToken.getDelegationSource(jwt) }
 }
 
 class ClientContextFilter : HandlerFilterFunction<ServerResponse, ServerResponse> {
-    override fun filter(request: ServerRequest, next: HandlerFunction<ServerResponse>): Mono<ServerResponse> {
-        return next.handle(request)
-            .contextWrite { ctx ->
-                AccessToken.getJwt()?.let { ctx.put("client", ClientContextImpl(it)) }; ctx
-            }
-    }
+    override fun filter(request: ServerRequest, next: HandlerFunction<ServerResponse>): Mono<ServerResponse> =
+        next.handle(request).contextWrite { ctx ->
+            AccessToken.getJwt()?.let { ctx.put("client", ClientContextImpl(it)) }
+            ctx
+        }
 }
 
-suspend fun getClientContext(): ClientContext {
-    return Mono.deferContextual { ctx: ContextView ->
-        val clientContext: ClientContext = ctx.get("client")
-        Mono.just(clientContext)
-    }.awaitSingle()
-}
-
+suspend fun getClientContext(): ClientContext =
+    Mono.deferContextual { ctx: ContextView ->
+            val clientContext: ClientContext = ctx.get("client")
+            Mono.just(clientContext)
+        }
+        .awaitSingle()

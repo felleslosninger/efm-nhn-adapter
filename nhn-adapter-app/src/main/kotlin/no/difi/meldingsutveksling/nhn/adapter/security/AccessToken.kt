@@ -6,18 +6,11 @@ import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 
 object AccessToken {
+    fun getConsumer(jwt: Jwt): Iso6523 = getIso6523(jwt, Claims.CONSUMER)!!
 
-    fun getConsumer(jwt: Jwt): Iso6523 {
-        return getIso6523(jwt, Claims.consumer)!!
-    }
+    fun getSupplier(jwt: Jwt): Iso6523? = getIso6523(jwt, Claims.SUPPLIER)
 
-    fun getSupplier(jwt: Jwt): Iso6523? {
-        return getIso6523(jwt, Claims.supplier)
-    }
-
-    fun getDelegationSource(jwt: Jwt): String? {
-        return jwt.getClaimAsString(Claims.delegationSource)
-    }
+    fun getDelegationSource(jwt: Jwt): String? = jwt.getClaimAsString(Claims.DELEGATION_SOURCE)
 
     private fun getIso6523(jwt: Jwt, claim: String): Iso6523? {
         val claimAsMap = jwt.getClaimAsMap(claim)

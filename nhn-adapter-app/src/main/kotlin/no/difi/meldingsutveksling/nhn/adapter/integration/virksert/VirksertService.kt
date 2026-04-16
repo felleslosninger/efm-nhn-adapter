@@ -37,7 +37,7 @@ class VirksertService(
             Caffeine.newBuilder().maximumSize(config.maxSize).expireAfterWrite(config.cacheTtl).build<
                 Iso6523,
                 X509Certificate,
-                > { identifier ->
+            > { identifier ->
                 loader.invoke(identifier)
             }
 

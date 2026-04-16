@@ -9,6 +9,7 @@ import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.move.common.cert.KeystoreHelper
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
+import org.springframework.web.reactive.function.server.json
 
 class LookupHandler(
     private val adresseregisteretService: AdresseregisteretService,
@@ -22,16 +23,18 @@ class LookupHandler(
         val orgNumber = communicationParty.parent!!.organizationNumber
         val communicationPartyParentName = communicationParty.parent?.name ?: "empty"
 
-        return ServerResponse.ok().bodyValueAndAwait(
-            ArDetails(
-                parentHerId,
-                communicationPartyParentName,
-                orgNumber = orgNumber,
-                communicationParty.herId,
-                communicationParty.name,
-                "testedi-address",
-                keystoreHelper.x509Certificate.toBase64Der(),
+        return ServerResponse.ok()
+            .json()
+            .bodyValueAndAwait(
+                ArDetails(
+                    parentHerId,
+                    communicationPartyParentName,
+                    orgNumber = orgNumber,
+                    communicationParty.herId,
+                    communicationParty.name,
+                    "testedi-address",
+                    keystoreHelper.x509Certificate.toBase64Der(),
+                )
             )
-        )
     }
 }

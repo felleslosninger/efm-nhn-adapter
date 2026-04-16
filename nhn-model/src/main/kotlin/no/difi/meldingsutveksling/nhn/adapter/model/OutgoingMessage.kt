@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
 data class OutgoingMessage(
     val messageId: String,
     val conversationId: String,
-    val sender: String,
-    val receiver: String,
+    val senderHerId: Int,
+    val receiverHerId: Int,
     val payload: DialogmeldingMessage
 )
 
@@ -32,9 +32,9 @@ data class Notat(
 @Serializable
 data class Person(
     val fnr: String,
-    val firstName: String,
-    val middleName: String? = null,
-    val lastName: String,
+    val fornavn: String,
+    val mellomnavn: String? = null,
+    val etternavn: String,
     val phoneNumber: String? = null,
 )
 

@@ -2,6 +2,6 @@ package no.difi.meldingsutveksling.nhn.adapter.model
 
 object MultipartNames {
 
-    val forretningsmelding = "forretningsmelding"
-    val dokumentpakke = "dokumentpakke"
+    const val forretningsmelding = "forretningsmelding"
+    const val dokumentpakke = "dokumentpakke"
 }

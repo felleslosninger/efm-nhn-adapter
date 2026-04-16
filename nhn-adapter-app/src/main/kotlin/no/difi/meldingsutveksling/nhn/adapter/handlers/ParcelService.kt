@@ -16,6 +16,7 @@ import no.difi.move.common.dokumentpakking.domain.AsicEAttachable
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResource
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResourceFactory
+import no.difi.move.common.io.ResourceUtils
 import org.springframework.core.io.InputStreamResource
 import org.springframework.core.io.Resource
 import org.springframework.util.MimeType
@@ -26,7 +27,7 @@ class ParcelService(
     private val virksertService: VirksertService,
     private val decryptCMSDocument: DecryptCMSDocument,
     private val createCmsEncryptedAsice: CreateCMSEncryptedAsice,
-    private val resourceFactory: InMemoryWithTempFileFallbackResourceFactory
+    private val resourceFactory: InMemoryWithTempFileFallbackResourceFactory,
 ) {
     fun signAndEncrypt(payload: String, clientContext: ClientContext): String {
         val signed = JavaWebToken.sign(payload, keystoreHelper.loadPrivateKey())
@@ -38,50 +39,53 @@ class ParcelService(
         return JavaWebToken.verify(signed, certificate(clientContext))
     }
 
-    private fun certificate(clientContext: ClientContext): X509Certificate {
-        return virksertService.getCertificate(clientContext.consumer)
-    }
+    private fun certificate(clientContext: ClientContext): X509Certificate =
+        virksertService.getCertificate(clientContext.consumer)
 
     fun getAttachments(inputStream: InputStream): List<Document> {
-        val asice = decryptCMSDocument.decrypt(
-            DecryptCMSDocument.Input.builder()
-                .resource(InputStreamResource(inputStream))
-                .keystoreHelper(keystoreHelper)
-                .build()
-        )
+        val asice =
+            decryptCMSDocument.decrypt(
+                DecryptCMSDocument.Input.builder()
+                    .resource(InputStreamResource(inputStream))
+                    .keystoreHelper(keystoreHelper)
+                    .build()
+            )
 
-        return asicParser.parse(asice)
+        return asicParser.parse(asice, this::toInMemoryWithTempFileFallbackResource)
+    }
+
+    fun toInMemoryWithTempFileFallbackResource(inputStream: InputStream): InMemoryWithTempFileFallbackResource {
+        val writeableResource: InMemoryWithTempFileFallbackResource = inMemoryWithTempFileFallbackResource()
+        ResourceUtils.copy(inputStream, writeableResource)
+        return writeableResource
     }
 
     fun createAndEncryptAsic(clientContext: ClientContext, attachments: List<Attachment>): Resource {
-        val resource: InMemoryWithTempFileFallbackResource = resourceFactory.getResource("dph-", ".asic.cms")
+        val resource: InMemoryWithTempFileFallbackResource = inMemoryWithTempFileFallbackResource()
 
         createCmsEncryptedAsice.createCmsEncryptedAsice(
             CreateCMSEncryptedAsice.Input.builder()
                 .documents(attachments.stream())
                 .certificate(certificate(clientContext))
-                .signatureMethod(SignatureMethod.XAdES)
+                .signatureMethod(SignatureMethod.CAdES)
                 .signatureHelper(keystoreHelper.signatureHelper)
                 .keyEncryptionScheme(CmsAlgorithm.RSAES_OAEP)
                 .build(),
-            resource
+            resource,
         )
 
         return resource
     }
+
+    private fun inMemoryWithTempFileFallbackResource(): InMemoryWithTempFileFallbackResource =
+        resourceFactory.getResource("dph-", ".asic.cms")
 }
 
 data class Attachment(private val filename: String, private val resource: Resource, private val mimeType: MimeType) :
     AsicEAttachable {
-    override fun getFilename(): String {
-        return filename
-    }
+    override fun getFilename(): String = filename
 
-    override fun getResource(): Resource {
-        return resource
-    }
+    override fun getResource(): Resource = resource
 
-    override fun getMimeType(): MimeType {
-        return mimeType
-    }
+    override fun getMimeType(): MimeType = mimeType
 }

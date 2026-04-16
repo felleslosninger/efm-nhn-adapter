@@ -2,7 +2,7 @@
 
 package no.difi.meldingsutveksling.nhn.adapter
 
-import java.util.*
+import java.util.Date
 import kotlin.time.ExperimentalTime
 import kotlinx.serialization.Serializable
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
@@ -125,15 +125,15 @@ private fun security() = BeanRegistrarDsl {
     registerBean<PasswordEncoder> { BCryptPasswordEncoder() }
     registerBean { SecurityBeans.securityFilterChain(bean(), bean()) }
 
-//    registerBean<Configuration> {
-//        // @TODO it may be time to remove this one. It was used for test
-//        SecurityBeans.helseIdConfigurationForTest(bean<HelseId>())
-//    }
+    //    registerBean<Configuration> {
+    //        // @TODO it may be time to remove this one. It was used for test
+    //        SecurityBeans.helseIdConfigurationForTest(bean<HelseId>())
+    //    }
     registerBean { SecurityBeans.helseIdConfiguration(bean<HelseId>()) }
-//    registerBean {
-//        // @TODO it may be time to remove this one. It was used for test
-//        SecurityBeans.helseIdClient(bean(), bean(), bean())
-//    }
+    //    registerBean {
+    //        // @TODO it may be time to remove this one. It was used for test
+    //        SecurityBeans.helseIdClient(bean(), bean(), bean())
+    //    }
 }
 
 private fun integrations() = BeanRegistrarDsl {
@@ -157,18 +157,17 @@ class BeanRegistration() :
         this.register(security())
         this.register(integrations())
 
-
-//        profile(expression = "local || dev || unit-test || test") {
-//            registerBean<RouterFunction<*>> {
-//                coRouter {
-//                    testFlr(bean())
-//                    testAr(bean())
-//                    testDphOut(bean(), bean())
-//                    testRespondApprecFralegekontor(bean())
-//                    testReadMessageFromFastlegekontoret(bean())
-//                }
-//            }
-//        }
+        //        profile(expression = "local || dev || unit-test || test") {
+        //            registerBean<RouterFunction<*>> {
+        //                coRouter {
+        //                    testFlr(bean())
+        //                    testAr(bean())
+        //                    testDphOut(bean(), bean())
+        //                    testRespondApprecFralegekontor(bean())
+        //                    testReadMessageFromFastlegekontoret(bean())
+        //                }
+        //            }
+        //        }
         registerBean { inMemoryWithTempFileFallbackResourceFactory(bean()) }
         registerBean { SecurityService(bean()) }
         registerBean { KeystoreHelper(bean()) }
@@ -179,17 +178,16 @@ class BeanRegistration() :
         registerBean { LookupHandler(bean(), bean()) }
         registerBean<RouterFunction<*>> {
             coRouter {
-                inHandler(bean())
-                outHandler(bean())
-                lookupHandler(bean())
-            }
+                    inHandler(bean())
+                    outHandler(bean())
+                    lookupHandler(bean())
+                }
                 .filter(nhnErrorFilter())
         }
     })
 
-fun inMemoryWithTempFileFallbackResourceFactory(config: TempFileConfig): InMemoryWithTempFileFallbackResourceFactory {
-    return InMemoryWithTempFileFallbackResourceFactory(config.threshold, config.initialBufferSize, config.directory)
-}
+fun inMemoryWithTempFileFallbackResourceFactory(config: TempFileConfig): InMemoryWithTempFileFallbackResourceFactory =
+    InMemoryWithTempFileFallbackResourceFactory(config.threshold, config.initialBufferSize, config.directory)
 
 fun <T> T?.orElseThrowNotFound(message: String): T =
     this ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, message)
@@ -207,10 +205,7 @@ data class ApiError(
 fun ApiError.toServerResponse(): Mono<ServerResponse> = ServerResponse.status(this.status).bodyValue(this)
 
 @OptIn(ExperimentalTime::class)
-fun ServerRequest.toApiError(
-    status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR,
-    message: String = ""
-): ApiError =
+fun ServerRequest.toApiError(status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR, message: String = ""): ApiError =
     ApiError(
         timestamp = Date().toString(),
         status = status.value(),

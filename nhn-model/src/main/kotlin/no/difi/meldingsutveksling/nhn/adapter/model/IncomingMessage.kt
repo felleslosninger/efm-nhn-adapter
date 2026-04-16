@@ -51,6 +51,7 @@ data class IncomingMessage(
     val senderHerId: Int,
     val businessDocumentId: String,
     @Serializable(with = OffsetDateTimeSerializer::class) val businessDocumentDate: OffsetDateTime?,
+    val isAppRec: Boolean,
 )
 
 @OptIn(ExperimentalUuidApi::class)
@@ -62,6 +63,7 @@ fun MessageWithMetadata.toInMessage(): IncomingMessage =
         this.senderHerId,
         this.businessDocumentId,
         this.businessDocumentDate,
+        this.isAppRec
     )
 
 @Serializable
@@ -71,8 +73,6 @@ data class SerializableIncomingBusinessDocument(
     val type: SerializableMeldingensFunksjon,
     val sender: SerializableSender,
     val receiver: SerializableReceiver,
-    val payload: SerializableDialogmeldingMessage?,
-//    val vedlegg: SerializableIncomingVedlegg?,
     val conversationRef: SerializableConversationRef?
 )
 
@@ -222,7 +222,6 @@ fun IncomingBusinessDocument.toSerializable() =
         this.type.toSerializable(),
         this.sender.toSerializable(),
         this.receiver.toSerializable(),
-        this.toSerializableDialogmeldingMessage(),
         this.conversationRef?.toSerializable(),
     )
 

@@ -18,28 +18,29 @@ object SecurityBeans {
                     .pathMatchers("/health/**", "/prometheus")
                     .permitAll()
                     .pathMatchers("/api/**")
-                    .authenticated()
+                    .hasAnyAuthority("SCOPE_eformidling:dph", "SCOPE_move/dph.read")
                     .anyExchange()
                     .authenticated()
             }
             .headers { headers: ServerHttpSecurity.HeaderSpec -> headers.frameOptions(Customizer.withDefaults()) }
             .oauth2ResourceServer { oauth2: ServerHttpSecurity.OAuth2ResourceServerSpec ->
                 oauth2.authenticationManagerResolver(
-                    JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers(
-                        config.trustedIssuers
-                    )
+                    JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers(config.trustedIssuers)
                 )
             }
 
         return http.build()
     }
 
-    //    fun helseIdClient(helseId: HelseId, configuration: Configuration, httpClient: HttpClient) =
-//        HelseIdClient(configuration, httpClient, CachedHttpDiscoveryOpenIdConfiguration(helseId.issuer))
-//
-//    fun helseIdConfigurationForTest(helseId: HelseId) =
-//        Configuration(helseId.clientId, helseId.privateKey, Environment(helseId.issuer, helseId.audience))
-//
+    //    fun helseIdClient(helseId: HelseId, configuration: Configuration, httpClient: HttpClient)
+    // =
+    //        HelseIdClient(configuration, httpClient,
+    // CachedHttpDiscoveryOpenIdConfiguration(helseId.issuer))
+    //
+    //    fun helseIdConfigurationForTest(helseId: HelseId) =
+    //        Configuration(helseId.clientId, helseId.privateKey, Environment(helseId.issuer,
+    // helseId.audience))
+    //
     fun helseIdConfiguration(helseId: HelseId) =
         HelseIdConfiguration(Environment(helseId.issuer, helseId.audience), helseId.clientId, helseId.privateKey)
 }

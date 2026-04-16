@@ -18,9 +18,8 @@ import no.ks.fiks.nhn.flr.FastlegeregisteretException
 
 class AdresseregisteretService(
     val flrClient: DecoratingFlrClient,
-    val adresseregisteretClient: AdresseregisteretClient
+    val adresseregisteretClient: AdresseregisteretClient,
 ) {
-
     suspend fun lookupByPartnerIdentifier(partnerIdentifier: PartnerIdentifier): CommunicationParty {
         val identifier = partnerIdentifier.identifier
 
@@ -40,9 +39,7 @@ class AdresseregisteretService(
         return communicationParty
     }
 
-    private suspend fun lookupByFnr(fnr: String): CommunicationParty {
-        return lookupByHerId(getHerIdByFnr(fnr))
-    }
+    private suspend fun lookupByFnr(fnr: String): CommunicationParty = lookupByHerId(getHerIdByFnr(fnr))
 
     private fun getHerIdByFnr(fnr: String): Int {
         try {
@@ -62,7 +59,9 @@ class AdresseregisteretService(
         try {
             val communicationParty =
                 withContext(Dispatchers.IO) {
-                    adresseregisteretClient.lookupHerId(herId).orElseThrowNotFound("Comunication party not found in AR")
+                    adresseregisteretClient
+                        .lookupHerId(herId)
+                        .orElseThrowNotFound("Comunication party not found in AR")
                 }
 
             return communicationParty
