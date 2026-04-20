@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
 data class MessageStatus(
     val receiverHerId: Int,
     val transportStatus: TransportStatus,
-    val apprecStatus: ApprecStatus? = null,
+    val apprecStatus: ApplicationReceiptStatus? = null,
 )
 
 @Serializable
@@ -18,7 +18,7 @@ enum class TransportStatus(val value: String) {
 
     companion object {
         fun fromValue(value: String?): TransportStatus {
-            for (b in TransportStatus.values()) {
+            for (b in entries) {
                 if (b.value.equals(value, true)) {
                     return b
                 }
@@ -32,5 +32,5 @@ fun no.ks.fiks.nhn.msh.StatusInfo.toMessageStatus(): MessageStatus =
     MessageStatus(
         this.receiverHerId,
         TransportStatus.fromValue(this.deliveryState.name),
-        this.appRecStatus?.let { ApprecStatus.fromValue(it.name) },
+        this.appRecStatus?.let { ApplicationReceiptStatus.fromValue(it.name) },
     )

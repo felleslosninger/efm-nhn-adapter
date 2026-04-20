@@ -1,5 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+import kotlin.uuid.toJavaUuid
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -9,16 +12,32 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.StatusForMottakAvMelding
-import no.ks.fiks.nhn.msh.ApplicationReceiptInfo
 
 @Serializable
-enum class ApprecStatus(val value: String) {
+data class IncomingApplicationReceipt(
+    val acknowledgedId: String, // Adjust to UUID if needed
+    @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
+    val errors: List<IncomingApplicationReceiptError>,
+)
+
+@Serializable
+data class OutgoingApplicationReceipt
+@OptIn(ExperimentalUuidApi::class)
+constructor(
+    @Serializable(with = UUIDSerializer::class) val acknowledgedId: Uuid,
+    val senderHerId: Int,
+    @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
+    val errors: List<OutgoingApplicationReceiptError>? = null,
+)
+
+@Serializable
+enum class ApplicationReceiptStatus(val value: String) {
     OK("Ok"),
     REJECTED("Rejected"),
     OK_ERROR_IN_MESSAGE_PART("OkErrorInMessagePart");
 
     companion object {
-        fun fromValue(value: String?): ApprecStatus {
+        fun fromValue(value: String?): ApplicationReceiptStatus {
             for (b in entries) {
                 if (b.value.equals(value, true)) {
                     return b
@@ -30,14 +49,7 @@ enum class ApprecStatus(val value: String) {
 }
 
 @Serializable
-data class SerializableApplicationReceiptInfo(
-    val receiverHerId: Int,
-    @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding?,
-    val errors: List<SerializableIncomingApplicationReceiptError>,
-)
-
-@Serializable
-data class SerializableIncomingApplicationReceiptError(
+data class IncomingApplicationReceiptError(
     @Serializable(with = FeilmeldingForApplikasjonskvitteringSerializer::class)
     val type: FeilmeldingForApplikasjonskvittering,
     val details: String? = null,
@@ -45,9 +57,6 @@ data class SerializableIncomingApplicationReceiptError(
     val description: String? = null,
     val oid: String? = null,
 )
-
-fun ApplicationReceiptInfo.toSerializable(): SerializableApplicationReceiptInfo =
-    SerializableApplicationReceiptInfo(this.receiverHerId, this.status, this.errors.map { it.toSerializable() })
 
 object StatusForMottakAvMeldingSerializer : KSerializer<StatusForMottakAvMelding> {
     override val descriptor: SerialDescriptor =
@@ -80,3 +89,51 @@ object FeilmeldingForApplikasjonskvitteringSerializer : KSerializer<FeilmeldingF
             ?: throw IllegalArgumentException("Unknown FeilmeldingForApplikasjonskvittering verdi: $verdi")
     }
 }
+
+@OptIn(ExperimentalUuidApi::class)
+object UUIDSerializer : KSerializer<Uuid> {
+    override val descriptor = PrimitiveSerialDescriptor("Uuid", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): Uuid {
+        return Uuid.parse(decoder.decodeString())
+    }
+
+    override fun serialize(encoder: Encoder, value: Uuid) {
+        encoder.encodeString(value.toString())
+    }
+}
+
+@OptIn(ExperimentalUuidApi::class)
+fun OutgoingApplicationReceipt.toOriginal(): no.ks.fiks.nhn.msh.OutgoingApplicationReceipt =
+    no.ks.fiks.nhn.msh.OutgoingApplicationReceipt(
+        acknowledgedId = this.acknowledgedId.toJavaUuid(),
+        senderHerId = this.senderHerId,
+        status = this.status,
+        errors = this.errors?.map { it.toOriginal() },
+    )
+
+@Serializable
+data class OutgoingApplicationReceiptError(
+    @Serializable(with = FeilmeldingForApplikasjonskvitteringSerializer::class)
+    val type: FeilmeldingForApplikasjonskvittering,
+    val details: String? = null,
+)
+
+fun OutgoingApplicationReceiptError.toOriginal(): no.ks.fiks.nhn.msh.OutgoingApplicationReceiptError =
+    no.ks.fiks.nhn.msh.OutgoingApplicationReceiptError(type = this.type, details = this.details)
+
+fun no.ks.fiks.nhn.msh.IncomingApplicationReceiptError.toSerializable(): IncomingApplicationReceiptError =
+    IncomingApplicationReceiptError(
+        type = this.type,
+        details = this.details,
+        errorCode = this.errorCode,
+        description = this.description,
+        oid = this.oid,
+    )
+
+fun no.ks.fiks.nhn.msh.IncomingApplicationReceipt.toSerializable(): IncomingApplicationReceipt =
+    IncomingApplicationReceipt(
+        acknowledgedId = this.acknowledgedBusinessDocumentId,
+        status = this.status,
+        errors = this.errors.map { it.toSerializable() },
+    )

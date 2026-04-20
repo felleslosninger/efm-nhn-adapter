@@ -9,4 +9,3 @@ fun ServerResponse.BodyBuilder.jose() = contentType(MediaType.parseMediaType(Con
 fun ServerResponse.BodyBuilder.textPlain() = contentType(MediaType.TEXT_PLAIN)
 
 fun ServerResponse.BodyBuilder.multipartMixed() = contentType(MediaType.MULTIPART_MIXED)
-

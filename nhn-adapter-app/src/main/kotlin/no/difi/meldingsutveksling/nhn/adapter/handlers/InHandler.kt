@@ -49,8 +49,9 @@ class InHandler(
         val receipt = mshService.getApplicationReceipt(id, clientContext)
 
         // TODO: check if there is a receiverHerId in the receipt that can be used for access check.
-//        val receiverHerId = incomingApplicationReceipt.receiver.
-//        securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
+        //        val receiverHerId = incomingApplicationReceipt.receiver.
+        //        securityService.assertAccess(clientContext,
+        // adresseregisteretService.lookupByHerId(receiverHerId))
 
         val json = jsonParser.encodeToString(receipt.toSerializable())
         val jweToken = parcelService.signAndEncrypt(json, clientContext)

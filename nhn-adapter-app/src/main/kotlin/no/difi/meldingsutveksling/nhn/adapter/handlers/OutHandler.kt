@@ -12,13 +12,14 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.Adress
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.Dialogmelding
-import no.difi.meldingsutveksling.nhn.adapter.model.DialogmeldingMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.FileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
-import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingMessage
-import no.difi.meldingsutveksling.nhn.adapter.model.Person
+import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingApplicationReceipt
+import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingBusinessDocument
+import no.difi.meldingsutveksling.nhn.adapter.model.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
+import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
@@ -34,8 +35,6 @@ import no.ks.fiks.nhn.msh.DialogmeldingVersion
 import no.ks.fiks.nhn.msh.HealthcareProfessional
 import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OrganizationId
-import no.ks.fiks.nhn.msh.OutgoingApplicationReceipt
-import no.ks.fiks.nhn.msh.OutgoingBusinessDocument
 import no.ks.fiks.nhn.msh.OutgoingVedlegg
 import no.ks.fiks.nhn.msh.Patient
 import no.ks.fiks.nhn.msh.PersonId
@@ -64,7 +63,7 @@ class OutHandler(
         val jweToken = request.awaitBody<String>()
         val payload = parcelService.decryptAndVerify(jweToken, clientContext)
         val receipt = jsonParser.decodeFromString<OutgoingApplicationReceipt>(payload)
-        val messageReference = mshService.sendApplicationReceipt(receipt, clientContext)
+        val messageReference = mshService.sendApplicationReceipt(receipt.toOriginal(), clientContext)
         return ServerResponse.ok().textPlain().bodyValueAndAwait(messageReference)
     }
 
@@ -80,8 +79,8 @@ class OutHandler(
                 .awaitSingle()
                 .toString(StandardCharsets.UTF_8)
         val payload = parcelService.decryptAndVerify(jweToken, clientContext)
-        val outgoingMessage = jsonParser.decodeFromString<OutgoingMessage>(payload)
-        val dialogmeldingMessage = outgoingMessage.payload
+        val outgoingBusinessDocument = jsonParser.decodeFromString<OutgoingBusinessDocument>(payload)
+        val dialogmeldingMessage = outgoingBusinessDocument.payload
 
         val dokumentpakke = multipartData.getFirst(MultipartNames.dokumentpakke)!!
 
@@ -96,17 +95,17 @@ class OutHandler(
                     val sender =
                         securityService.assertAccess(
                             clientContext,
-                            adresseregisteretService.lookupByHerId(outgoingMessage.senderHerId),
+                            adresseregisteretService.lookupByHerId(outgoingBusinessDocument.senderHerId),
                         )
 
-                    val receiver = adresseregisteretService.lookupByHerId(outgoingMessage.receiverHerId)
+                    val receiver = adresseregisteretService.lookupByHerId(outgoingBusinessDocument.receiverHerId)
 
                     val outGoingDocument =
-                        OutgoingBusinessDocument(
+                        no.ks.fiks.nhn.msh.OutgoingBusinessDocument(
                             UUID.randomUUID(),
                             getSender(sender),
-                            receiver = getReceiver(receiver, dialogmeldingMessage.pasient),
-                            message = getOutgoingMessage(dialogmeldingMessage, dialogmelding),
+                            receiver = getReceiver(receiver, dialogmeldingMessage.pasient!!),
+                            message = getOutgoingMessage(dialogmelding, outgoingBusinessDocument.receiverHerId),
                             getOutgoingAttachment(vedlegg, dialogmeldingMessage.metadataFiler),
                             DialogmeldingVersion.V1_1,
                             null,
@@ -151,7 +150,7 @@ class OutHandler(
             ),
         )
 
-    private fun getReceiver(communicationParty: CommunicationParty, patient: Person): Receiver =
+    private fun getReceiver(communicationParty: CommunicationParty, pasient: Pasient): Receiver =
         Receiver(
             OrganizationCommunicationParty(
                 name = communicationParty.parent!!.name,
@@ -170,7 +169,7 @@ class OutHandler(
                     ids = listOf(OrganizationId(communicationParty.herId.toString(), OrganizationIdType.HER_ID)),
                 )
             },
-            Patient(patient.fnr, patient.fornavn, patient.mellomnavn, patient.etternavn),
+            Patient(pasient.fnr, pasient.fornavn, pasient.mellomnavn, pasient.etternavn),
         )
 
     private suspend fun getHealthcareProfessional(herId: Int): HealthcareProfessional {
@@ -188,15 +187,15 @@ class OutHandler(
     }
 
     private suspend fun getOutgoingMessage(
-        dialogmeldingMessage: DialogmeldingMessage,
         dialogmelding: Dialogmelding,
+        fastlege: Int,
     ): no.ks.fiks.nhn.msh.OutgoingMessage {
-        val notat = dialogmelding.notat
+        val notat = dialogmelding.notat!!
 
         return no.ks.fiks.nhn.msh.OutgoingMessage(
-            notat.temaBeskrivelse,
-            notat.innhold,
-            getHealthcareProfessional(dialogmeldingMessage.fastlege),
+            notat.temaBeskrivelse!!,
+            notat.innhold!!,
+            getHealthcareProfessional(fastlege),
             RecipientContact(Helsepersonell.LEGE),
         )
     }
