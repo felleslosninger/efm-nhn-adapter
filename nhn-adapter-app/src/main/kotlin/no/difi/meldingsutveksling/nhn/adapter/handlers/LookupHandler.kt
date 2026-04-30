@@ -1,6 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
-import no.difi.meldingsutveksling.domain.PartnerIdentifier
+import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.logger
@@ -17,9 +17,9 @@ class LookupHandler(
 ) {
     suspend fun arLookup(identifier: String): ServerResponse {
         logger.info("Entering AR lookup handler")
-        val partnerIdentifier = PartnerIdentifier.parse(identifier)
-        val communicationParty = adresseregisteretService.lookupByPartnerIdentifier(partnerIdentifier)
-        val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("HerId nivå 1 not found")
+        val nhnIdentifier = NhnIdentifier.parse(identifier)
+        val communicationParty = adresseregisteretService.lookupByNhnIdentifier(nhnIdentifier)
+        val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("Parent missing")
         val orgNumber = communicationParty.parent!!.organizationNumber
         val communicationPartyParentName = communicationParty.parent?.name ?: "empty"
 
@@ -32,7 +32,6 @@ class LookupHandler(
                     orgNumber = orgNumber,
                     communicationParty.herId,
                     communicationParty.name,
-                    "testedi-address",
                     keystoreHelper.x509Certificate.toBase64Der(),
                 )
             )

@@ -8,7 +8,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class OutgoingBusinessDocument(
     val messageId: String,
-    val conversationId: String,
+    val conversationId: String?,
+    val parentId: String?,
     val senderHerId: Int,
     val receiverHerId: Int,
     val payload: DialogmeldingMessage
@@ -20,6 +21,7 @@ data class IncomingBusinessDocument(
     val senderHerId: Int,
     val receiverHerId: Int,
     val conversationId: String?,
+    val parentId: String?,
     val payload: DialogmeldingMessage
 )
 
@@ -36,45 +38,33 @@ data class Pasient(val fnr: String, val fornavn: String, val mellomnavn: String?
 
 @Serializable
 data class Dialogmelding(
-    val foresporsel: Foresporsel?,
+    val foresporsel: Foresporsel? = null,
     val notat: Notat?
 )
 
 @Serializable
 data class Foresporsel(
-    val type: KodeverkVerdi,
     val sporsmal: String?,
 )
 
 @Serializable
-data class KodeverkVerdi(
-    val verdi: String,
-    val navn: String,
-    val kodeverk: String,
-)
-
-@Serializable
 data class Notat(
-    val tema: KodeverkVerdi?,
     val temaBeskrivelse: String?,
     val innhold: String?,
-    val dato: LocalDate?,
+    val dato: LocalDate? = null,
 )
 
 fun no.ks.fiks.nhn.msh.Patient.toSerializable() =
     Pasient(this.fnr, this.firstName, this.middleName, this.lastName)
 
 fun no.ks.fiks.nhn.msh.Notat.toSerializable() =
-    Notat(this.tema.toSerializable(), this.temaBeskrivelse, this.innhold, this.dato?.toKotlinLocalDate())
+    Notat(this.temaBeskrivelse, this.innhold, this.dato?.toKotlinLocalDate())
 
 fun no.ks.fiks.nhn.msh.Dialogmelding.toSerializable() =
     Dialogmelding(this.foresporsel?.toSerializable(), this.notat?.toSerializable())
 
-fun no.ks.fiks.hdir.KodeverkVerdi.toSerializable() =
-    KodeverkVerdi(this.verdi, this.navn, this.kodeverk)
-
 fun no.ks.fiks.nhn.msh.Foresporsel.toSerializable() =
-    Foresporsel(this.type.toSerializable(), this.sporsmal)
+    Foresporsel(this.sporsmal)
 
 fun no.ks.fiks.nhn.msh.IncomingBusinessDocument.toSerializable(): IncomingBusinessDocument {
 
@@ -89,8 +79,9 @@ fun no.ks.fiks.nhn.msh.IncomingBusinessDocument.toSerializable(): IncomingBusine
         this.sender.child.herId!!,
         this.receiver.child.herId!!,
         this.conversationRef?.refToConversation,
+        this.conversationRef?.refToParent,
         DialogmeldingMessage(
-            AttachmentNames.dialogmelding,
+            AttachmentNames.DIALOGMELDING,
             this.receiver.patient.toSerializable(),
             metadataFiler.toMap()
         )

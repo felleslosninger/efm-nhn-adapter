@@ -15,9 +15,16 @@ import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 val logger = KotlinLogging.logger {}
 
 fun CoRouterFunctionDsl.outHandler(outHandler: OutHandler) {
-    GET("/messages/out/{messageId}/statuses") { outHandler.getStatus(it.getMessageId(), getClientContext()) }
-    POST("/messages/out", accept(MediaType.MULTIPART_FORM_DATA)) { outHandler.sendMessage(it, getClientContext()) }
-    POST("/messages/out/receipt", accept(MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE))) {
+    GET("/messages/out/{messageId}/statuses", accept(MediaType.APPLICATION_JSON)) {
+        outHandler.getStatus(it.getMessageId(), getClientContext())
+    }
+    POST("/messages/out", contentType(MediaType.MULTIPART_FORM_DATA).and(accept(MediaType.TEXT_PLAIN))) {
+        outHandler.sendMessage(it, getClientContext())
+    }
+    POST(
+        "/messages/out/receipt",
+        contentType(MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE)).and(accept(MediaType.TEXT_PLAIN)),
+    ) {
         outHandler.sendApplicationReceipt(it, getClientContext())
     }
 }
@@ -27,9 +34,15 @@ fun CoRouterFunctionDsl.lookupHandler(lookupHandler: LookupHandler) {
 }
 
 fun CoRouterFunctionDsl.inHandler(inHandler: InHandler) {
-    GET("/messages/in") { inHandler.getMessagesWithMetadata(it.getReceiverHerId(), getClientContext()) }
-    GET("/messages/in/{id}") { inHandler.getBusinessDocument(it.getId(), getClientContext()) }
-    GET("/messages/in/{id}/receipt") { inHandler.getApplicationReceipt(it.getId(), getClientContext()) }
+    GET("/messages/in", accept(MediaType.APPLICATION_JSON)) {
+        inHandler.getMessagesWithMetadata(it.getReceiverHerId(), getClientContext())
+    }
+    GET("/messages/in/{id}", accept(MediaType.MULTIPART_MIXED)) {
+        inHandler.getBusinessDocument(it.getId(), getClientContext())
+    }
+    GET("/messages/in/{id}/receipt", accept(MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE))) {
+        inHandler.getApplicationReceipt(it.getId(), getClientContext())
+    }
     POST("/messages/in/{messageId}/read") {
         inHandler.markMessageRead(it.getMessageId(), it.getReceiverHerId(), getClientContext())
     }

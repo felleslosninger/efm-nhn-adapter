@@ -1,4 +1,4 @@
-package no.difi.meldingsutveksling.nhn.adapter.security
+package no.difi.meldingsutveksling.nhn.adapter.model
 
 object Claims {
     const val CONSUMER = "consumer"

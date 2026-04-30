@@ -8,7 +8,6 @@ import no.ks.fiks.nhn.msh.MessageWithMetadata
 @Serializable
 data class IncomingMessage(
     val id: String,
-    val contentType: String,
     val receiverHerId: Int,
     val senderHerId: Int,
     val businessDocumentId: String,
@@ -20,7 +19,6 @@ data class IncomingMessage(
 fun MessageWithMetadata.toInMessage(): IncomingMessage =
     IncomingMessage(
         this.id.toString(),
-        this.contentType,
         this.receiverHerId,
         this.senderHerId,
         this.businessDocumentId,

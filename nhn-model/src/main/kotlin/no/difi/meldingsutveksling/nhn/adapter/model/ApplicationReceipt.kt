@@ -1,8 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
+import java.util.UUID
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
-import kotlin.uuid.toJavaUuid
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -24,7 +24,7 @@ data class IncomingApplicationReceipt(
 data class OutgoingApplicationReceipt
 @OptIn(ExperimentalUuidApi::class)
 constructor(
-    @Serializable(with = UUIDSerializer::class) val acknowledgedId: Uuid,
+    val acknowledgedId: String,
     val senderHerId: Int,
     @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding,
     val errors: List<OutgoingApplicationReceiptError>? = null,
@@ -106,7 +106,7 @@ object UUIDSerializer : KSerializer<Uuid> {
 @OptIn(ExperimentalUuidApi::class)
 fun OutgoingApplicationReceipt.toOriginal(): no.ks.fiks.nhn.msh.OutgoingApplicationReceipt =
     no.ks.fiks.nhn.msh.OutgoingApplicationReceipt(
-        acknowledgedId = this.acknowledgedId.toJavaUuid(),
+        acknowledgedId = UUID.fromString(this.acknowledgedId),
         senderHerId = this.senderHerId,
         status = this.status,
         errors = this.errors?.map { it.toOriginal() },

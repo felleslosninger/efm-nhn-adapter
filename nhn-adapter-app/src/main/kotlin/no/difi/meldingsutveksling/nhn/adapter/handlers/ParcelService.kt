@@ -36,11 +36,12 @@ class ParcelService(
 
     fun decryptAndVerify(jweToken: String, clientContext: ClientContext): String {
         val signed = JavaWebEncryption.decrypt(jweToken, keystoreHelper.loadPrivateKey())
-        return JavaWebToken.verify(signed, certificate(clientContext))
+        val certificate = certificate(clientContext)
+        return JavaWebToken.verify(signed, certificate)
     }
 
     private fun certificate(clientContext: ClientContext): X509Certificate =
-        virksertService.getCertificate(clientContext.consumer)
+        virksertService.getCertificate(clientContext.supplier ?: clientContext.consumer)
 
     fun getAttachments(inputStream: InputStream): List<Document> {
         val asice =

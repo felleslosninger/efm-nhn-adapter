@@ -4,11 +4,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ArDetails(
-    val herId1: Int,
-    val communicationPartyParentName: String,
+    val parentHerId1: Int,
+    val parentName: String,
     val orgNumber: String,
-    val herId2: Int,
-    val communicationPartyName: String,
-    val ediAddress: String,
+    val herId: Int,
+    val name: String,
     val derCertificate: String,
 )

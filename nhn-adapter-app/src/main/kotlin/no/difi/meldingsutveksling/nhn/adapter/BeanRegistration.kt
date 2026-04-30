@@ -24,7 +24,6 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
-import no.difi.meldingsutveksling.nhn.adapter.security.ClientContextFilter
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper
@@ -37,8 +36,6 @@ import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.core.env.get
 import org.springframework.http.HttpStatus
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
-import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
@@ -51,9 +48,6 @@ private object Names {
     const val FLRCONFIG = "FlrConfig"
     const val SECURITY_CONFIG = "SecurityConfig"
     const val VIRKSERT_CONFIG = "VirksertConfig"
-    const val ENCRYPTION_KEYSTORE_CONFIG = "EncyrptionKeystoreConfig"
-    const val SIGNATURE_KEYSTORE_CONFIG = "SigningKeystoreConfig"
-    const val TRUSTSTORE_CONFIG = "TrustStoreConfig"
 }
 
 private object PropertyNames {
@@ -61,9 +55,6 @@ private object PropertyNames {
     const val NHN_SERVICE_FLR = "nhn.services.flr"
     const val OAUTH2_HELSE_ID = "oauth2.helse-id"
     const val SERVICES_MSH_URL = "nhn.services.msh.url"
-    const val CRYPTO_KEYSTORE = "crypto.encryption.keystore"
-    const val SIGNATURE_KEYSTORE = "crypto.signature.keystore"
-    const val CRYPTO_TRUSTSTORE = "crypto.truststore"
 }
 
 private fun properties() = BeanRegistrarDsl {
@@ -103,37 +94,11 @@ private fun properties() = BeanRegistrarDsl {
             IllegalStateException("keystore configuration was not found.")
         }
     }
-
-    //    registerBean<CryptoConfig>(ENCRYPTION_KEYSTORE_CONFIG) {
-    //        Binder.get(env).bind(CRYPTO_KEYSTORE, CryptoConfig::class.java).orElseThrow {
-    //            IllegalStateException("Cryptography configuration was not found.")
-    //        }
-    //    }
-    //    registerBean<CryptoConfig>(SIGNATURE_KEYSTORE_CONFIG) {
-    //        Binder.get(env).bind(SIGNATURE_KEYSTORE, CryptoConfig::class.java).orElseThrow {
-    //            IllegalStateException("Cryptography configuration was not found.")
-    //        }
-    //    }
-    //    registerBean<CryptoConfig>(TRUSTSTORE_CONFIG) {
-    //        Binder.get(env).bind(CRYPTO_TRUSTSTORE, CryptoConfig::class.java).orElseThrow {
-    //            IllegalStateException("Cryptography configuration was not found.")
-    //        }
-    //    }
 }
 
 private fun security() = BeanRegistrarDsl {
-    registerBean<PasswordEncoder> { BCryptPasswordEncoder() }
     registerBean { SecurityBeans.securityFilterChain(bean(), bean()) }
-
-    //    registerBean<Configuration> {
-    //        // @TODO it may be time to remove this one. It was used for test
-    //        SecurityBeans.helseIdConfigurationForTest(bean<HelseId>())
-    //    }
     registerBean { SecurityBeans.helseIdConfiguration(bean<HelseId>()) }
-    //    registerBean {
-    //        // @TODO it may be time to remove this one. It was used for test
-    //        SecurityBeans.helseIdClient(bean(), bean(), bean())
-    //    }
 }
 
 private fun integrations() = BeanRegistrarDsl {
@@ -150,7 +115,7 @@ private fun integrations() = BeanRegistrarDsl {
     }
 }
 
-class BeanRegistration() :
+class BeanRegistration :
     BeanRegistrarDsl({
         this.register(properties())
         //        this.register(crypto())
@@ -172,7 +137,6 @@ class BeanRegistration() :
         registerBean { SecurityService(bean()) }
         registerBean { KeystoreHelper(bean()) }
         registerBean { ParcelService(bean(), bean(), bean(), bean(), bean(), bean()) }
-        registerBean { ClientContextFilter() }
         registerBean { InHandler(bean(), bean(), bean(), bean()) }
         registerBean { OutHandler(bean(), bean(), bean(), bean()) }
         registerBean { LookupHandler(bean(), bean()) }

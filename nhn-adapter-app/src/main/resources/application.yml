@@ -54,6 +54,11 @@ keystore:
   alias: ${ENCRYPTION_KEYSTORE_ALIAS}
   password: ${ENCRYPTION_KEYSTORE_PASSWORD}
   type: "PKCS12"
+truststore:
+  base64Value: ${SIGNATURE_TRUSTSTORE_VALUE}
+  alias: ${SIGNATURE_TRUSTSTORE_ALIAS}
+  password: ${SIGNATURE_TRUSTSTORE_PASSWORD}
+  type: "PKCS12"
 logging:
   level:
     org.springframework.http.codec.json: INFO

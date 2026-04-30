@@ -43,8 +43,10 @@ class MshService(val mshClient: Client) {
     private fun getHelseIdTenantParameters(clientContext: ClientContext): HelseIdTenantParameters {
         val parentOrganization = clientContext.supplier?.organizationIdentifier
         val childOrganization = clientContext.consumer.organizationIdentifier
+
         return if (parentOrganization != null) {
-            MultiTenantHelseIdTokenParameters(parentOrganization, childOrganization)
+            MultiTenantHelseIdTokenParameters(childOrganization)
+            //            MultiTenantHelseIdTokenParameters(parentOrganization, childOrganization)
         } else {
             SingleTenantHelseIdTokenParameters(childOrganization)
         }

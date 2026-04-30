@@ -4,8 +4,6 @@ import jakarta.xml.ws.soap.SOAPFaultException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import no.difi.meldingsutveksling.domain.NhnIdentifier
-import no.difi.meldingsutveksling.domain.PartnerIdentifier
-import no.difi.meldingsutveksling.domain.PersonIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
@@ -20,14 +18,12 @@ class AdresseregisteretService(
     val flrClient: DecoratingFlrClient,
     val adresseregisteretClient: AdresseregisteretClient,
 ) {
-    suspend fun lookupByPartnerIdentifier(partnerIdentifier: PartnerIdentifier): CommunicationParty {
-        val identifier = partnerIdentifier.identifier
-
+    suspend fun lookupByNhnIdentifier(nhnIdentifier: NhnIdentifier): CommunicationParty {
         val communicationParty =
             try {
-                when (partnerIdentifier) {
-                    is PersonIdentifier -> lookupByFnr(identifier)
-                    is NhnIdentifier -> lookupByHerId(identifier.toInt())
+                when (nhnIdentifier.type) {
+                    NhnIdentifier.Type.FASTLEGE_FOR -> lookupByFnr(nhnIdentifier.fastlegeFor.identifier)
+                    NhnIdentifier.Type.HER_ID -> lookupByHerId(nhnIdentifier.herId)
                     else -> throw HerIdNotFound()
                 }
             } catch (e: AdresseregisteretApiException) {
@@ -39,7 +35,10 @@ class AdresseregisteretService(
         return communicationParty
     }
 
-    private suspend fun lookupByFnr(fnr: String): CommunicationParty = lookupByHerId(getHerIdByFnr(fnr))
+    private suspend fun lookupByFnr(fnr: String): CommunicationParty {
+        val herId = getHerIdByFnr(fnr)
+        return lookupByHerId(herId)
+    }
 
     private fun getHerIdByFnr(fnr: String): Int {
         try {

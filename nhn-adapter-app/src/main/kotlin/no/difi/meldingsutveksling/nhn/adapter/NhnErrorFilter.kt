@@ -17,7 +17,7 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
                 request.toApiError(status = HttpStatus.BAD_REQUEST, it.message ?: "Client error")
             is HerIdNotFound -> {
                 when (basePath) {
-                    "/arlookup" -> request.toApiError(HttpStatus.NOT_FOUND, "HerId is not found")
+                    "/lookup" -> request.toApiError(HttpStatus.NOT_FOUND, "HerId is not found")
                     else -> request.toApiError(HttpStatus.BAD_REQUEST)
                 }
             }
@@ -29,7 +29,7 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
             }
             is AdresseregisteretException -> {
                 logger.error(
-                    "Technical error occured against AddressRegisteret for ${request.path()}. Logging cause. ",
+                    "Technical error occurred against AddressRegisteret for ${request.path()}. Logging cause. ",
                     it.cause,
                 )
                 request.toApiError(
@@ -39,7 +39,7 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
             }
             is FastlegeregisteretException -> {
                 logger.error(
-                    "Technical error occured against Fastlegeregisteret for ${request.path()}. Logging cause. ",
+                    "Technical error occurred against Fastlegeregisteret for ${request.path()}. Logging cause. ",
                     it.cause,
                 )
                 request.toApiError(
@@ -48,6 +48,7 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
                 )
             }
             is HttpException -> {
+                logger.error("HttpException: ${it.message}")
                 request.toApiError(HttpStatus.valueOf(it.status), it.message!!)
             }
             else -> {

@@ -1,7 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter.security
 
 import no.difi.meldingsutveksling.domain.Iso6523
-import org.springframework.security.core.context.SecurityContextHolder
+import no.difi.meldingsutveksling.nhn.adapter.model.Claims
+import org.springframework.security.core.context.SecurityContext
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 
@@ -18,8 +19,8 @@ object AccessToken {
         return if (id is String) Iso6523.parse(id) else null
     }
 
-    fun getJwt(): Jwt? {
-        val authentication = SecurityContextHolder.getContext().authentication
+    fun getJwt(securityContext: SecurityContext): Jwt? {
+        val authentication = securityContext.authentication
         return if (authentication is JwtAuthenticationToken) authentication.token as Jwt else null
     }
 }

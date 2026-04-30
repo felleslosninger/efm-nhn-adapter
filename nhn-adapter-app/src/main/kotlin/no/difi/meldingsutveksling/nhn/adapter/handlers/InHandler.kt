@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
 import no.difi.meldingsutveksling.nhn.adapter.extensions.jose
@@ -10,8 +11,8 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
-import no.difi.meldingsutveksling.nhn.adapter.model.FileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.IncomingMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
@@ -63,25 +64,30 @@ class InHandler(
         val businessDokument: IncomingBusinessDocument = mshService.getBusinessDocument(id, clientContext)
         logger.info("I was able to get the business document $businessDokument")
         val receiverHerId =
-            businessDokument.receiver.parent.herId.orElseThrowNotFound("ReceiverHerId not found in SBDH!")
+            businessDokument.receiver.child.herId.orElseThrowNotFound("ReceiverHerId not found in SBDH!")
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
 
         val multipart =
-            MultipartBodyBuilder().apply {
-                part(MultipartNames.forretningsmelding, getForretningsmelding(businessDokument, clientContext))
-                    .filename(FileNames.FORRETNINGSMELDING)
-                    .contentType(MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE))
+            MultipartBodyBuilder()
+                .apply {
+                    part(
+                            MultipartNames.FORRETNINGSMELDING,
+                            getForretningsmelding(businessDokument, clientContext),
+                            MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE),
+                        )
+                        .filename(MultipartFileNames.FORRETNINGSMELDING)
 
-                val vedlegg = ArrayList<IncomingVedlegg>()
-                businessDokument.vedlegg?.let { vedlegg.add(it) }
+                    val vedlegg = ArrayList<IncomingVedlegg>()
+                    businessDokument.vedlegg?.let { vedlegg.add(it) }
 
-                part(
-                        MultipartNames.dokumentpakke,
-                        getDokumentpakke(clientContext, businessDokument.message!!, vedlegg),
-                    )
-                    .filename(FileNames.DOKUMENTPAKKE)
-                    .contentType(MediaType.parseMediaType(ContentTypes.APPLICATION_ASICE))
-            }
+                    part(
+                            MultipartNames.DOKUMENTPAKKE,
+                            getDokumentpakke(clientContext, businessDokument.message!!, vedlegg),
+                            MediaType.parseMediaType(ContentTypes.APPLICATION_ASICE),
+                        )
+                        .filename(MultipartFileNames.DOKUMENTPAKKE)
+                }
+                .build()
 
         return ServerResponse.ok().multipartMixed().bodyValueAndAwait(multipart)
     }
@@ -89,9 +95,10 @@ class InHandler(
     private fun getForretningsmelding(
         businessDokument: IncomingBusinessDocument,
         clientContext: ClientContext,
-    ): String {
+    ): Resource {
         val json = jsonParser.encodeToString(businessDokument.toSerializable())
-        return parcelService.signAndEncrypt(json, clientContext)
+        val jwe = parcelService.signAndEncrypt(json, clientContext)
+        return ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
     }
 
     private fun getDokumentpakke(
@@ -104,7 +111,7 @@ class InHandler(
         val attachments = ArrayList<Attachment>()
         attachments.add(
             Attachment(
-                AttachmentNames.dialogmelding,
+                AttachmentNames.DIALOGMELDING,
                 ByteArrayResource(dialogmeldingJson.encodeToByteArray()),
                 MimeType.valueOf("application/json"),
             )

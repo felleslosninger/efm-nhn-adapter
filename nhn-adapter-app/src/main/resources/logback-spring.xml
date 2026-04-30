@@ -26,6 +26,8 @@
 
         <logger name="no.difi" level="INFO" additivity="false">
             <appender-ref ref="APPLICATION"/>
+            <!-- Also write package logs to human-readable console output -->
+            <appender-ref ref="CONSOLE"/>
         </logger>
         <logger name="logging.level.org.springframework" level="INFO">
             <appender-ref ref="APPLICATION"/>
