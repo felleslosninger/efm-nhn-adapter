@@ -106,7 +106,8 @@ private fun integrations() = BeanRegistrarDsl {
     registerBean { AdresseregisteretService(bean(), bean()) }
     registerBean<HttpClient> { HttpClients.createDefault() }
     registerBean { IntegrationBeans.mshClient(bean(), this.env[SERVICES_MSH_URL]!!) }
-    registerBean { IntegrationBeans.mshService(bean()) }
+    registerBean { IntegrationBeans.mshInternalClient(bean(), this.env[SERVICES_MSH_URL]!!) }
+    registerBean { IntegrationBeans.mshService(bean(), bean()) }
     registerBean { IntegrationBeans.virksertClient(bean()) }
     registerBean { IntegrationBeans.virksertService(bean(), bean()) }
     profile(expression = "local || dev || unit-test || test ") {

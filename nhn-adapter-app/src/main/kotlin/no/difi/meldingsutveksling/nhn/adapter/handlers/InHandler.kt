@@ -7,9 +7,11 @@ import no.difi.meldingsutveksling.nhn.adapter.extensions.jose
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
+import no.difi.meldingsutveksling.nhn.adapter.model.BusinessDocumentResponse
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
 import no.difi.meldingsutveksling.nhn.adapter.model.IncomingMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
@@ -20,9 +22,6 @@ import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
-import no.ks.fiks.nhn.msh.Dialogmelding
-import no.ks.fiks.nhn.msh.IncomingBusinessDocument
-import no.ks.fiks.nhn.msh.IncomingVedlegg
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.InputStreamResource
 import org.springframework.core.io.Resource
@@ -61,10 +60,10 @@ class InHandler(
     }
 
     suspend fun getBusinessDocument(id: UUID, clientContext: ClientContext): ServerResponse {
-        val businessDokument: IncomingBusinessDocument = mshService.getBusinessDocument(id, clientContext)
-        logger.info("I was able to get the business document $businessDokument")
+        val businessDocument: BusinessDocumentResponse = mshService.getBusinessDocument(id, clientContext)
+        logger.info("I was able to get the business document $businessDocument")
         val receiverHerId =
-            businessDokument.receiver.child.herId.orElseThrowNotFound("ReceiverHerId not found in SBDH!")
+            businessDocument.receiver.child.herId.orElseThrowNotFound("ReceiverHerId not found in SBDH!")
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
 
         val multipart =
@@ -72,17 +71,14 @@ class InHandler(
                 .apply {
                     part(
                             MultipartNames.FORRETNINGSMELDING,
-                            getForretningsmelding(businessDokument, clientContext),
+                            getForretningsmelding(businessDocument, clientContext),
                             MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE),
                         )
                         .filename(MultipartFileNames.FORRETNINGSMELDING)
 
-                    val vedlegg = ArrayList<IncomingVedlegg>()
-                    businessDokument.vedlegg?.let { vedlegg.add(it) }
-
                     part(
                             MultipartNames.DOKUMENTPAKKE,
-                            getDokumentpakke(clientContext, businessDokument.message!!, vedlegg),
+                            getDokumentpakke(businessDocument, clientContext),
                             MediaType.parseMediaType(ContentTypes.APPLICATION_ASICE),
                         )
                         .filename(MultipartFileNames.DOKUMENTPAKKE)
@@ -93,7 +89,7 @@ class InHandler(
     }
 
     private fun getForretningsmelding(
-        businessDokument: IncomingBusinessDocument,
+        businessDokument: BusinessDocumentResponse,
         clientContext: ClientContext,
     ): Resource {
         val json = jsonParser.encodeToString(businessDokument.toSerializable())
@@ -101,23 +97,18 @@ class InHandler(
         return ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
     }
 
-    private fun getDokumentpakke(
-        clientContext: ClientContext,
-        dialogmelding: Dialogmelding,
-        vedlegg: List<IncomingVedlegg>,
-    ): Resource {
-        val dialogmeldingJson = jsonParser.encodeToString(dialogmelding.toSerializable())
-
+    private fun getDokumentpakke(businessDocument: BusinessDocumentResponse, clientContext: ClientContext): Resource {
+        val xml = BusinessDocumentSerializer.serialize(businessDocument.dialogmelding)
         val attachments = ArrayList<Attachment>()
         attachments.add(
             Attachment(
                 AttachmentNames.DIALOGMELDING,
-                ByteArrayResource(dialogmeldingJson.encodeToByteArray()),
+                ByteArrayResource(xml.encodeToByteArray()),
                 MimeType.valueOf("application/json"),
             )
         )
         attachments.addAll(
-            vedlegg.mapIndexed { index, vedlegg ->
+            businessDocument.vedlegg.mapIndexed { index, vedlegg ->
                 Attachment(
                     AttachmentNames.vedlegg(index),
                     InputStreamResource(vedlegg.data!!),
