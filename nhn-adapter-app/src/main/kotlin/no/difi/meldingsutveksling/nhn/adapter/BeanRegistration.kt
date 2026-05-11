@@ -23,7 +23,7 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
-import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper

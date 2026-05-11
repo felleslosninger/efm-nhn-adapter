@@ -2,7 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toBase64Der
-import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.logger
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound

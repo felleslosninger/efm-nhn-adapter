@@ -4,23 +4,19 @@ import java.nio.charset.StandardCharsets
 import java.util.Collections
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.reactive.awaitSingle
 import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.coroutines.withContext
-import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toReceiver
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toSender
-import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingApplicationReceipt
-import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingBusinessDocument
-import no.difi.meldingsutveksling.nhn.adapter.model.serialization.BusinessDocumentDeserializer
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
-import no.difi.meldingsutveksling.nhn.adapter.model.toOriginal
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
@@ -69,23 +65,18 @@ class OutHandler(
 
     suspend fun sendApplicationReceipt(request: ServerRequest, clientContext: ClientContext): ServerResponse {
         val jweToken = request.awaitBody<String>()
-        val payload = parcelService.decryptAndVerify(jweToken, clientContext)
-        val receipt = jsonParser.decodeFromString<OutgoingApplicationReceipt>(payload)
-        val messageReference = mshService.sendApplicationReceipt(receipt.toOriginal(), clientContext)
-        return ServerResponse.ok().textPlain().bodyValueAndAwait(messageReference.toString())
+        val receipt = jsonParser.decodeFromString<OutgoingApplicationReceipt>(jweToken)
+
+        val messageReference =
+            withContext(Dispatchers.IO) { mshService.sendApplicationReceipt(receipt, clientContext) }
+
+        return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
 
     suspend fun sendMessage(request: ServerRequest, clientContext: ClientContext): ServerResponse {
         val multipartData = request.multipartData().awaitSingle()
 
-        val jweToken =
-            multipartData
-                .getFirst(MultipartNames.FORRETNINGSMELDING)!!
-                .content()
-                .awaitSingle()
-                .toString(StandardCharsets.UTF_8)
-        val payload = parcelService.decryptAndVerify(jweToken, clientContext)
-        val outgoingBusinessDocument = jsonParser.decodeFromString<OutgoingBusinessDocument>(payload)
+        val outgoingBusinessDocument = parcelService.getOutgoingBusinessDocument(multipartData, clientContext)
         val message = outgoingBusinessDocument.payload
 
         val fastlege: PersonCommunicationParty =
@@ -95,48 +86,45 @@ class OutHandler(
 
         val messageReference =
             withContext(Dispatchers.IO) {
-                dokumentpakke.content().awaitSingle().asInputStream().use { inputStream ->
-                    val asicFiles = parcelService.getAttachments(inputStream)
+                val asicFiles = parcelService.getAttachments(dokumentpakke)
+                val dialogmelding = getDialogmelding(asicFiles, message.hoveddokument)
+                setDefaults(dialogmelding, fastlege)
 
-                    val dialogmelding = getDialogmelding(asicFiles, message.hoveddokument)
-                    setDefaults(dialogmelding, fastlege)
+                val vedlegg = getVedlegg(asicFiles, message.hoveddokument)
 
-                    val vedlegg = getVedlegg(asicFiles, message.hoveddokument)
-
-                    val sender =
-                        securityService
-                            .assertAccess(
-                                clientContext,
-                                adresseregisteretService.lookupByHerId(outgoingBusinessDocument.senderHerId),
-                            )
-                            .toSender()
-
-                    val receiver =
-                        adresseregisteretService
-                            .lookupByHerId(outgoingBusinessDocument.receiverHerId)
-                            .toReceiver(message.pasient!!)
-
-                    val outGoingDocument =
-                        SendMessageInput(
-                            UUID.fromString(outgoingBusinessDocument.messageId),
-                            sender = sender,
-                            receiver = receiver,
-                            dialogmelding = dialogmelding,
-                            vedlegg = vedlegg,
-                            metadataFiler = message.metadataFiler,
-                            conversationRef =
-                                when {
-                                    outgoingBusinessDocument.parentId != null ->
-                                        ConversationRef(
-                                            outgoingBusinessDocument.parentId,
-                                            outgoingBusinessDocument.conversationId,
-                                        )
-                                    else -> null
-                                },
+                val sender =
+                    securityService
+                        .assertAccess(
+                            clientContext,
+                            adresseregisteretService.lookupByHerId(outgoingBusinessDocument.senderHerId),
                         )
+                        .toSender()
 
-                    mshService.sendMessage(outGoingDocument, clientContext)
-                }
+                val receiver =
+                    adresseregisteretService
+                        .lookupByHerId(outgoingBusinessDocument.receiverHerId)
+                        .toReceiver(message.pasient!!)
+
+                val input =
+                    SendMessageInput(
+                        UUID.fromString(outgoingBusinessDocument.messageId),
+                        sender = sender,
+                        receiver = receiver,
+                        dialogmelding = dialogmelding,
+                        vedlegg = vedlegg,
+                        metadataFiler = message.metadataFiler,
+                        conversationRef =
+                            when {
+                                outgoingBusinessDocument.parentId != null ->
+                                    ConversationRef(
+                                        outgoingBusinessDocument.parentId,
+                                        outgoingBusinessDocument.conversationId,
+                                    )
+                                else -> null
+                            },
+                    )
+
+                mshService.sendMessage(input, clientContext)
             }
 
         return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
@@ -202,7 +190,7 @@ class OutHandler(
                 .orElseThrowNotFound("dialogmelding.xml mangler i ASiC-E filen!")
 
         val xml = ResourceUtils.toString(document.resource, StandardCharsets.UTF_8)
-        return BusinessDocumentDeserializer.deserializeDialogmelding(xml)
+        return DialogmeldingDeserializer.deserializeDialogmelding(xml)
     }
 
     private fun getVedlegg(attachments: List<Document>, hoveddokument: String): List<Document> =

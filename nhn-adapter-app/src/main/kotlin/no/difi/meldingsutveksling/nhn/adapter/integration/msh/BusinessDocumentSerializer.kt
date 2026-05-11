@@ -5,6 +5,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.xml.datatype.DatatypeFactory
+import kotlin.time.Clock
+import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentMetadata
 import no.kith.xmlstds.base64container.Base64Container
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.Address as NhnAddress
@@ -42,67 +44,66 @@ private const val VEDLEGG_MAX_BYTES = 18 * 1000 * 1000
 private const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
 
 object BusinessDocumentSerializer {
-    fun serialize(jaxbElement: Any): String =
-        StringWriter().also { XmlContext.createMarshaller().marshal(jaxbElement, it) }.toString()
-
     fun serializeNhnMessage(businessDocument: SendMessageInput): String =
         serialize(
-            buildMsgHead(businessDocument).apply {
-                document = buildList {
-                    add(buildDialogmeldingDocument(businessDocument.dialogmelding))
-                    businessDocument.vedlegg
-                        .map { buildVedleggDocument(it, businessDocument.metadataFiler) }
-                        .forEach { add(it) }
+                buildMsgHead(businessDocument).apply {
+                    document = buildList {
+                        add(buildDialogmeldingDocument(businessDocument.dialogmelding))
+                        addAll(
+                            businessDocument.vedlegg.map { buildVedleggDocument(it, businessDocument.metadataFiler) }
+                        )
+                    }
                 }
-            }
-        )
+            )
+            .also { XmlContext.validateXml(it) }
+
+    private fun serialize(jaxbElement: Any): String =
+        StringWriter().also { XmlContext.createMarshaller().marshal(jaxbElement, it) }.toString()
 
     private fun buildMsgHead(businessDocument: SendMessageInput) =
-        MsgHead()
-            .apply {
-                msgInfo =
-                    MsgInfo().apply {
-                        type = buildMsgInfoType(DialogmeldingVersion.V1_1)
-                        miGversion = MSG_HEAD_VERSION
-                        genDate = currentDateTime()
-                        msgId = businessDocument.id.toString()
-                        sender =
-                            NhnSender().apply {
-                                organisation =
-                                    toOrganisation(businessDocument.sender.parent, businessDocument.sender.child)
+        MsgHead().apply {
+            msgInfo =
+                MsgInfo().apply {
+                    type = buildMsgInfoType(DialogmeldingVersion.V1_1)
+                    miGversion = MSG_HEAD_VERSION
+                    genDate = currentDateTime()
+                    msgId = businessDocument.id.toString()
+                    sender =
+                        NhnSender().apply {
+                            organisation =
+                                toOrganisation(businessDocument.sender.parent, businessDocument.sender.child)
+                        }
+                    receiver =
+                        NhnReceiver().apply {
+                            organisation =
+                                toOrganisation(businessDocument.receiver.parent, businessDocument.receiver.child)
+                        }
+                    patient =
+                        NhnPatient().apply {
+                            givenName = businessDocument.receiver.patient.firstName
+                            middleName = businessDocument.receiver.patient.middleName
+                            familyName = businessDocument.receiver.patient.lastName
+                            ident =
+                                listOf(
+                                    Ident().apply {
+                                        id = businessDocument.receiver.patient.fnr
+                                        typeId = toCv(PersonIdType.FNR)
+                                    }
+                                )
+                        }
+                    document =
+                        listOf( // Add empty doc for validation, which is overwritten later
+                            Document().apply { refDoc = RefDoc().apply { msgType = CS() } }
+                        )
+                    conversationRef =
+                        businessDocument.conversationRef?.let {
+                            NhnConversationRef().apply {
+                                refToParent = it.refToParent
+                                refToConversation = it.refToConversation
                             }
-                        receiver =
-                            NhnReceiver().apply {
-                                organisation =
-                                    toOrganisation(businessDocument.receiver.parent, businessDocument.receiver.child)
-                            }
-                        patient =
-                            NhnPatient().apply {
-                                givenName = businessDocument.receiver.patient.firstName
-                                middleName = businessDocument.receiver.patient.middleName
-                                familyName = businessDocument.receiver.patient.lastName
-                                ident =
-                                    listOf(
-                                        Ident().apply {
-                                            id = businessDocument.receiver.patient.fnr
-                                            typeId = toCv(PersonIdType.FNR)
-                                        }
-                                    )
-                            }
-                        document =
-                            listOf( // Add empty doc for validation, which is overwritten later
-                                Document().apply { refDoc = RefDoc().apply { msgType = CS() } }
-                            )
-                        conversationRef =
-                            businessDocument.conversationRef?.let {
-                                NhnConversationRef().apply {
-                                    refToParent = it.refToParent
-                                    refToConversation = it.refToConversation
-                                }
-                            }
-                    }
-            }
-            .also { XmlContext.validateObject(it) }
+                        }
+                }
+        }
 
     private fun toOrganisation(parent: OrganizationCommunicationParty, child: CommunicationParty): NhnOrganisation =
         NhnOrganisation().apply {
@@ -203,24 +204,21 @@ object BusinessDocumentSerializer {
 
     private fun buildVedleggDocument(
         attachment: no.difi.move.common.dokumentpakking.domain.Document,
-        metadataFiler: Map<String, String?>,
-    ) =
-        Document().apply {
+        metadataFiler: Map<String, AttachmentMetadata?>,
+    ): Document {
+        val metadata = metadataFiler.getOrDefault(attachment.filename, null)
+
+        return Document().apply {
             refDoc =
                 RefDoc().apply {
-                    issueDate =
-                        TS().apply {
-                            v =
-                                DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
-                                    ZonedDateTime.now().truncatedTo(ChronoUnit.SECONDS)
-                                )
-                        }
+                    issueDate = TS().apply { v = metadata?.issueDate ?: Clock.System.now().toString() }
                     msgType = TypeDokumentreferanse.VEDLEGG.toMsgHeadCS()
                     mimeType = attachment.mimeType.toString()
-                    description = metadataFiler.getOrDefault(attachment.filename, null)
+                    description = metadata?.description ?: attachment.filename
                     content = RefDoc.Content().apply { any = listOf(buildContainer(attachment.resource)) }
                 }
         }
+    }
 
     private fun buildContainer(resource: Resource) =
         resource.inputStream.use { data ->

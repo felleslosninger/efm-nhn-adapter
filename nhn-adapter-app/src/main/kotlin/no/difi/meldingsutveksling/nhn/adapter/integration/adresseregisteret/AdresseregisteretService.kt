@@ -1,4 +1,4 @@
-package no.difi.meldingsutveksling.nhn.adapter.integration.adresseregister
+package no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret
 
 import jakarta.xml.ws.soap.SOAPFaultException
 import kotlinx.coroutines.Dispatchers
