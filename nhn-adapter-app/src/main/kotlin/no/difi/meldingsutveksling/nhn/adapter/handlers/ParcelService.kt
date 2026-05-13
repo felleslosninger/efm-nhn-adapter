@@ -91,7 +91,8 @@ class ParcelService(
 
     fun getDokumentpakke(applicationReceipt: ApplicationReceiptResponse, clientContext: ClientContext): Resource =
         createAndEncryptAsic(
-            clientContext, listOf(
+            clientContext,
+            listOf(
                 Attachment(
                     AttachmentNames.KVITTERING,
                     ByteArrayResource(
@@ -100,7 +101,7 @@ class ParcelService(
                     ),
                     MimeType.valueOf(MediaType.APPLICATION_XML_VALUE),
                 )
-            )
+            ),
         )
 
     fun getDokumentpakke(businessDocument: BusinessDocumentResponse, clientContext: ClientContext): Resource {
