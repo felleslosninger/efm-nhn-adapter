@@ -13,9 +13,7 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
-import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingApplicationReceipt
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
-import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
@@ -40,7 +38,7 @@ import no.ks.fiks.nhn.msh.HttpClientException
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
-import org.springframework.web.reactive.function.server.awaitBody
+import org.springframework.web.reactive.function.server.bodyToMono
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.json
 
@@ -64,9 +62,8 @@ class OutHandler(
     }
 
     suspend fun sendApplicationReceipt(request: ServerRequest, clientContext: ClientContext): ServerResponse {
-        val jweToken = request.awaitBody<String>()
-        val receipt = jsonParser.decodeFromString<OutgoingApplicationReceipt>(jweToken)
-
+        val jweToken = request.bodyToMono<String>().awaitSingle()
+        val receipt = parcelService.getOutgoingApplicationReceipt(jweToken, clientContext)
         val messageReference =
             withContext(Dispatchers.IO) { mshService.sendApplicationReceipt(receipt, clientContext) }
 

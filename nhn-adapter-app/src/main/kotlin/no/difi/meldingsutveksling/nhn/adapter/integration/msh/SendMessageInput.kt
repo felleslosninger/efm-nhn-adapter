@@ -14,6 +14,6 @@ data class SendMessageInput(
     val receiver: Receiver,
     val dialogmelding: Dialogmelding,
     val vedlegg: List<Document>,
-    val metadataFiler: Map<String, AttachmentMetadata?>,
+    val metadataFiler: Map<String, AttachmentMetadata?>?,
     val conversationRef: ConversationRef?,
 )

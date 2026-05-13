@@ -204,9 +204,9 @@ object BusinessDocumentSerializer {
 
     private fun buildVedleggDocument(
         attachment: no.difi.move.common.dokumentpakking.domain.Document,
-        metadataFiler: Map<String, AttachmentMetadata?>,
+        metadataFiler: Map<String, AttachmentMetadata?>?,
     ): Document {
-        val metadata = metadataFiler.getOrDefault(attachment.filename, null)
+        val metadata = metadataFiler?.getOrDefault(attachment.filename, null)
 
         return Document().apply {
             refDoc =

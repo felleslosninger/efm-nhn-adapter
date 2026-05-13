@@ -176,13 +176,15 @@ data class ApplicationReceiptResponse(val appRec: AppRec, val rawReceipt: String
 
 fun ApplicationReceiptResponse.toSerializable(): IncomingApplicationReceipt =
     IncomingApplicationReceipt(
+        id = this.appRec.id,
+        rawReceipt = this.rawReceipt,
         payload =
             DialogmeldingKvitteringMessage(
                 relatedToMessageId = this.appRec.originalMsgId.id,
-                status = DialogmeldingKvitteringStatus.valueOf(this.appRec.status.v),
+                status = DialogmeldingKvitteringStatus.valueOf(this.appRec.status.dn),
                 messages = this.appRec.error.map { it.toSerializable() },
                 hoveddokument = AttachmentNames.KVITTERING,
-            )
+            ),
     )
 
 private fun CV.toSerializable(): KvitteringStatusMessage = KvitteringStatusMessage(code = this.v, text = this.dn)

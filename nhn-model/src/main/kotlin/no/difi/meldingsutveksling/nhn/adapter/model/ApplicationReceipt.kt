@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
+import java.time.OffsetDateTime
 import kotlin.uuid.ExperimentalUuidApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -12,6 +13,8 @@ import no.ks.fiks.hdir.StatusForMottakAvMelding
 
 @Serializable
 data class IncomingApplicationReceipt(
+    val id: String,
+    val rawReceipt: String,
     val payload: DialogmeldingKvitteringMessage,
 )
 

@@ -28,7 +28,7 @@ data class IncomingBusinessDocument(
 data class DialogmeldingMessage(
     val hoveddokument: String,
     val pasient: Pasient?,
-    val metadataFiler: Map<String, AttachmentMetadata>
+    val metadataFiler: Map<String, AttachmentMetadata>?
 )
 
 data class IncomingAttachment(

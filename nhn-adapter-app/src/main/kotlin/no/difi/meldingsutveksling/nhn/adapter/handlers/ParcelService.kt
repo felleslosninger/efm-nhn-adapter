@@ -4,12 +4,14 @@ import java.nio.charset.StandardCharsets
 import java.security.cert.X509Certificate
 import no.difi.asic.SignatureMethod
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.ApplicationReceiptResponse
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.ApplicationReceiptSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentResponse
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DialogmeldingSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.toSerializable
 import no.difi.meldingsutveksling.nhn.adapter.integration.virksert.VirksertService
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
+import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingApplicationReceipt
 import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingBusinessDocument
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
@@ -61,6 +63,11 @@ class ParcelService(
         return decryptAndVerify(jweToken, clientContext)
     }
 
+    fun getOutgoingApplicationReceipt(jweToken: String, clientContext: ClientContext): OutgoingApplicationReceipt {
+        val json = decryptAndVerify(jweToken, clientContext)
+        return jsonParser.decodeFromString<OutgoingApplicationReceipt>(json)
+    }
+
     private fun decryptAndVerify(jweToken: String, clientContext: ClientContext): String {
         val signed = JavaWebEncryption.decrypt(jweToken, keystoreHelper.loadPrivateKey())
         val certificate = certificate(clientContext)
@@ -82,18 +89,19 @@ class ParcelService(
         return asicParser.parse(asice)
     }
 
-    fun getDokumentpakke(applicationReceipt: ApplicationReceiptResponse, clientContext: ClientContext): Resource {
-        val attachments = ArrayList<Attachment>()
-        attachments.add(
-            Attachment(
-                AttachmentNames.KVITTERING,
-                ByteArrayResource(applicationReceipt.rawReceipt.encodeToByteArray()),
-                MimeType.valueOf(MediaType.APPLICATION_XML_VALUE),
+    fun getDokumentpakke(applicationReceipt: ApplicationReceiptResponse, clientContext: ClientContext): Resource =
+        createAndEncryptAsic(
+            clientContext, listOf(
+                Attachment(
+                    AttachmentNames.KVITTERING,
+                    ByteArrayResource(
+                        ApplicationReceiptSerializer.serializeApplicationReceipt(applicationReceipt.appRec)
+                            .toByteArray(StandardCharsets.UTF_8)
+                    ),
+                    MimeType.valueOf(MediaType.APPLICATION_XML_VALUE),
+                )
             )
         )
-
-        return createAndEncryptAsic(clientContext, attachments)
-    }
 
     fun getDokumentpakke(businessDocument: BusinessDocumentResponse, clientContext: ClientContext): Resource {
         val xml = DialogmeldingSerializer.serializeDialogmelding(businessDocument.dialogmelding)
