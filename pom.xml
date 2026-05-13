@@ -175,6 +175,12 @@
                 <artifactId>kotlin-logging-jvm</artifactId>
                 <version>3.0.5</version>
             </dependency>
+            <!-- CVE-2026-42402 -->
+            <dependency>
+                <groupId>org.apache.neethi</groupId>
+                <artifactId>neethi</artifactId>
+                <version>3.2.2</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
