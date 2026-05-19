@@ -38,6 +38,7 @@ class InHandler(
 
     suspend fun getApplicationReceipt(id: UUID, clientContext: ClientContext): ServerResponse {
         val receipt = mshService.getApplicationReceipt(id, clientContext)
+        securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receipt.receiverHerId))
         val forretningsmelding = parcelService.getForretningsmelding(receipt, clientContext)
         val dokumentpakke = parcelService.getDokumentpakke(receipt, clientContext)
 

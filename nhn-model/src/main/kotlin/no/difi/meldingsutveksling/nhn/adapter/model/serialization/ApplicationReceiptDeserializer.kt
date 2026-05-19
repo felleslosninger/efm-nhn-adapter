@@ -95,9 +95,9 @@ object ApplicationReceiptDeserializer {
             softwareVersion = input.softwareVersion
             genDate = input.genDate
             id = input.id
-            sender = input.sender?.toLatest()
-            receiver = input.receiver?.toLatest()
-            status = input.status?.toLatest()
+            sender = input.sender.toLatest()
+            receiver = input.receiver.toLatest()
+            status = input.status.toLatest()
             error = input.error.map { it.toLatest() }
             originalMsgId = input.originalMsgId?.toLatest()
         }
@@ -134,7 +134,7 @@ private fun Receiver1_0.toLatest(): Receiver {
     val input = this
     return Receiver().apply {
         role = input.role?.toLatest()
-        hcp = input.hcp?.toLatest()
+        hcp = input.hcp.toLatest()
     }
 }
 

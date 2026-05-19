@@ -17,6 +17,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.toSerializable
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.kith.xmlstds.CV
 import no.kith.xmlstds.apprec._2012_02_15.AppRec
+import no.kith.xmlstds.apprec._2012_02_15.HCP
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.msh.Client
@@ -76,7 +77,13 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
     suspend fun getApplicationReceipt(id: UUID, clientContext: ClientContext): ApplicationReceiptResponse {
         val xml = internalClient.getBusinessDocument(id, getRequestParameters(clientContext)).let(toXML())
         val appRec = ApplicationReceiptDeserializer.deserializeAppRec(xml)
-        return ApplicationReceiptResponse(appRec = appRec, rawReceipt = xml)
+        return ApplicationReceiptResponse(
+            id = appRec.id,
+            senderHerId = appRec.sender.hcp.toHerId(),
+            receiverHerId = appRec.receiver.hcp.toHerId(),
+            appRec = appRec,
+            rawReceipt = xml,
+        )
     }
 
     suspend fun sendApplicationReceipt(receipt: OutgoingApplicationReceipt, clientContext: ClientContext): UUID =
@@ -107,6 +114,8 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
         }
     }
 }
+
+private fun HCP.toHerId(): Int = if (inst != null) inst.hcPerson.first().id.toInt() else hcProf.id.toInt()
 
 private fun toXML(): (GetBusinessDocumentResponse) -> String = {
     if (it.contentTransferEncoding != CONTENT_TRANSFER_ENCODING) {
@@ -172,7 +181,13 @@ fun BusinessDocumentResponse.toSerializable(): IncomingBusinessDocument {
     )
 }
 
-data class ApplicationReceiptResponse(val appRec: AppRec, val rawReceipt: String)
+data class ApplicationReceiptResponse(
+    val id: String,
+    val senderHerId: Int,
+    val receiverHerId: Int,
+    val appRec: AppRec,
+    val rawReceipt: String,
+)
 
 fun ApplicationReceiptResponse.toSerializable(): IncomingApplicationReceipt =
     IncomingApplicationReceipt(
