@@ -4,7 +4,6 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import java.util.Date
 import kotlin.time.ExperimentalTime
-import kotlinx.serialization.Serializable
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.FLRCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.SECURITY_CONFIG
@@ -24,11 +23,13 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.config.KeystoreProperties
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResourceFactory
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
@@ -40,7 +41,6 @@ import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.coRouter
-import org.springframework.web.server.ResponseStatusException
 import reactor.core.publisher.Mono
 
 private object Names {
@@ -110,30 +110,15 @@ private fun integrations() = BeanRegistrarDsl {
     registerBean { IntegrationBeans.mshService(bean(), bean()) }
     registerBean { IntegrationBeans.virksertClient(bean()) }
     registerBean { IntegrationBeans.virksertService(bean(), bean()) }
-    profile(expression = "local || dev || unit-test || test ") {
-        registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(FLRCONFIG)) }
-        registerBean { IntegrationBeans.flrClientDecorator(bean(), this.env) }
-    }
+    registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(FLRCONFIG)) }
 }
 
 class BeanRegistration :
     BeanRegistrarDsl({
         this.register(properties())
-        //        this.register(crypto())
         this.register(security())
         this.register(integrations())
 
-        //        profile(expression = "local || dev || unit-test || test") {
-        //            registerBean<RouterFunction<*>> {
-        //                coRouter {
-        //                    testFlr(bean())
-        //                    testAr(bean())
-        //                    testDphOut(bean(), bean())
-        //                    testRespondApprecFralegekontor(bean())
-        //                    testReadMessageFromFastlegekontoret(bean())
-        //                }
-        //            }
-        //        }
         registerBean { inMemoryWithTempFileFallbackResourceFactory(bean()) }
         registerBean { SecurityService(bean()) }
         registerBean { KeystoreHelper(bean()) }
@@ -154,28 +139,21 @@ class BeanRegistration :
 fun inMemoryWithTempFileFallbackResourceFactory(config: TempFileConfig): InMemoryWithTempFileFallbackResourceFactory =
     InMemoryWithTempFileFallbackResourceFactory(config.threshold, config.initialBufferSize, config.directory)
 
-fun <T> T?.orElseThrowNotFound(message: String): T =
-    this ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, message)
-
-@Serializable
-data class ApiError(
-    val status: Int,
-    val message: String?,
-    val error: String?,
-    val path: String?,
-    val requestId: String?,
-    val timestamp: String,
-)
-
 fun ApiError.toServerResponse(): Mono<ServerResponse> = ServerResponse.status(this.status).bodyValue(this)
 
 @OptIn(ExperimentalTime::class)
-fun ServerRequest.toApiError(status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR, message: String = ""): ApiError =
+fun ServerRequest.toApiError(
+    status: HttpStatus,
+    error: FeilmeldingForApplikasjonskvittering,
+    details: String? = null,
+): ApiError =
     ApiError(
         timestamp = Date().toString(),
         status = status.value(),
-        error = status.reasonPhrase,
-        message = message,
+        reason = status.reasonPhrase,
+        errorCode = error.verdi,
+        message = error.navn,
+        details = details,
         path = this.path(),
         requestId = this.exchange().request.id,
     )

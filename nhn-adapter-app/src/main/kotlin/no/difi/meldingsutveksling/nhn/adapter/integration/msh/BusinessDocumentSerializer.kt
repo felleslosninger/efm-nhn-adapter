@@ -7,6 +7,7 @@ import java.time.temporal.ChronoUnit
 import javax.xml.datatype.DatatypeFactory
 import kotlin.time.Clock
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentMetadata
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.kith.xmlstds.base64container.Base64Container
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.Address as NhnAddress
@@ -24,6 +25,7 @@ import no.kith.xmlstds.msghead._2006_05_24.Receiver as NhnReceiver
 import no.kith.xmlstds.msghead._2006_05_24.RefDoc
 import no.kith.xmlstds.msghead._2006_05_24.Sender as NhnSender
 import no.kith.xmlstds.msghead._2006_05_24.TS
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.IdType
 import no.ks.fiks.hdir.KodeverkVerdi
 import no.ks.fiks.hdir.MeldingensFunksjon
@@ -44,18 +46,29 @@ private const val VEDLEGG_MAX_BYTES = 18 * 1000 * 1000
 private const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
 
 object BusinessDocumentSerializer {
-    fun serializeNhnMessage(businessDocument: SendMessageInput): String =
-        serialize(
-                buildMsgHead(businessDocument).apply {
-                    document = buildList {
-                        add(buildDialogmeldingDocument(businessDocument.dialogmelding))
-                        addAll(
-                            businessDocument.vedlegg.map { buildVedleggDocument(it, businessDocument.metadataFiler) }
-                        )
+    fun serializeNhnMessage(businessDocument: SendMessageInput): String {
+        try {
+            return serialize(
+                    buildMsgHead(businessDocument).apply {
+                        document = buildList {
+                            add(buildDialogmeldingDocument(businessDocument.dialogmelding))
+                            addAll(
+                                businessDocument.vedlegg.map {
+                                    buildVedleggDocument(it, businessDocument.metadataFiler)
+                                }
+                            )
+                        }
                     }
-                }
+                )
+                .also { XmlContext.validateXml(it) }
+        } catch (t: Throwable) {
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                "Error while serializing Dialogmelding",
+                t,
             )
-            .also { XmlContext.validateXml(it) }
+        }
+    }
 
     private fun serialize(jaxbElement: Any): String =
         StringWriter().also { XmlContext.createMarshaller().marshal(jaxbElement, it) }.toString()

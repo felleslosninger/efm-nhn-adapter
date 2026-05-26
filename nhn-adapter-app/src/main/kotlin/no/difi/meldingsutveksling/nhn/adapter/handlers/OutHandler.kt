@@ -15,7 +15,6 @@ import no.difi.meldingsutveksling.nhn.adapter.model.MessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
-import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.dokumentpakking.domain.Document
@@ -182,10 +181,7 @@ class OutHandler(
         }
 
     private fun getDialogmelding(attachments: List<Document>, hoveddokument: String): Dialogmelding {
-        val document =
-            attachments
-                .find { it.filename == hoveddokument }
-                .orElseThrowNotFound("dialogmelding.xml mangler i ASiC-E filen!")
+        val document = attachments.find { it.filename == hoveddokument } ?: throw DialogmeldingNotFound()
 
         val xml = ResourceUtils.toString(document.resource, StandardCharsets.UTF_8)
         return DialogmeldingDeserializer.deserializeDialogmelding(xml)

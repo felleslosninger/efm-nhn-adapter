@@ -13,7 +13,6 @@ import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
-import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import org.springframework.core.io.Resource
@@ -56,8 +55,7 @@ class InHandler(
 
     suspend fun getBusinessDocument(id: UUID, clientContext: ClientContext): ServerResponse {
         val businessDocument: BusinessDocumentResponse = mshService.getBusinessDocument(id, clientContext)
-        val receiverHerId =
-            businessDocument.receiver.child.herId.orElseThrowNotFound("ReceiverHerId not found in SBDH!")
+        val receiverHerId = businessDocument.receiver.child.herId ?: throw HerIdNotFound()
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
 
         val forretningsmelding = parcelService.getForretningsmelding(businessDocument, clientContext)

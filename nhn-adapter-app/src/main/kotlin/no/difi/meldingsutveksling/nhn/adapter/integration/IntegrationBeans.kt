@@ -3,7 +3,6 @@ package no.difi.meldingsutveksling.nhn.adapter.integration
 import java.net.URI
 import java.time.Duration
 import network.oxalis.vefa.peppol.common.model.ProcessIdentifier
-import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.config.CacheConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.VirksertConfig
@@ -21,16 +20,12 @@ import no.ks.fiks.nhn.msh.ClientFactory
 import no.ks.fiks.nhn.msh.Configuration
 import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import no.ks.fiks.nhn.msh.MshInternalClient
-import org.springframework.core.env.Environment
 
 object IntegrationBeans {
     fun flrClient(flrConfig: NhnConfig) =
         FastlegeregisteretClient(
             FastlegeregisteretService(flrConfig.url, Credentials(flrConfig.username, flrConfig.password))
         )
-
-    fun flrClientDecorator(flrClient: FastlegeregisteretClient, env: Environment): DecoratingFlrClient =
-        DecoratingFlrClient(flrClient, env.activeProfiles.filter { it in listOf("local", "dev", "test", "prod") })
 
     fun arClient(arConfig: NhnConfig): AdresseregisteretClient =
         AdresseregisteretClient(

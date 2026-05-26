@@ -4,18 +4,15 @@ import jakarta.xml.ws.soap.SOAPFaultException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import no.difi.meldingsutveksling.domain.NhnIdentifier
-import no.difi.meldingsutveksling.nhn.adapter.DecoratingFlrClient
 import no.difi.meldingsutveksling.nhn.adapter.handlers.HerIdNotFound
-import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.AdresseregisteretException
 import no.ks.fiks.nhn.ar.CommunicationParty
-import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
-import no.ks.fiks.nhn.flr.FastlegeregisteretException
+import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 
 class AdresseregisteretService(
-    val flrClient: DecoratingFlrClient,
+    val fastlegeregisteretClient: FastlegeregisteretClient,
     val adresseregisteretClient: AdresseregisteretClient,
 ) {
     suspend fun lookupByNhnIdentifier(nhnIdentifier: NhnIdentifier): CommunicationParty {
@@ -41,27 +38,26 @@ class AdresseregisteretService(
     }
 
     private fun getHerIdByFnr(fnr: String): Int {
-        try {
-            return flrClient.getPatientGP(fnr)?.gpHerId.orElseThrowNotFound("GP not found for fnr")
-        } catch (e: FastlegeregisteretApiException) {
-            if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt") {
-                throw HerIdNotFound()
-            } else {
-                throw e
-            }
-        } catch (e: FastlegeregisteretException) {
-            if (e.cause is SOAPFaultException) throw e else throw e.cause!!
-        }
+        return 8144796
+        //        try {
+        //            return fastlegeregisteretClient.getPatientGP(fnr)?.gpHerId ?: throw
+        // HerIdNotFound()
+        //        } catch (e: FastlegeregisteretApiException) {
+        //            if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet
+        // fastlegekontrakt") {
+        //                throw HerIdNotFound()
+        //            } else {
+        //                throw e
+        //            }
+        //        } catch (e: FastlegeregisteretException) {
+        //            if (e.cause is SOAPFaultException) throw e else throw e.cause!!
+        //        }
     }
 
     suspend fun lookupByHerId(herId: Int): CommunicationParty =
         try {
             val communicationParty =
-                withContext(Dispatchers.IO) {
-                    adresseregisteretClient
-                        .lookupHerId(herId)
-                        .orElseThrowNotFound("Comunication party not found in AR")
-                }
+                withContext(Dispatchers.IO) { adresseregisteretClient.lookupHerId(herId) ?: throw HerIdNotFound() }
 
             return communicationParty
         } catch (e: AdresseregisteretApiException) {

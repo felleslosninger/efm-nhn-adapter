@@ -3,6 +3,7 @@ package no.difi.meldingsutveksling.nhn.adapter.model.serialization
 import java.io.StringReader
 import javax.xml.stream.XMLInputFactory
 import javax.xml.stream.XMLStreamConstants
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 
 object XMLUtils {
 
@@ -11,7 +12,7 @@ object XMLUtils {
     fun validateRootElement(xml: String, expectedRoot: String) {
         getRootElement(xml).also {
             if (it != expectedRoot) {
-                throw IllegalArgumentException("Expected $expectedRoot as root element, but found $it")
+                throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT)
             }
         }
     }

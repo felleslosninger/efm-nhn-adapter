@@ -6,6 +6,7 @@ import javax.xml.transform.stream.StreamSource
 import kotlin.time.toKotlinInstant
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.model.IncomingAttachment
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingConverter
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils
 import no.kith.xmlstds.base64container.Base64Container
@@ -16,6 +17,7 @@ import no.kith.xmlstds.msghead._2006_05_24.Ident
 import no.kith.xmlstds.msghead._2006_05_24.MsgHead
 import no.kith.xmlstds.msghead._2006_05_24.Organisation
 import no.ks.fiks.hdir.Adressetype
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.IdType
 import no.ks.fiks.hdir.KodeverkRegister
 import no.ks.fiks.hdir.OrganizationIdType
@@ -44,14 +46,23 @@ object BusinessDocumentDeserializer {
     fun deserializeMsgHead(xml: String): BusinessDocumentResponse {
         XMLUtils.validateRootElement(xml, MSG_HEAD_ROOT)
         if (XMLUtils.getVersion(xml) != MSG_HEAD_VERSION) {
-            throw IllegalArgumentException("Invalid MIGversion. Only $MSG_HEAD_VERSION is supported.")
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                "Invalid MIGversion. Only $MSG_HEAD_VERSION is supported.",
+            )
         }
-        XmlContext.validateXml(xml)
+        try {
+            XmlContext.validateXml(xml)
+        } catch (t: Throwable) {
+            throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.UGYLDIG_XML, t.message)
+        }
+
         val msgHead =
             XmlContext.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), MsgHead::class.java).value
         if (msgHead.msgInfo == null) {
-            throw IllegalArgumentException(
-                "Could not find MsgInfo in the provided XML. The message is invalid or of wrong type."
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                "Could not find MsgInfo in the provided XML. The message is invalid or of wrong type.",
             )
         }
         return BusinessDocumentResponse(
@@ -135,7 +146,7 @@ object BusinessDocumentDeserializer {
         }!!
 
     private fun MsgHead.getVedlegg() =
-        document.drop(1).mapIndexedNotNull { index, doc ->
+        document.drop(1).mapIndexedNotNull { _, doc ->
             doc.refDoc.let { refDoc ->
                 refDoc
                     .takeIf { refDoc.msgType?.toTypeDokumentreferanse() == TypeDokumentreferanse.VEDLEGG }

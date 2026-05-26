@@ -35,6 +35,7 @@ import no.kith.xmlstds.apprec._2012_02_15.HCPerson
 import no.kith.xmlstds.apprec._2012_02_15.HCProf
 import no.kith.xmlstds.apprec._2012_02_15.Inst
 import no.kith.xmlstds.apprec._2012_02_15.OriginalMsgId
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.edi.v1_0.AppRecDeserializer
 
 object ApplicationReceiptDeserializer {
@@ -70,8 +71,7 @@ object ApplicationReceiptDeserializer {
         when (version) {
             APPREC_VERSION_1_0 -> AppRecVersion.V1_0
             APPREC_VERSION_1_1 -> AppRecVersion.V1_1
-            null -> throw IllegalArgumentException("Could not find MIGversion in XML")
-            else -> throw IllegalArgumentException("Unknown version for AppRec: $version")
+            else -> throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT)
         }
     }
 

@@ -28,6 +28,7 @@ import no.difi.move.common.dokumentpakking.domain.Document
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResource
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResourceFactory
 import no.difi.move.common.io.ResourceUtils
+import org.bouncycastle.cms.CMSAlgorithm
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.InputStreamResource
 import org.springframework.core.io.Resource
@@ -149,6 +150,7 @@ class ParcelService(
                 .signatureMethod(SignatureMethod.CAdES)
                 .signatureHelper(keystoreHelper.signatureHelper)
                 .keyEncryptionScheme(CmsAlgorithm.RSAES_OAEP)
+                .cmsEncryptionAlgorithm(CMSAlgorithm.AES256_GCM)
                 .build(),
             resource,
         )

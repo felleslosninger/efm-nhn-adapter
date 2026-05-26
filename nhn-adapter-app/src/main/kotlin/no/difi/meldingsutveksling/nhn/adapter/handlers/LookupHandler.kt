@@ -4,7 +4,6 @@ import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
-import no.difi.meldingsutveksling.nhn.adapter.orElseThrowNotFound
 import no.difi.move.common.cert.KeystoreHelper
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
@@ -17,7 +16,7 @@ class LookupHandler(
     suspend fun arLookup(identifier: String): ServerResponse {
         val nhnIdentifier = NhnIdentifier.parse(identifier)
         val communicationParty = adresseregisteretService.lookupByNhnIdentifier(nhnIdentifier)
-        val parentHerId = communicationParty.parent?.herId.orElseThrowNotFound("Parent missing")
+        val parentHerId = communicationParty.parent?.herId ?: throw HerIdNotFound()
         val orgNumber = communicationParty.parent!!.organizationNumber
         val communicationPartyParentName = communicationParty.parent?.name ?: "empty"
 
