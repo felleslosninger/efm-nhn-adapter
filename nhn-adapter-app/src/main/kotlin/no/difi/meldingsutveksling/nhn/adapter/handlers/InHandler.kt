@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
+import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
@@ -25,10 +26,12 @@ import org.springframework.web.reactive.function.server.json
 class InHandler(
     private val mshService: MshService,
     private val parcelService: ParcelService,
+    private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
 ) {
     suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): ServerResponse {
+        auditLogService.getMessagesWithMetadata(receiverHerId, clientContext)
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
         val inMessages = mshService.getMessagesWithMetadata(receiverHerId, clientContext).map { it.toInMessage() }
         val json = jsonParser.encodeToString(ListSerializer(IncomingMessage.serializer()), inMessages)
@@ -36,6 +39,7 @@ class InHandler(
     }
 
     suspend fun getApplicationReceipt(id: UUID, clientContext: ClientContext): ServerResponse {
+        auditLogService.getApplicationReceipt(id, clientContext)
         val receipt = mshService.getApplicationReceipt(id, clientContext)
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receipt.receiverHerId))
         val forretningsmelding = parcelService.getForretningsmelding(receipt, clientContext)
@@ -54,6 +58,7 @@ class InHandler(
     }
 
     suspend fun getBusinessDocument(id: UUID, clientContext: ClientContext): ServerResponse {
+        auditLogService.getBusinessDocument(id, clientContext)
         val businessDocument: BusinessDocumentResponse = mshService.getBusinessDocument(id, clientContext)
         val receiverHerId = businessDocument.receiver.child.herId ?: throw HerIdNotFound()
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
@@ -74,6 +79,7 @@ class InHandler(
     }
 
     suspend fun markMessageRead(messageId: UUID, receiverHerId: Int, clientContext: ClientContext): ServerResponse {
+        auditLogService.markMessageRead(messageId, receiverHerId, clientContext)
         securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
         mshService.markMessageRead(messageId, receiverHerId, clientContext)
 

@@ -29,7 +29,7 @@ fun CoRouterFunctionDsl.outHandler(outHandler: OutHandler) {
 }
 
 fun CoRouterFunctionDsl.lookupHandler(lookupHandler: LookupHandler) {
-    GET("/lookup/{identifier}") { lookupHandler.arLookup(it.pathVariable("identifier")) }
+    GET("/lookup/{identifier}") { lookupHandler.arLookup(it.pathVariable("identifier"), getClientContext()) }
 }
 
 fun CoRouterFunctionDsl.inHandler(inHandler: InHandler) {

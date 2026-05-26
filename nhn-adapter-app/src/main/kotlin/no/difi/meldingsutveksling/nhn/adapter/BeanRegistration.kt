@@ -12,6 +12,7 @@ import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_AR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_FLR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.OAUTH2_HELSE_ID
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SERVICES_MSH_URL
+import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.SecurityConfig
@@ -119,13 +120,14 @@ class BeanRegistration :
         this.register(security())
         this.register(integrations())
 
+        registerBean { AuditLogService(bean()) }
         registerBean { inMemoryWithTempFileFallbackResourceFactory(bean()) }
         registerBean { SecurityService(bean()) }
         registerBean { KeystoreHelper(bean()) }
         registerBean { ParcelService(bean(), bean(), bean(), bean(), bean(), bean()) }
-        registerBean { InHandler(bean(), bean(), bean(), bean()) }
-        registerBean { OutHandler(bean(), bean(), bean(), bean()) }
-        registerBean { LookupHandler(bean(), bean()) }
+        registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
+        registerBean { OutHandler(bean(), bean(), bean(), bean(), bean()) }
+        registerBean { LookupHandler(bean(), bean(), bean()) }
         registerBean<RouterFunction<*>> {
             coRouter {
                     inHandler(bean())

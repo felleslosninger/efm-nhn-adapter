@@ -1,0 +1,26 @@
+spring:
+  application:
+    environment: 'prod'
+
+nhn:
+  services:
+    ar:
+      url: "https://ws-web.nhn.no/v1/Ar"
+    flr:
+      url: "https://ws-web.nhn.no/v2/flr"
+    msh:
+      url: "https://api.tjener.melding.nhn.no"
+
+oauth2:
+  helse-id:
+    issuer: "https://helseid-sts.nhn.no"
+    audience: "https://helseid-sts.nhn.no"
+
+security:
+  delegation-source: "https://www.altinn.no/"
+  trusted-issuers:
+    - "https://maskinporten.no/"
+
+virksert:
+  url: "https://eformidling.no/virksomhetssertifikat/"
+  mode: PRODUCTION

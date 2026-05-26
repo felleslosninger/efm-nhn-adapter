@@ -6,6 +6,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.coroutines.withContext
+import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toReceiver
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toSender
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
@@ -44,10 +45,12 @@ import org.springframework.web.reactive.function.server.json
 class OutHandler(
     private val mshService: MshService,
     private val parcelService: ParcelService,
+    private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
 ) {
     suspend fun getStatus(messageId: UUID, clientContext: ClientContext): ServerResponse {
+        auditLogService.getStatus(messageId, clientContext)
         try {
             val statuses = mshService.getStatus(messageId, clientContext).map { it.toMessageStatus() }
             return ServerResponse.ok().json().bodyValueAndAwait(statuses)
@@ -65,6 +68,8 @@ class OutHandler(
         val receipt = parcelService.getOutgoingApplicationReceipt(jweToken, clientContext)
         val messageReference =
             withContext(Dispatchers.IO) { mshService.sendApplicationReceipt(receipt, clientContext) }
+
+        auditLogService.sendApplicationReceipt(receipt, messageReference, clientContext)
 
         return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
@@ -123,6 +128,8 @@ class OutHandler(
 
                 mshService.sendMessage(input, clientContext)
             }
+
+        auditLogService.sendMessage(outgoingBusinessDocument, messageReference, clientContext)
 
         return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
     }
