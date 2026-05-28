@@ -21,6 +21,5 @@ security:
   trusted-issuers:
     - "https://test.maskinporten.no/"
 
-virksert:
-  url: "https://test.eformidling.no/virksomhetssertifikat/"
+certificate:
   mode: TEST

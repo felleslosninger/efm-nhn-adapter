@@ -1,25 +1,31 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import java.nio.charset.StandardCharsets
-import java.util.Collections
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.coroutines.withContext
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
+import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
+import no.difi.meldingsutveksling.nhn.adapter.audit.clientContext
+import no.difi.meldingsutveksling.nhn.adapter.extensions.toJWEToken
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toReceiver
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toSender
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
-import no.difi.meldingsutveksling.nhn.adapter.model.MessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
+import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingApplicationReceipt
+import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingBusinessDocument
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
+import no.difi.move.common.dokumentpakking.PartUtils
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.difi.move.common.io.ResourceUtils
+import no.idporten.logging.audit.AuditEntry
 import no.kith.xmlstds.CS
 import no.kith.xmlstds.URL
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
@@ -34,11 +40,9 @@ import no.ks.fiks.nhn.ar.AddressComponent
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.edi.toCV
 import no.ks.fiks.nhn.msh.ConversationRef
-import no.ks.fiks.nhn.msh.HttpClientException
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
-import org.springframework.web.reactive.function.server.bodyToMono
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.json
 
@@ -50,88 +54,117 @@ class OutHandler(
     private val adresseregisteretService: AdresseregisteretService,
 ) {
     suspend fun getStatus(messageId: UUID, clientContext: ClientContext): ServerResponse {
-        auditLogService.getStatus(messageId, clientContext)
-        try {
+        auditLogService.log(
+            AuditEntry.builder()
+                .auditId(NHNAdapterAuditIdentifier.GET_STATUS)
+                .message("Get status")
+                .clientContext(clientContext)
+                .attribute("messageId", messageId)
+        ) {
             val statuses = mshService.getStatus(messageId, clientContext).map { it.toMessageStatus() }
             return ServerResponse.ok().json().bodyValueAndAwait(statuses)
-        } catch (e: HttpClientException) {
-            if (e.status == 404) {
-                return ServerResponse.ok().json().bodyValueAndAwait(Collections.emptyList<MessageStatus>())
-            }
-
-            throw e
         }
     }
 
     suspend fun sendApplicationReceipt(request: ServerRequest, clientContext: ClientContext): ServerResponse {
-        val jweToken = request.bodyToMono<String>().awaitSingle()
-        val receipt = parcelService.getOutgoingApplicationReceipt(jweToken, clientContext)
-        val messageReference =
-            withContext(Dispatchers.IO) { mshService.sendApplicationReceipt(receipt, clientContext) }
+        auditLogService.log(
+            AuditEntry.builder()
+                .auditId(NHNAdapterAuditIdentifier.SEND_APPLICATION_RECEIPT)
+                .message("Sending application receipt")
+                .clientContext(clientContext)
+        ) { auditEntryBuilder ->
+            val jWSObject = parcelService.decryptAndVerify(request.toJWEToken())
+            val receipt = jsonParser.decodeFromString<OutgoingApplicationReceipt>(jWSObject.payload.toString())
 
-        auditLogService.sendApplicationReceipt(receipt, messageReference, clientContext)
+            auditEntryBuilder.attribute("senderHerId", receipt.senderHerId)
+            auditEntryBuilder.attribute("status", receipt.payload.status)
+            auditEntryBuilder.attribute("relatedToMessageId", receipt.payload.relatedToMessageId)
 
-        return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
+            val messageReference =
+                withContext(Dispatchers.IO) { mshService.sendApplicationReceipt(receipt, clientContext) }
+
+            auditEntryBuilder.attribute("messageReference", messageReference)
+
+            return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
+        }
     }
 
     suspend fun sendMessage(request: ServerRequest, clientContext: ClientContext): ServerResponse {
-        val multipartData = request.multipartData().awaitSingle()
+        auditLogService.log(
+            AuditEntry.builder()
+                .auditId(NHNAdapterAuditIdentifier.SEND_MESSAGE)
+                .message("Sending message")
+                .clientContext(clientContext)
+        ) { auditEntryBuilder ->
+            val multipartData = request.multipartData().awaitSingle()
+            val part = multipartData.getFirst(MultipartNames.FORRETNINGSMELDING)!!
+            val jweToken = PartUtils.toString(part)
+            val jWSObject = parcelService.decryptAndVerify(jweToken)
+            val outgoingBusinessDocument =
+                jsonParser.decodeFromString<OutgoingBusinessDocument>(jWSObject.payload.toString())
 
-        val outgoingBusinessDocument = parcelService.getOutgoingBusinessDocument(multipartData, clientContext)
+            auditEntryBuilder
+                .attribute("messageId", outgoingBusinessDocument.messageId)
+                .attribute("conversationId", outgoingBusinessDocument.conversationId)
+                .attribute("parentId", outgoingBusinessDocument.parentId)
+                .attribute("senderHerId", outgoingBusinessDocument.senderHerId)
+                .attribute("receiverHerId", outgoingBusinessDocument.receiverHerId)
 
-        val message = outgoingBusinessDocument.payload
+            val message = outgoingBusinessDocument.payload
 
-        val fastlege: PersonCommunicationParty =
-            adresseregisteretService.lookupByHerId(outgoingBusinessDocument.receiverHerId) as PersonCommunicationParty
+            val fastlege: PersonCommunicationParty =
+                adresseregisteretService.lookupByHerId(outgoingBusinessDocument.receiverHerId)
+                    as PersonCommunicationParty
 
-        val dokumentpakke = multipartData.getFirst(MultipartNames.DOKUMENTPAKKE)!!
+            val dokumentpakke = multipartData.getFirst(MultipartNames.DOKUMENTPAKKE)!!
 
-        val messageReference =
-            withContext(Dispatchers.IO) {
-                val asicFiles = parcelService.getAttachments(dokumentpakke)
-                val dialogmelding = getDialogmelding(asicFiles, message.hoveddokument)
-                setDefaults(dialogmelding, fastlege)
+            val messageReference =
+                withContext(Dispatchers.IO) {
+                    val asicFiles = parcelService.getAttachments(dokumentpakke)
+                    val dialogmelding = getDialogmelding(asicFiles, message.hoveddokument)
+                    setDefaults(dialogmelding, fastlege)
 
-                val vedlegg = getVedlegg(asicFiles, message.hoveddokument)
+                    val vedlegg = getVedlegg(asicFiles, message.hoveddokument)
 
-                val sender =
-                    securityService
-                        .assertAccess(
-                            clientContext,
-                            adresseregisteretService.lookupByHerId(outgoingBusinessDocument.senderHerId),
+                    val sender =
+                        securityService
+                            .assertAccess(
+                                clientContext,
+                                adresseregisteretService.lookupByHerId(outgoingBusinessDocument.senderHerId),
+                            )
+                            .toSender()
+
+                    val receiver =
+                        adresseregisteretService
+                            .lookupByHerId(outgoingBusinessDocument.receiverHerId)
+                            .toReceiver(message.pasient!!)
+
+                    val input =
+                        SendMessageInput(
+                            UUID.fromString(outgoingBusinessDocument.messageId),
+                            sender = sender,
+                            receiver = receiver,
+                            dialogmelding = dialogmelding,
+                            vedlegg = vedlegg,
+                            metadataFiler = message.metadataFiler,
+                            conversationRef =
+                                when {
+                                    outgoingBusinessDocument.parentId != null ->
+                                        ConversationRef(
+                                            outgoingBusinessDocument.parentId,
+                                            outgoingBusinessDocument.conversationId,
+                                        )
+                                    else -> null
+                                },
                         )
-                        .toSender()
 
-                val receiver =
-                    adresseregisteretService
-                        .lookupByHerId(outgoingBusinessDocument.receiverHerId)
-                        .toReceiver(message.pasient!!)
+                    mshService.sendMessage(input, clientContext)
+                }
 
-                val input =
-                    SendMessageInput(
-                        UUID.fromString(outgoingBusinessDocument.messageId),
-                        sender = sender,
-                        receiver = receiver,
-                        dialogmelding = dialogmelding,
-                        vedlegg = vedlegg,
-                        metadataFiler = message.metadataFiler,
-                        conversationRef =
-                            when {
-                                outgoingBusinessDocument.parentId != null ->
-                                    ConversationRef(
-                                        outgoingBusinessDocument.parentId,
-                                        outgoingBusinessDocument.conversationId,
-                                    )
-                                else -> null
-                            },
-                    )
+            auditEntryBuilder.attribute("messageReference", messageReference)
 
-                mshService.sendMessage(input, clientContext)
-            }
-
-        auditLogService.sendMessage(outgoingBusinessDocument, messageReference, clientContext)
-
-        return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
+            return ServerResponse.ok().contentType(MediaType.TEXT_PLAIN).bodyValueAndAwait(messageReference.toString())
+        }
     }
 
     private fun setDefaults(dialogmelding: Dialogmelding, fastlege: PersonCommunicationParty) {

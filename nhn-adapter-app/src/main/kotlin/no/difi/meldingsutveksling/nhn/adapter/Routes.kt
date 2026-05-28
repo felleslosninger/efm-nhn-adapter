@@ -1,7 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import mu.KotlinLogging
-import no.difi.meldingsutveksling.nhn.adapter.extensions.getId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.getMessageId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.getReceiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
@@ -12,6 +11,7 @@ import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.server.CoRouterFunctionDsl
 
 val logger = KotlinLogging.logger {}
+val APPLICATION_JOSE = MediaType.parseMediaType("application/jose")
 
 fun CoRouterFunctionDsl.outHandler(outHandler: OutHandler) {
     GET("/messages/out/{messageId}/statuses", accept(MediaType.APPLICATION_JSON)) {
@@ -20,10 +20,7 @@ fun CoRouterFunctionDsl.outHandler(outHandler: OutHandler) {
     POST("/messages/out", contentType(MediaType.MULTIPART_FORM_DATA).and(accept(MediaType.TEXT_PLAIN))) {
         outHandler.sendMessage(it, getClientContext())
     }
-    POST(
-        "/messages/out/receipt",
-        contentType(MediaType.parseMediaType("application/jose")).and(accept(MediaType.TEXT_PLAIN)),
-    ) {
+    POST("/messages/out/receipt", contentType(APPLICATION_JOSE).and(accept(MediaType.TEXT_PLAIN))) {
         outHandler.sendApplicationReceipt(it, getClientContext())
     }
 }
@@ -36,11 +33,11 @@ fun CoRouterFunctionDsl.inHandler(inHandler: InHandler) {
     GET("/messages/in", accept(MediaType.APPLICATION_JSON)) {
         inHandler.getMessagesWithMetadata(it.getReceiverHerId(), getClientContext())
     }
-    GET("/messages/in/{id}", accept(MediaType.MULTIPART_MIXED)) {
-        inHandler.getBusinessDocument(it.getId(), getClientContext())
+    POST("/messages/in", contentType(APPLICATION_JOSE).and(accept(MediaType.MULTIPART_MIXED))) {
+        inHandler.getBusinessDocument(it, getClientContext())
     }
-    GET("/messages/in/{id}/receipt", accept(MediaType.MULTIPART_MIXED)) {
-        inHandler.getApplicationReceipt(it.getId(), getClientContext())
+    POST("/messages/in/receipt", contentType(APPLICATION_JOSE).and(accept(MediaType.MULTIPART_MIXED))) {
+        inHandler.getApplicationReceipt(it, getClientContext())
     }
     POST("/messages/in/{messageId}/read") {
         inHandler.markMessageRead(it.getMessageId(), it.getReceiverHerId(), getClientContext())

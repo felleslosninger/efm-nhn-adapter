@@ -1,14 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration
 
-import java.net.URI
 import java.time.Duration
-import network.oxalis.vefa.peppol.common.model.ProcessIdentifier
-import no.difi.meldingsutveksling.nhn.adapter.config.CacheConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
-import no.difi.meldingsutveksling.nhn.adapter.config.VirksertConfig
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
-import no.difi.meldingsutveksling.nhn.adapter.integration.virksert.VirksertService
-import no.difi.virksert.client.BusinessCertificateClient
 import no.ks.fiks.helseid.HelseIdClient
 import no.ks.fiks.helseid.dpop.ProofBuilder
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
@@ -56,14 +50,4 @@ object IntegrationBeans {
         )
 
     fun mshService(mshClient: Client, internalClient: MshInternalClient) = MshService(mshClient, internalClient)
-
-    fun virksertClient(virksertConfig: VirksertConfig): BusinessCertificateClient =
-        BusinessCertificateClient.of(URI.create(virksertConfig.url), virksertConfig.mode)
-
-    fun virksertService(virksertClient: BusinessCertificateClient, virksertConfig: VirksertConfig) =
-        VirksertService(
-            virksertClient,
-            ProcessIdentifier.parse(virksertConfig.process),
-            CacheConfig(10000, Duration.ofMinutes(5)),
-        )
 }

@@ -1,7 +1,5 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
-import java.time.OffsetDateTime
-import kotlin.uuid.ExperimentalUuidApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -19,9 +17,7 @@ data class IncomingApplicationReceipt(
 )
 
 @Serializable
-data class OutgoingApplicationReceipt
-@OptIn(ExperimentalUuidApi::class)
-constructor(
+data class OutgoingApplicationReceipt(
     val senderHerId: Int,
     val payload: DialogmeldingKvitteringMessage,
 )

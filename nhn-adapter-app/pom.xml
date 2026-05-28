@@ -53,10 +53,6 @@
             <artifactId>helseid-client</artifactId>
         </dependency>
         <dependency>
-            <groupId>no.difi.virksert</groupId>
-            <artifactId>virksert-client</artifactId>
-        </dependency>
-        <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>

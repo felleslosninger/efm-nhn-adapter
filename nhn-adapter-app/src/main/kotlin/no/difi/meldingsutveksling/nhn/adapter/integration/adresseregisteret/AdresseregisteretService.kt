@@ -9,7 +9,9 @@ import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.AdresseregisteretException
 import no.ks.fiks.nhn.ar.CommunicationParty
+import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretException
 
 class AdresseregisteretService(
     val fastlegeregisteretClient: FastlegeregisteretClient,
@@ -38,20 +40,17 @@ class AdresseregisteretService(
     }
 
     private fun getHerIdByFnr(fnr: String): Int {
-        return 8144796
-        //        try {
-        //            return fastlegeregisteretClient.getPatientGP(fnr)?.gpHerId ?: throw
-        // HerIdNotFound()
-        //        } catch (e: FastlegeregisteretApiException) {
-        //            if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet
-        // fastlegekontrakt") {
-        //                throw HerIdNotFound()
-        //            } else {
-        //                throw e
-        //            }
-        //        } catch (e: FastlegeregisteretException) {
-        //            if (e.cause is SOAPFaultException) throw e else throw e.cause!!
-        //        }
+        try {
+            return fastlegeregisteretClient.getPatientGP(fnr)?.gpHerId ?: throw HerIdNotFound()
+        } catch (e: FastlegeregisteretApiException) {
+            if (e.faultMessage == "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt") {
+                throw HerIdNotFound()
+            } else {
+                throw e
+            }
+        } catch (e: FastlegeregisteretException) {
+            if (e.cause is SOAPFaultException) throw e else throw e.cause!!
+        }
     }
 
     suspend fun lookupByHerId(herId: Int): CommunicationParty =

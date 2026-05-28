@@ -4,20 +4,21 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import java.util.Date
 import kotlin.time.ExperimentalTime
+import no.difi.certvalidator.BusinessCertificateValidator
+import no.difi.certvalidator.BusinessCertificateValidatorFactory
 import no.difi.meldingsutveksling.nhn.adapter.Names.ARCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.FLRCONFIG
 import no.difi.meldingsutveksling.nhn.adapter.Names.SECURITY_CONFIG
-import no.difi.meldingsutveksling.nhn.adapter.Names.VIRKSERT_CONFIG
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_AR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.NHN_SERVICE_FLR
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.OAUTH2_HELSE_ID
 import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SERVICES_MSH_URL
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
+import no.difi.meldingsutveksling.nhn.adapter.config.CertificateConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.SecurityConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.TempFileConfig
-import no.difi.meldingsutveksling.nhn.adapter.config.VirksertConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
@@ -48,7 +49,6 @@ private object Names {
     const val ARCONFIG = "ArConfig"
     const val FLRCONFIG = "FlrConfig"
     const val SECURITY_CONFIG = "SecurityConfig"
-    const val VIRKSERT_CONFIG = "VirksertConfig"
 }
 
 private object PropertyNames {
@@ -79,11 +79,6 @@ private fun properties() = BeanRegistrarDsl {
             IllegalStateException("SecurityConfig configuration was not found.")
         }
     }
-    registerBean<VirksertConfig>(VIRKSERT_CONFIG) {
-        Binder.get(env).bind("virksert", VirksertConfig::class.java).orElseThrow {
-            IllegalStateException("SecurityConfig configuration was not found.")
-        }
-    }
     registerBean<TempFileConfig>("TempFileConfig") {
         Binder.get(env).bind("temp", TempFileConfig::class.java).orElseThrow {
             IllegalStateException("TempFileConfig configuration was not found.")
@@ -93,6 +88,12 @@ private fun properties() = BeanRegistrarDsl {
     registerBean<KeystoreProperties>("KeystoreProperties") {
         Binder.get(env).bind("keystore", KeystoreProperties::class.java).orElseThrow {
             IllegalStateException("keystore configuration was not found.")
+        }
+    }
+
+    registerBean<CertificateConfig>("CertificateValidationConfig") {
+        Binder.get(env).bind("certificate", CertificateConfig::class.java).orElseThrow {
+            IllegalStateException("certificate configuration was not found.")
         }
     }
 }
@@ -109,8 +110,6 @@ private fun integrations() = BeanRegistrarDsl {
     registerBean { IntegrationBeans.mshClient(bean(), this.env[SERVICES_MSH_URL]!!) }
     registerBean { IntegrationBeans.mshInternalClient(bean(), this.env[SERVICES_MSH_URL]!!) }
     registerBean { IntegrationBeans.mshService(bean(), bean()) }
-    registerBean { IntegrationBeans.virksertClient(bean()) }
-    registerBean { IntegrationBeans.virksertService(bean(), bean()) }
     registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(FLRCONFIG)) }
 }
 
@@ -120,6 +119,7 @@ class BeanRegistration :
         this.register(security())
         this.register(integrations())
 
+        registerBean { businessCertificateValidator(bean()) }
         registerBean { AuditLogService(bean()) }
         registerBean { inMemoryWithTempFileFallbackResourceFactory(bean()) }
         registerBean { SecurityService(bean()) }
@@ -140,6 +140,9 @@ class BeanRegistration :
 
 fun inMemoryWithTempFileFallbackResourceFactory(config: TempFileConfig): InMemoryWithTempFileFallbackResourceFactory =
     InMemoryWithTempFileFallbackResourceFactory(config.threshold, config.initialBufferSize, config.directory)
+
+fun businessCertificateValidator(config: CertificateConfig): BusinessCertificateValidator =
+    BusinessCertificateValidatorFactory().createValidator(config.mode)
 
 fun ApiError.toServerResponse(): Mono<ServerResponse> = ServerResponse.status(this.status).bodyValue(this)
 

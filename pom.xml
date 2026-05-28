@@ -39,9 +39,8 @@
         <kotest.version>6.1.10</kotest.version>
         <msh-client.version>1.6.0</msh-client.version>
         <helseid.version>1.1.0</helseid.version>
-        <virksert.version>2.0.8</virksert.version>
         <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
-        <efm-common.version>2.1.0-RC2</efm-common.version>
+        <efm-common.version>DEV-SNAPSHOT</efm-common.version>
         <netty.version>4.2.13.Final</netty.version>
     </properties>
 
@@ -123,11 +122,6 @@
                 <groupId>no.ks.fiks</groupId>
                 <artifactId>helseid-client</artifactId>
                 <version>${helseid.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>no.difi.virksert</groupId>
-                <artifactId>virksert-client</artifactId>
-                <version>${virksert.version}</version>
             </dependency>
             <dependency>
                 <groupId>no.idporten.logging</groupId>

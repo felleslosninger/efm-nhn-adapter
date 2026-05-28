@@ -61,10 +61,10 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
         )
     }
 
-    suspend fun getBusinessDocument(id: UUID, clientContext: ClientContext): BusinessDocumentResponse {
+    suspend fun getBusinessDocument(id: String, clientContext: ClientContext): BusinessDocumentResponse {
         val xml =
             internalClient
-                .getBusinessDocument(id, getRequestParameters(clientContext))
+                .getBusinessDocument(UUID.fromString(id), getRequestParameters(clientContext))
                 .let(toXML())
                 .replace(Regex("<FileReference>[^<]+</FileReference>"), "")
 
@@ -74,8 +74,9 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
     suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): List<MessageWithMetadata> =
         mshClient.getMessagesWithMetadata(receiverHerId, getRequestParameters(clientContext))
 
-    suspend fun getApplicationReceipt(id: UUID, clientContext: ClientContext): ApplicationReceiptResponse {
-        val xml = internalClient.getBusinessDocument(id, getRequestParameters(clientContext)).let(toXML())
+    suspend fun getApplicationReceipt(id: String, clientContext: ClientContext): ApplicationReceiptResponse {
+        val xml =
+            internalClient.getBusinessDocument(UUID.fromString(id), getRequestParameters(clientContext)).let(toXML())
         val appRec = ApplicationReceiptDeserializer.deserializeAppRec(xml)
         return ApplicationReceiptResponse(
             id = appRec.id,

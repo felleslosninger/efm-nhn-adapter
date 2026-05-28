@@ -1,9 +1,11 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
 import java.time.OffsetDateTime
-import kotlin.uuid.ExperimentalUuidApi
 import kotlinx.serialization.Serializable
 import no.ks.fiks.nhn.msh.MessageWithMetadata
+
+@Serializable
+data class GetDocumentInput(val id: String)
 
 @Serializable
 data class IncomingMessage(
@@ -15,7 +17,6 @@ data class IncomingMessage(
     val isAppRec: Boolean,
 )
 
-@OptIn(ExperimentalUuidApi::class)
 fun MessageWithMetadata.toInMessage(): IncomingMessage =
     IncomingMessage(
         this.id.toString(),

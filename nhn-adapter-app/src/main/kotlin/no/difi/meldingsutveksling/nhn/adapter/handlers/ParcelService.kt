@@ -1,28 +1,27 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import com.nimbusds.jose.JWSAlgorithm
+import com.nimbusds.jose.JWSObject
+import com.nimbusds.jose.util.X509CertChainUtils
 import java.nio.charset.StandardCharsets
 import java.security.cert.X509Certificate
+import java.text.ParseException
 import no.difi.asic.SignatureMethod
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.ApplicationReceiptResponse
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.ApplicationReceiptSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentResponse
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DialogmeldingSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.toSerializable
-import no.difi.meldingsutveksling.nhn.adapter.integration.virksert.VirksertService
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
-import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
-import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingApplicationReceipt
-import no.difi.meldingsutveksling.nhn.adapter.model.OutgoingBusinessDocument
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
-import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.AsicParser
 import no.difi.move.common.dokumentpakking.CmsAlgorithm
 import no.difi.move.common.dokumentpakking.CreateCMSEncryptedAsice
+import no.difi.move.common.dokumentpakking.CreateSignedJWT
 import no.difi.move.common.dokumentpakking.DecryptCMSDocument
 import no.difi.move.common.dokumentpakking.JavaWebEncryption
-import no.difi.move.common.dokumentpakking.JavaWebToken
-import no.difi.move.common.dokumentpakking.PartUtils
+import no.difi.move.common.dokumentpakking.VerifyJWT
 import no.difi.move.common.dokumentpakking.domain.AsicEAttachable
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResource
@@ -35,48 +34,41 @@ import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
 import org.springframework.http.codec.multipart.Part
 import org.springframework.util.MimeType
-import org.springframework.util.MultiValueMap
 
 class ParcelService(
+    private val verifyJWT: VerifyJWT,
     private val asicParser: AsicParser,
     private val keystoreHelper: KeystoreHelper,
-    private val virksertService: VirksertService,
     private val decryptCMSDocument: DecryptCMSDocument,
     private val createCmsEncryptedAsice: CreateCMSEncryptedAsice,
     private val resourceFactory: InMemoryWithTempFileFallbackResourceFactory,
 ) {
-    fun signAndEncrypt(payload: String, clientContext: ClientContext): String {
-        val signed = JavaWebToken.sign(payload, keystoreHelper.loadPrivateKey())
-        return JavaWebEncryption.encrypt(signed, certificate(clientContext))
+    fun signAndEncrypt(payload: String, certificate: X509Certificate): String {
+        val signed =
+            CreateSignedJWT.createSignedJWT(
+                CreateSignedJWT.Input.builder()
+                    .payload(payload)
+                    .privateKey(keystoreHelper.loadPrivateKey())
+                    .algorithm(JWSAlgorithm.PS256)
+                    .certificate(keystoreHelper.x509Certificate)
+                    .build()
+            )
+        return JavaWebEncryption.encrypt(signed, certificate)
     }
 
-    fun getOutgoingBusinessDocument(
-        multipartData: MultiValueMap<String, Part>,
-        clientContext: ClientContext,
-    ): OutgoingBusinessDocument {
-        val payload = getPayload(multipartData, clientContext)
-        return jsonParser.decodeFromString<OutgoingBusinessDocument>(payload)
-    }
-
-    private fun getPayload(multipartData: MultiValueMap<String, Part>, clientContext: ClientContext): String {
-        val part = multipartData.getFirst(MultipartNames.FORRETNINGSMELDING)!!
-        val jweToken = PartUtils.toString(part)
-        return decryptAndVerify(jweToken, clientContext)
-    }
-
-    fun getOutgoingApplicationReceipt(jweToken: String, clientContext: ClientContext): OutgoingApplicationReceipt {
-        val json = decryptAndVerify(jweToken, clientContext)
-        return jsonParser.decodeFromString<OutgoingApplicationReceipt>(json)
-    }
-
-    private fun decryptAndVerify(jweToken: String, clientContext: ClientContext): String {
+    fun decryptAndVerify(jweToken: String): JWSObject {
         val signed = JavaWebEncryption.decrypt(jweToken, keystoreHelper.loadPrivateKey())
-        val certificate = certificate(clientContext)
-        return JavaWebToken.verify(signed, certificate)
+        return verifyJWT.verify(signed)
     }
 
-    private fun certificate(clientContext: ClientContext): X509Certificate =
-        virksertService.getCertificate(clientContext.supplier ?: clientContext.consumer)
+    fun getSigningCertificate(jwsObject: JWSObject): X509Certificate {
+        try {
+            return X509CertChainUtils.parse(jwsObject.header.x509CertChain).first()
+                ?: throw IllegalArgumentException("Expected to find certificate in JWS header!")
+        } catch (e: ParseException) {
+            throw IllegalStateException("Could not parse certificate in JWS heade!", e)
+        }
+    }
 
     fun getAttachments(part: Part): List<Document> {
         val resource = resourceFactory.getResource("dph-", ".asic.cms")
@@ -90,9 +82,9 @@ class ParcelService(
         return asicParser.parse(asice)
     }
 
-    fun getDokumentpakke(applicationReceipt: ApplicationReceiptResponse, clientContext: ClientContext): Resource =
+    fun getDokumentpakke(applicationReceipt: ApplicationReceiptResponse, certificate: X509Certificate): Resource =
         createAndEncryptAsic(
-            clientContext,
+            certificate,
             listOf(
                 Attachment(
                     AttachmentNames.KVITTERING,
@@ -105,7 +97,7 @@ class ParcelService(
             ),
         )
 
-    fun getDokumentpakke(businessDocument: BusinessDocumentResponse, clientContext: ClientContext): Resource {
+    fun getDokumentpakke(businessDocument: BusinessDocumentResponse, certificate: X509Certificate): Resource {
         val xml = DialogmeldingSerializer.serializeDialogmelding(businessDocument.dialogmelding)
         val attachments = ArrayList<Attachment>()
         attachments.add(
@@ -125,28 +117,28 @@ class ParcelService(
             }
         )
 
-        return createAndEncryptAsic(clientContext, attachments)
+        return createAndEncryptAsic(certificate, attachments)
     }
 
-    fun getForretningsmelding(businessDokument: BusinessDocumentResponse, clientContext: ClientContext): Resource {
+    fun getForretningsmelding(businessDokument: BusinessDocumentResponse, certificate: X509Certificate): Resource {
         val json = jsonParser.encodeToString(businessDokument.toSerializable())
-        val jwe = signAndEncrypt(json, clientContext)
+        val jwe = signAndEncrypt(json, certificate)
         return ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
     }
 
-    fun getForretningsmelding(applicationReceipt: ApplicationReceiptResponse, clientContext: ClientContext): Resource {
+    fun getForretningsmelding(applicationReceipt: ApplicationReceiptResponse, certificate: X509Certificate): Resource {
         val json = jsonParser.encodeToString(applicationReceipt.toSerializable())
-        val jwe = signAndEncrypt(json, clientContext)
+        val jwe = signAndEncrypt(json, certificate)
         return ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
     }
 
-    private fun createAndEncryptAsic(clientContext: ClientContext, attachments: List<Attachment>): Resource {
+    private fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<Attachment>): Resource {
         val resource: InMemoryWithTempFileFallbackResource = inMemoryWithTempFileFallbackResource()
 
         createCmsEncryptedAsice.createCmsEncryptedAsice(
             CreateCMSEncryptedAsice.Input.builder()
                 .documents(attachments.stream())
-                .certificate(certificate(clientContext))
+                .certificate(certificate)
                 .signatureMethod(SignatureMethod.CAdES)
                 .signatureHelper(keystoreHelper.signatureHelper)
                 .keyEncryptionScheme(CmsAlgorithm.RSAES_OAEP)
