@@ -40,7 +40,7 @@
         <msh-client.version>1.6.0</msh-client.version>
         <helseid.version>1.1.0</helseid.version>
         <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
-        <efm-common.version>DEV-SNAPSHOT</efm-common.version>
+        <efm-common.version>2.1.0-RC3</efm-common.version>
         <netty.version>4.2.13.Final</netty.version>
     </properties>
 
