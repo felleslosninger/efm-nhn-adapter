@@ -20,7 +20,7 @@ import no.difi.move.common.dokumentpakking.CmsAlgorithm
 import no.difi.move.common.dokumentpakking.CreateCMSEncryptedAsice
 import no.difi.move.common.dokumentpakking.CreateSignedJWT
 import no.difi.move.common.dokumentpakking.DecryptCMSDocument
-import no.difi.move.common.dokumentpakking.JavaWebEncryption
+import no.difi.move.common.dokumentpakking.JsonWebEncryption
 import no.difi.move.common.dokumentpakking.VerifyJWT
 import no.difi.move.common.dokumentpakking.domain.AsicEAttachable
 import no.difi.move.common.dokumentpakking.domain.Document
@@ -53,11 +53,11 @@ class ParcelService(
                     .certificate(keystoreHelper.x509Certificate)
                     .build()
             )
-        return JavaWebEncryption.encrypt(signed, certificate)
+        return JsonWebEncryption.encrypt(signed, certificate)
     }
 
     fun decryptAndVerify(jweToken: String): JWSObject {
-        val signed = JavaWebEncryption.decrypt(jweToken, keystoreHelper.loadPrivateKey())
+        val signed = JsonWebEncryption.decrypt(jweToken, keystoreHelper.loadPrivateKey())
         return verifyJWT.verify(signed)
     }
 
