@@ -4,6 +4,19 @@ on:
   push:
     branches: [ main ]
 
+  workflow_call:
+  repository_dispatch:
+    types: [build-publish-image]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  pull-requests: write
+
 jobs:
   #Publish Image
   call-workflow-image-build-publish:

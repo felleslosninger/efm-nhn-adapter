@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.5</version>
+        <version>4.0.6</version>
     </parent>
 
     <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
@@ -36,10 +36,12 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <kotlin.version>2.3.20</kotlin.version>
-        <kotest.version>6.1.9</kotest.version>
-        <msh-client.version>1.4.0</msh-client.version>
-        <helseid.version>1.0.1</helseid.version>
-        <idporten-validators.version>1.6.1</idporten-validators.version>
+        <kotest.version>6.1.10</kotest.version>
+        <msh-client.version>1.6.0</msh-client.version>
+        <helseid.version>1.1.0</helseid.version>
+        <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
+        <efm-common.version>3.1.0-RC1</efm-common.version>
+        <netty.version>4.2.13.Final</netty.version>
     </properties>
 
     <profiles>
@@ -47,7 +49,6 @@
             <id>lib</id>
             <modules>
                 <module>nhn-model</module>
-                <module>nhn-crypto</module>
             </modules>
         </profile>
         <profile>
@@ -58,7 +59,6 @@
 
             <modules>
                 <module>nhn-model</module>
-                <module>nhn-crypto</module>
                 <module>nhn-adapter-app</module>
             </modules>
         </profile>
@@ -66,6 +66,21 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- CVE-2026-42583 -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>4.0.6</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-bom</artifactId>
@@ -81,6 +96,13 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
+                <groupId>no.difi.move-common</groupId>
+                <artifactId>move-common-bom</artifactId>
+                <version>${efm-common.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
                 <groupId>io.kotest</groupId>
                 <artifactId>kotest-extensions-spring</artifactId>
                 <version>${kotest.version}</version>
@@ -89,11 +111,6 @@
             <dependency>
                 <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
                 <artifactId>nhn-model</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
-                <artifactId>nhn-crypto</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -107,9 +124,9 @@
                 <version>${helseid.version}</version>
             </dependency>
             <dependency>
-                <groupId>no.idporten.validators</groupId>
-                <artifactId>idporten-validators</artifactId>
-                <version>${idporten-validators.version}</version>
+                <groupId>no.idporten.logging</groupId>
+                <artifactId>idporten-log-audit-spring-boot-4-starter</artifactId>
+                <version>${idporten-audit-log.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlinx</groupId>
@@ -124,7 +141,7 @@
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcpkix-jdk18on</artifactId>
-                <version>1.83</version>
+                <version>1.84</version>
             </dependency>
             <dependency>
                 <groupId>io.mockk</groupId>
@@ -141,7 +158,7 @@
             <dependency>
                 <groupId>com.nimbusds</groupId>
                 <artifactId>nimbus-jose-jwt</artifactId>
-                <version>10.8</version>
+                <version>10.9</version>
             </dependency>
             <dependency>
                 <groupId>com.squareup.okio</groupId>
@@ -158,11 +175,67 @@
                 <artifactId>kotlin-logging-jvm</artifactId>
                 <version>3.0.5</version>
             </dependency>
+            <!-- CVE-2026-42402 -->
+            <dependency>
+                <groupId>org.apache.neethi</groupId>
+                <artifactId>neethi</artifactId>
+                <version>3.2.2</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
+    <dependencies>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib</artifactId>
+            <version>${kotlin.version}</version>
+        </dependency>
+    </dependencies>
+
     <build>
+        <sourceDirectory>src/main/kotlin</sourceDirectory>
+        <testSourceDirectory>src/test/kotlin</testSourceDirectory>
         <plugins>
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+                <version>${kotlin.version}</version>
+                <executions>
+                    <execution>
+                        <id>compile</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>test-compile</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>test-compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <jvmTarget>${java.version}</jvmTarget>
+                    <compilerPlugins>
+                        <plugin>spring</plugin>
+                        <plugin>kotlinx-serialization</plugin>
+                    </compilerPlugins>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-serialization</artifactId>
+                        <version>${kotlin.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-allopen</artifactId>
+                        <version>${kotlin.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -174,7 +247,7 @@
             <plugin>
                 <groupId>org.jetbrains.dokka</groupId>
                 <artifactId>dokka-maven-plugin</artifactId>
-                <version>2.1.0</version>
+                <version>2.2.0</version>
                 <executions>
                     <execution>
                         <id>generate-javadoc</id>

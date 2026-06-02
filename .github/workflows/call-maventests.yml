@@ -3,6 +3,15 @@ name: Build and scan containers
 on:
   pull_request:
     branches: [ main ]
+    types: [ opened, edited, synchronize, reopened ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
 
 jobs:
   call-workflow-maven-build:

@@ -1,0 +1,53 @@
+package no.difi.meldingsutveksling.nhn.adapter.integration
+
+import java.time.Duration
+import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
+import no.ks.fiks.helseid.HelseIdClient
+import no.ks.fiks.helseid.dpop.ProofBuilder
+import no.ks.fiks.nhn.ar.AdresseregisteretClient
+import no.ks.fiks.nhn.flr.Credentials
+import no.ks.fiks.nhn.flr.FastlegeregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretService
+import no.ks.fiks.nhn.msh.Client
+import no.ks.fiks.nhn.msh.ClientFactory
+import no.ks.fiks.nhn.msh.Configuration
+import no.ks.fiks.nhn.msh.HelseIdConfiguration
+import no.ks.fiks.nhn.msh.MshInternalClient
+
+object IntegrationBeans {
+    fun flrClient(flrConfig: NhnConfig) =
+        FastlegeregisteretClient(
+            FastlegeregisteretService(flrConfig.url, Credentials(flrConfig.username, flrConfig.password))
+        )
+
+    fun arClient(arConfig: NhnConfig): AdresseregisteretClient =
+        AdresseregisteretClient(
+            no.ks.fiks.nhn.ar.AdresseregisteretService(
+                arConfig.url,
+                no.ks.fiks.nhn.ar.Credentials(arConfig.username, arConfig.password),
+            ),
+            no.ks.fiks.nhn.ar.CacheConfig(10000, Duration.ofMinutes(15)),
+        )
+
+    fun mshClient(helseIdConfig: HelseIdConfiguration, mshUrl: String) =
+        ClientFactory.createClient(Configuration(helseIdConfig, mshUrl, "digdir"))
+
+    fun mshInternalClient(helseIdConfig: HelseIdConfiguration, mshUrl: String): MshInternalClient =
+        MshInternalClient(
+            baseUrl = mshUrl,
+            sourceSystem = "digdir",
+            defaultTokenParams = helseIdConfig.tokenParams,
+            helseIdClient =
+                HelseIdClient(
+                    no.ks.fiks.helseid.Configuration(
+                        clientId = helseIdConfig.clientId,
+                        jwk = helseIdConfig.jwk,
+                        environment = helseIdConfig.environment,
+                    )
+                ),
+            proofBuilder = ProofBuilder(helseIdConfig.jwk),
+        )
+
+    fun mshService(mshClient: Client, internalClient: MshInternalClient) = MshService(mshClient, internalClient)
+}

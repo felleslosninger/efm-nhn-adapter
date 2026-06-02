@@ -1,0 +1,25 @@
+spring:
+  application:
+    environment: 'dev'
+
+nhn:
+  services:
+    ar:
+      url: "https://ws-web.test.nhn.no/v1/Ar"
+    flr:
+      url: "https://ws-web.test.nhn.no/v2/flr"
+    msh:
+      url: "https://api.tjener.test.melding.nhn.no"
+
+oauth2:
+  helse-id:
+    issuer: "https://helseid-sts.test.nhn.no"
+    audience: "https://helseid-sts.test.nhn.no"
+
+security:
+  delegation-source: "https://tt02.altinn.no/"
+  trusted-issuers:
+    - "https://test.maskinporten.no/"
+
+certificate:
+  mode: TEST

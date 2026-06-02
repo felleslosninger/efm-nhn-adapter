@@ -4,20 +4,14 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.modules.SerializersModule
-import no.difi.meldingsutveksling.nhn.adapter.model.FeilmeldingForApplikasjonskvitteringSerializer
-import no.difi.meldingsutveksling.nhn.adapter.model.IdSerializer
 import no.difi.meldingsutveksling.nhn.adapter.model.StatusForMottakAvMeldingSerializer
-import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.StatusForMottakAvMelding
-import no.ks.fiks.nhn.msh.Id
 
 val jsonParser = Json {
     ignoreUnknownKeys = true
     classDiscriminator = "type"
     serializersModule = SerializersModule {
         contextual(StatusForMottakAvMelding::class, StatusForMottakAvMeldingSerializer)
-        contextual(FeilmeldingForApplikasjonskvittering::class, FeilmeldingForApplikasjonskvitteringSerializer)
-        contextual(Id::class, IdSerializer)
     }
 }
 

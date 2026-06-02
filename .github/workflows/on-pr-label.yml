@@ -1,0 +1,13 @@
+name: On PR label
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  on-pr-label:
+    uses: felleslosninger/github-workflows/.github/workflows/on-pr-label.yml@main

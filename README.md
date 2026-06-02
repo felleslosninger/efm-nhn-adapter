@@ -21,6 +21,54 @@ Det er planlagt at adapteret skal byggje på eit bibliotek utvikla av KS Digital
 - Maven
 - JUnit 5
 
+## Systemskisse
+
+```mermaid
+flowchart TB
+    subgraph "Internett"
+        Fagsystem[Fagsystem]
+        IP[Integrasjonspunktet]
+    end
+
+    subgraph "Sikker sone"
+        SR[Service Registry]
+        Virksert[Virksert]
+        FREG-Gateway[FREG-Gateway]
+        subgraph "NHN-Adapter"
+            Lookup[Lookup]
+            Messaging[Messaging]
+        end
+    end
+
+    subgraph "Nasjonale registere"
+        FREG[Folkeregisteret]
+        AR[Adresseregisteret]
+        FLR[Fastlegeregisteret]
+    end
+        
+    subgraph "Helsenettet"
+        HelseID[HelseId]
+        MSH[MSH API]
+    end
+
+    Fagsystem --> IP
+    IP --> |Maskinporten| SR 
+    IP --> |Maskinporten + JOSE + CMS encrypted ASiC-e| Messaging
+    
+    SR --> FREG-Gateway
+    SR --> Lookup   
+    SR --> Virksert
+
+    FREG-Gateway --> |Maskinporten| FREG
+
+    Lookup --> AR
+    Lookup --> FLR
+
+    Messaging --> Lookup
+    Messaging --> HelseID
+    Messaging --> |DPOP| MSH
+```
+
 ## Caser
  
 ### Case 1 - Sending til fastlege med FNR
@@ -38,11 +86,11 @@ sequenceDiagram
     Integrasjonspunktet ->> "Service Registry": DPH + FNR
     "Service Registry" ->> "NHN Adapter": FNr
     "NHN Adapter" ->> Fastlegeregisteret: FNr
-    Fastlegeregisteret ->> "NHN Adapter" : HerId1
-    "NHN Adapter" ->> Adresseregisteret: HerId1
-    Adresseregisteret ->> "NHN Adapter": HerId2 
-    "NHN Adapter" ->> "Service Registry": HerId1 + HerId2 
-    "Service Registry" ->> Integrasjonspunktet: Digdir sertifikat + HerId1 + HerId2
+    Fastlegeregisteret ->> "NHN Adapter" : HerId
+    "NHN Adapter" ->> Adresseregisteret: HerId
+    Adresseregisteret ->> "NHN Adapter": HerId 
+    "NHN Adapter" ->> "Service Registry": HerId 
+    "Service Registry" ->> Integrasjonspunktet: Digdir sertifikat + HerId
     Integrasjonspunktet --) "NHN Adapter": Meldingsinfo med HerId + vedlegg
     "NHN Adapter" ->> EDI2.0: Meldingsinfo med HerId + vedlegg
     EDI2.0 ->> "NHN Adapter": MessageReference
@@ -67,7 +115,7 @@ sequenceDiagram
     Adresseregisteret ->> "NHN Adapter": HerId
     "NHN Adapter" ->> "Service Registry": HerId
     "Service Registry" ->> Integrasjonspunktet: Digdir sertifikat + HerId
-    Integrasjonspunktet --) "NHN Adapter": Meldingsinfo med HerId + vedlegg
+    Integrasjonspunktet --) "NHN Adapter": Meldingsinfo med HerId + ASiCe
     "NHN Adapter" ->> EDI2.0: Meldingsinfo med HerId + vedlegg
     EDI2.0 ->> "NHN Adapter": MessageReference
     "NHN Adapter" ->> Integrasjonspunktet: MessageReference
@@ -85,16 +133,9 @@ sequenceDiagram
     participant "NHN Adapter"
     participant Adresseregisteret
     participant EDI2.0
-    Fagsystem ->> Integrasjonspunktet: HerId2 
-    Integrasjonspunktet ->> "Service Registry": DPH + HerId2
-    "Service Registry" ->> "NHN Adapter": HerId2
-    "NHN Adapter" ->> Adresseregisteret: HerId2
-    Adresseregisteret ->> "NHN Adapter": HerId1 + HerId2 + Orgnr
-    "NHN Adapter" ->> "Service Registry": HerId1 + HerId2 + Orgnr
-    "Service Registry" ->> Integrasjonspunktet: Digdir sertifikat + HerId1 + HerId2 + Orgnr
-    Integrasjonspunktet ->> "NHN Adapter": Digdir sertifikat + HerId1 + HerId2 + Orgnr
-    "NHN Adapter" ->> EDI2.0: Meldingsinfo med HerId + vedlegg
-    EDI2.0 ->> "NHN Adapter": MessageReference
-    "NHN Adapter" ->> Integrasjonspunktet: MessageReference
+    Integrasjonspunktet ->> "NHN Adapter": IP sertifikat + HerId + DocumentId
+    "NHN Adapter" ->> EDI2.0: HerId + DocumentId
+    EDI2.0 ->> "NHN Adapter": Meldingsinfo med HerId + vedlegg
+    "NHN Adapter" ->> Integrasjonspunktet: Meldingsinfo med HerId + ASiCe
     Integrasjonspunktet ->> Fagsystem: SBH + ASiCe 
 ```

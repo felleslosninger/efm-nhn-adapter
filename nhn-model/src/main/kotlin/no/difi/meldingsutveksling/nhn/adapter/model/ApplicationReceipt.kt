@@ -7,19 +7,50 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.StatusForMottakAvMelding
-import no.ks.fiks.nhn.msh.ApplicationReceiptInfo
 
 @Serializable
-enum class ApprecStatus(val value: String) {
+data class IncomingApplicationReceipt(
+    val id: String,
+    val rawReceipt: String,
+    val payload: DialogmeldingKvitteringMessage,
+)
+
+@Serializable
+data class OutgoingApplicationReceipt(
+    val senderHerId: Int,
+    val payload: DialogmeldingKvitteringMessage,
+)
+
+@Serializable
+data class DialogmeldingKvitteringMessage(
+    val relatedToMessageId: String,
+    val status: DialogmeldingKvitteringStatus,
+    val messages: List<KvitteringStatusMessage>?,
+    val hoveddokument: String? = null
+)
+
+enum class DialogmeldingKvitteringStatus {
+    OK,
+    REJECTED,
+    OK_ERROR_IN_MESSAGE_PART
+}
+
+@Serializable
+data class KvitteringStatusMessage(
+    val code: String,
+    val text: String,
+)
+
+@Serializable
+enum class ApplicationReceiptStatus(val value: String) {
     OK("Ok"),
     REJECTED("Rejected"),
     OK_ERROR_IN_MESSAGE_PART("OkErrorInMessagePart");
 
     companion object {
-        fun fromValue(value: String?): ApprecStatus {
-            for (b in ApprecStatus.values()) {
+        fun fromValue(value: String?): ApplicationReceiptStatus {
+            for (b in entries) {
                 if (b.value.equals(value, true)) {
                     return b
                 }
@@ -28,26 +59,6 @@ enum class ApprecStatus(val value: String) {
         }
     }
 }
-
-@Serializable
-data class SerializableApplicationReceiptInfo(
-    val recieverHerId: Int,
-    @Serializable(with = StatusForMottakAvMeldingSerializer::class) val status: StatusForMottakAvMelding?,
-    val errors: List<SerializableIncomingApplicationReceiptError>,
-)
-
-@Serializable
-data class SerializableIncomingApplicationReceiptError(
-    @Serializable(with = FeilmeldingForApplikasjonskvitteringSerializer::class)
-    val type: FeilmeldingForApplikasjonskvittering,
-    val details: String? = null,
-    val errorCode: String? = null,
-    val description: String? = null,
-    val oid: String? = null,
-)
-
-fun ApplicationReceiptInfo.toSerializable(): SerializableApplicationReceiptInfo =
-    SerializableApplicationReceiptInfo(this.receiverHerId, this.status, this.errors.map { it.toSerializable() })
 
 object StatusForMottakAvMeldingSerializer : KSerializer<StatusForMottakAvMelding> {
     override val descriptor: SerialDescriptor =
@@ -65,18 +76,3 @@ object StatusForMottakAvMeldingSerializer : KSerializer<StatusForMottakAvMelding
     }
 }
 
-object FeilmeldingForApplikasjonskvitteringSerializer : KSerializer<FeilmeldingForApplikasjonskvittering> {
-    override val descriptor: SerialDescriptor =
-        PrimitiveSerialDescriptor("FeilmeldingForApplikasjonskvittering", PrimitiveKind.STRING)
-
-    override fun serialize(encoder: Encoder, value: FeilmeldingForApplikasjonskvittering) {
-        encoder.encodeString(value.verdi)
-    }
-
-    @OptIn(ExperimentalStdlibApi::class)
-    override fun deserialize(decoder: Decoder): FeilmeldingForApplikasjonskvittering {
-        val verdi = decoder.decodeString()
-        return FeilmeldingForApplikasjonskvittering.entries.find { it.verdi == verdi }
-            ?: throw IllegalArgumentException("Unknown FeilmeldingForApplikasjonskvittering verdi: $verdi")
-    }
-}

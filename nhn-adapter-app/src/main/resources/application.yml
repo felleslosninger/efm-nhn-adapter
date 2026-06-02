@@ -1,15 +1,23 @@
+---
+project:
+  application-name: '@pom.name@'
+  version: '@project.version@'
+
 spring:
   webflux:
-    base-path: /nhn-adapter
-  codecs:
-    max-in-memory-size: 12MB
+    base-path: /api
+    multipart:
+      max-in-memory-size: 50MB
   http:
     codecs:
-      max-in-memory-size: 12MB
+      max-in-memory-size: 50MB
+  web:
+    error:
+      include-message: always
+
 server:
   port: 8080
-  error:
-    include-message: always
+
 management:
   server:
     port: 8090
@@ -29,47 +37,54 @@ management:
       exposure:
         include: "info,env,prometheus,health"
     enabled-by-default: true
+
+digdir:
+  audit:
+    application-name: no.difi.meldingsutveksling.nhn-adapter:nhn-adapter-app
+    application-environment: ${spring.application.environment}
+    filters:
+      admin-header: false
+      bearer-token: true
+      ip-address: true
+    prometheus:
+      counter: true
+
 nhn:
   services:
     ar:
-      url: "https://ws-web.test.nhn.no/v1/Ar"
       username: ${NHN_SERVICES_USERNAME}
       password: ${NHN_SERVICES_PASSWORD}
     flr:
-      url: "https://ws-web.test.nhn.no/v2/flr"
       username: ${NHN_SERVICES_USERNAME}
       password: ${NHN_SERVICES_PASSWORD}
     msh:
-      url: "https://api.tjener.test.melding.nhn.no"
       source-system: "digidir"
+
 oauth2:
   helse-id:
     client-id: ${NHN_CLIENT_ID}
     private-key: ${NHN_PRIVATE_KEY}
-    issuer: "https://helseid-sts.test.nhn.no"
-    audience: "https://helseid-sts.test.nhn.no"
-crypto:
-  encryption:
-    keystore:
-      base64Value: ${ENCRYPTION_KEYSTORE_VALUE}
-      alias: ${ENCRYPTION_KEYSTORE_ALIAS}
-      password: ${ENCRYPTION_KEYSTORE_PASSWORD}
-      type: "PKCS12"
-  signature:
-    keystore:
-      base64Value: ${SIGNATURE_KEYSTORE_VALUE}
-      alias: ${SIGNATURE_KEYSTORE_ALIAS}
-      password: ${SIGNATURE_KEYSTORE_PASSWORD}
-      type: "PKCS12"
-  truststore:
-    base64Value: ${SIGNATURE_TRUSTSTORE_VALUE}
-    alias: ${SIGNATURE_TRUSTSTORE_ALIAS}
-    password: ${SIGNATURE_TRUSTSTORE_PASSWORD}
-    type: "PKCS12"
+
+keystore:
+  path: "base64:${KEYSTORE_VALUE}"
+  alias: ${KEYSTORE_ALIAS}
+  password: ${KEYSTORE_PASSWORD}
+  type: "PKCS12"
+
 logging:
   level:
     org.springframework.http.codec.json: INFO
     org.springframework.core.codec: INFO
 
+temp:
+  threshold: 10000000
+  initial-buffer-size: 100000
 
+---
+spring:
+  config:
+    activate:
+      on-cloud-platform: 'kubernetes'
+    import:
+      - 'optional:file:/etc/config/'
 
