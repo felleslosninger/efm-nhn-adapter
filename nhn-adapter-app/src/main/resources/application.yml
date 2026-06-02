@@ -66,7 +66,7 @@ oauth2:
     private-key: ${NHN_PRIVATE_KEY}
 
 keystore:
-  path: "base64:${KEYSTORE_VALUE}"
+  path: ${KEYSTORE_VALUE}
   alias: ${KEYSTORE_ALIAS}
   password: ${KEYSTORE_PASSWORD}
   type: "PKCS12"
