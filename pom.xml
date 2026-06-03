@@ -41,7 +41,7 @@
         <helseid.version>1.1.0</helseid.version>
         <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
         <efm-common.version>3.1.0-RC1</efm-common.version>
-        <netty.version>4.2.13.Final</netty.version>
+        <netty.version>4.2.15.Final</netty.version>
     </properties>
 
     <profiles>
