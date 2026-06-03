@@ -147,10 +147,10 @@ class BeanRegistration :
         registerBean { LookupHandler(bean(), bean(), bean()) }
         registerBean<RouterFunction<*>> {
             coRouter {
-                inHandler(bean())
-                outHandler(bean())
-                lookupHandler(bean())
-            }
+                    inHandler(bean())
+                    outHandler(bean())
+                    lookupHandler(bean())
+                }
                 .filter(nhnErrorFilter())
         }
     })

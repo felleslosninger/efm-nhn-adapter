@@ -149,11 +149,12 @@ class OutHandler(
                             metadataFiler = message.metadataFiler,
                             conversationRef =
                                 when {
-                                    outgoingBusinessDocument.parentId != null ->
+                                    outgoingBusinessDocument.parentId != null -> {
                                         ConversationRef(
                                             outgoingBusinessDocument.parentId,
                                             outgoingBusinessDocument.conversationId,
                                         )
+                                    }
                                     else -> null
                                 },
                         )

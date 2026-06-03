@@ -17,7 +17,5 @@ data class KeystoreConfig(
     val password: String,
     val type: String,
     val path: String,
-    val lockProvider: Boolean = false
+    val lockProvider: Boolean = false,
 )
-
-
