@@ -16,6 +16,7 @@ import no.difi.meldingsutveksling.nhn.adapter.PropertyNames.SERVICES_MSH_URL
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.config.CertificateConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
+import no.difi.meldingsutveksling.nhn.adapter.config.KeystoreConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.SecurityConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.TempFileConfig
@@ -37,7 +38,9 @@ import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.boot.io.ApplicationResourceLoader
 import org.springframework.core.env.get
+import org.springframework.core.io.ResourceLoader
 import org.springframework.http.HttpStatus
 import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.ServerRequest
@@ -85,9 +88,9 @@ private fun properties() = BeanRegistrarDsl {
         }
     }
 
-    registerBean<KeystoreProperties>("KeystoreProperties") {
-        Binder.get(env).bind("keystore", KeystoreProperties::class.java).orElseThrow {
-            IllegalStateException("keystore configuration was not found.")
+    registerBean<KeystoreConfig>("KeystoreConfig") {
+        Binder.get(env).bind("keystore", KeystoreConfig::class.java).orElseThrow {
+            IllegalStateException("KeystoreConfig configuration was not found.")
         }
     }
 
@@ -95,6 +98,20 @@ private fun properties() = BeanRegistrarDsl {
         Binder.get(env).bind("certificate", CertificateConfig::class.java).orElseThrow {
             IllegalStateException("certificate configuration was not found.")
         }
+    }
+
+    registerBean { ApplicationResourceLoader.get() }
+
+    registerBean<KeystoreProperties> {
+        val resourceLoader: ResourceLoader = bean()
+        val config: KeystoreConfig = bean()
+
+        KeystoreProperties()
+            .setAlias(config.alias)
+            .setPassword(config.password)
+            .setType(config.type)
+            .setPath(resourceLoader.getResource(config.path))
+            .setLockProvider(config.lockProvider)
     }
 }
 
@@ -130,10 +147,10 @@ class BeanRegistration :
         registerBean { LookupHandler(bean(), bean(), bean()) }
         registerBean<RouterFunction<*>> {
             coRouter {
-                    inHandler(bean())
-                    outHandler(bean())
-                    lookupHandler(bean())
-                }
+                inHandler(bean())
+                outHandler(bean())
+                lookupHandler(bean())
+            }
                 .filter(nhnErrorFilter())
         }
     })

@@ -11,3 +11,13 @@ data class SecurityConfig(val trustedIssuers: List<String>, val delegationSource
 data class TempFileConfig(val threshold: Int, val initialBufferSize: Int, val directory: File?)
 
 data class CertificateConfig(val mode: String)
+
+data class KeystoreConfig(
+    val alias: String,
+    val password: String,
+    val type: String,
+    val path: String,
+    val lockProvider: Boolean = false
+)
+
+
