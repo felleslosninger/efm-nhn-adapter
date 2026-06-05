@@ -1,11 +1,14 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.audit.clientContext
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
+import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
+import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toJWEToken
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
@@ -21,6 +24,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.idporten.logging.audit.AuditEntry
+import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
@@ -28,8 +32,10 @@ import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.json
+import tools.jackson.databind.json.JsonMapper
 
 class InHandler(
+    private val jsonMapper: JsonMapper,
     private val mshService: MshService,
     private val parcelService: ParcelService,
     private val auditLogService: AuditLogService,
@@ -54,41 +60,6 @@ class InHandler(
         }
     }
 
-    suspend fun getApplicationReceipt(request: ServerRequest, clientContext: ClientContext): ServerResponse {
-        auditLogService.log(
-            AuditEntry.builder()
-                .auditId(NHNAdapterAuditIdentifier.GET_APPLICATION_RECEIPT)
-                .message("Get application receipt")
-                .clientContext(clientContext)
-        ) { auditEntryBuilder ->
-            val jWSObject = parcelService.decryptAndVerify(request.toJWEToken())
-            val input = jsonParser.decodeFromString<GetDocumentInput>(jWSObject.payload.toString())
-            val certificate = parcelService.getSigningCertificate(jWSObject)
-            val id = input.id
-
-            auditEntryBuilder.attribute("id", id)
-
-            val receipt = mshService.getApplicationReceipt(id, clientContext)
-
-            auditEntryBuilder.attribute("receiverHerId", receipt.receiverHerId)
-            auditEntryBuilder.attribute("senderHerId", receipt.senderHerId)
-            securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receipt.receiverHerId))
-            val forretningsmelding = parcelService.getForretningsmelding(receipt, certificate)
-            val dokumentpakke = parcelService.getDokumentpakke(receipt, certificate)
-
-            return ServerResponse.ok()
-                .multipartMixed()
-                .bodyValueAndAwait(
-                    MultipartBodyBuilder()
-                        .apply {
-                            forretningsmelding(forretningsmelding)
-                            dokumentpakke(dokumentpakke)
-                        }
-                        .build()
-                )
-        }
-    }
-
     suspend fun getBusinessDocument(request: ServerRequest, clientContext: ClientContext): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
@@ -102,15 +73,16 @@ class InHandler(
             val id = input.id
 
             auditEntryBuilder.attribute("id", id)
-            val businessDocument: BusinessDocumentResponse = mshService.getBusinessDocument(id, clientContext)
-            val senderHerId = businessDocument.sender.child.herId ?: throw HerIdNotFound()
-            val receiverHerId = businessDocument.receiver.child.herId ?: throw HerIdNotFound()
+            val response: BusinessDocumentResponse = mshService.getBusinessDocument(id, clientContext)
+            val senderHerId = response.sbd.senderHerId
+            val receiverHerId = response.sbd.receiverHerId
             auditEntryBuilder.attribute("senderHerId", senderHerId)
             auditEntryBuilder.attribute("receiverHerId", receiverHerId)
             securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
 
-            val forretningsmelding = parcelService.getForretningsmelding(businessDocument, certificate)
-            val dokumentpakke = parcelService.getDokumentpakke(businessDocument, certificate)
+            val json = jsonMapper.writeValueAsString(response.sbd)
+            val jwe = parcelService.signAndEncrypt(json, certificate)
+            val forretningsmelding = ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
 
             return ServerResponse.ok()
                 .multipartMixed()
@@ -118,7 +90,12 @@ class InHandler(
                     MultipartBodyBuilder()
                         .apply {
                             forretningsmelding(forretningsmelding)
-                            dokumentpakke(dokumentpakke)
+
+                            if (response.attachments.isNotEmpty()) {
+                                val dokumentpakke =
+                                    parcelService.createAndEncryptAsic(certificate, response.attachments)
+                                dokumentpakke(dokumentpakke)
+                            }
                         }
                         .build()
                 )

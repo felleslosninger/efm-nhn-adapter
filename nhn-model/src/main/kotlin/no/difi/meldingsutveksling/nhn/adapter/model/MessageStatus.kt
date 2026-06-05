@@ -10,6 +10,23 @@ data class MessageStatus(
     val apprecStatus: ApplicationReceiptStatus? = null,
 )
 
+enum class ApplicationReceiptStatus(val value: String) {
+    OK("Ok"),
+    REJECTED("Rejected"),
+    OK_ERROR_IN_MESSAGE_PART("OkErrorInMessagePart");
+
+    companion object {
+        fun fromValue(value: String?): ApplicationReceiptStatus {
+            for (b in entries) {
+                if (b.value.equals(value, true)) {
+                    return b
+                }
+            }
+            throw IllegalArgumentException("Unexpected value '$value'")
+        }
+    }
+}
+
 @Serializable
 enum class TransportStatus(val value: String) {
     UNCONFIRMED("Unconfirmed"),

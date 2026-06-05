@@ -47,6 +47,7 @@ import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.coRouter
 import reactor.core.publisher.Mono
+import tools.jackson.databind.json.JsonMapper
 
 private object Names {
     const val ARCONFIG = "ArConfig"
@@ -142,8 +143,8 @@ class BeanRegistration :
         registerBean { SecurityService(bean()) }
         registerBean { KeystoreHelper(bean()) }
         registerBean { ParcelService(bean(), bean(), bean(), bean(), bean(), bean()) }
-        registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
-        registerBean { OutHandler(bean(), bean(), bean(), bean(), bean()) }
+        registerBean { InHandler(bean(), bean(), bean(), bean(), bean(), bean()) }
+        registerBean { OutHandler(jsonMapper(bean()), bean(), bean(), bean(), bean(), bean()) }
         registerBean { LookupHandler(bean(), bean(), bean()) }
         registerBean<RouterFunction<*>> {
             coRouter {
@@ -154,6 +155,8 @@ class BeanRegistration :
                 .filter(nhnErrorFilter())
         }
     })
+
+fun jsonMapper(builder: JsonMapper.Builder): JsonMapper = builder.build()
 
 fun inMemoryWithTempFileFallbackResourceFactory(config: TempFileConfig): InMemoryWithTempFileFallbackResourceFactory =
     InMemoryWithTempFileFallbackResourceFactory(config.threshold, config.initialBufferSize, config.directory)

@@ -20,9 +20,6 @@ fun CoRouterFunctionDsl.outHandler(outHandler: OutHandler) {
     POST("/messages/out", contentType(MediaType.MULTIPART_FORM_DATA).and(accept(MediaType.TEXT_PLAIN))) {
         outHandler.sendMessage(it, getClientContext())
     }
-    POST("/messages/out/receipt", contentType(APPLICATION_JOSE).and(accept(MediaType.TEXT_PLAIN))) {
-        outHandler.sendApplicationReceipt(it, getClientContext())
-    }
 }
 
 fun CoRouterFunctionDsl.lookupHandler(lookupHandler: LookupHandler) {
@@ -35,9 +32,6 @@ fun CoRouterFunctionDsl.inHandler(inHandler: InHandler) {
     }
     POST("/messages/in", contentType(APPLICATION_JOSE).and(accept(MediaType.MULTIPART_MIXED))) {
         inHandler.getBusinessDocument(it, getClientContext())
-    }
-    POST("/messages/in/receipt", contentType(APPLICATION_JOSE).and(accept(MediaType.MULTIPART_MIXED))) {
-        inHandler.getApplicationReceipt(it, getClientContext())
     }
     POST("/messages/in/{messageId}/read") {
         inHandler.markMessageRead(it.getMessageId(), it.getReceiverHerId(), getClientContext())

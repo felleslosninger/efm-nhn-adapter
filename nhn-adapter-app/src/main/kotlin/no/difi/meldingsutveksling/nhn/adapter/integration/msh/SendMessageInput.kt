@@ -1,7 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import java.util.UUID
-import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentMetadata
+import no.difi.meldingsutveksling.nhn.adapter.config.AttachmentMetadata
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.ks.fiks.nhn.msh.ConversationRef

@@ -1,6 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.extensions
 
-import no.difi.meldingsutveksling.nhn.adapter.model.Pasient
+import no.difi.meldingsutveksling.nhn.adapter.config.Pasient
 import no.ks.fiks.hdir.Adressetype
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType

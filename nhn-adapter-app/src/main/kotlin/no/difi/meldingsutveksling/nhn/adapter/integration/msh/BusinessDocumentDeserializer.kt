@@ -5,7 +5,7 @@ import java.io.StringReader
 import javax.xml.transform.stream.StreamSource
 import kotlin.time.toKotlinInstant
 import mu.KotlinLogging
-import no.difi.meldingsutveksling.nhn.adapter.model.IncomingAttachment
+import no.difi.meldingsutveksling.nhn.adapter.config.IncomingAttachment
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingConverter
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils
@@ -38,12 +38,12 @@ import no.ks.fiks.nhn.msh.Sender
 import no.ks.fiks.nhn.parseOffsetDateTimeOrNull
 
 object BusinessDocumentDeserializer {
-    private const val MSG_HEAD_ROOT = "MsgHead"
+    const val MSG_HEAD_ROOT = "MsgHead"
     private const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
 
     private val log = KotlinLogging.logger {}
 
-    fun deserializeMsgHead(xml: String): BusinessDocumentResponse {
+    fun deserializeMsgHead(xml: String): MsgHead {
         XMLUtils.validateRootElement(xml, MSG_HEAD_ROOT)
         if (XMLUtils.getVersion(xml) != MSG_HEAD_VERSION) {
             throw ApplicationReceiptException(
@@ -65,32 +65,25 @@ object BusinessDocumentDeserializer {
                 "Could not find MsgInfo in the provided XML. The message is invalid or of wrong type.",
             )
         }
-        return BusinessDocumentResponse(
-            id = msgHead.msgInfo.msgId,
-            sender = msgHead.getSender(),
-            receiver = msgHead.getReceiver(),
-            dialogmelding = msgHead.getDialogmelding(),
-            attachments = msgHead.getVedlegg(),
-            conversationRef = msgHead.getConversationRef(),
-        )
+
+        return msgHead
     }
 
-    private fun MsgHead.getSender() =
-        with(msgInfo.sender.organisation) { Sender(parent = getParent(), child = getChild()) }
+    fun MsgHead.getSender() = with(msgInfo.sender.organisation) { Sender(parent = getParent(), child = getChild()) }
 
-    private fun MsgHead.getReceiver() =
+    fun MsgHead.getReceiver() =
         with(msgInfo.receiver.organisation) {
             Receiver(parent = getParent(), child = getChild(), patient = getPatient())
         }
 
-    private fun Organisation.getParent() =
+    fun Organisation.getParent() =
         OrganizationCommunicationParty(
             ids = ident.getOrganisasjonId(),
             address = convertAddress(),
             name = organisationName,
         )
 
-    private fun Organisation.getChild() =
+    fun Organisation.getChild() =
         organisation?.let {
             with(organisation) {
                 OrganizationCommunicationParty(
@@ -136,7 +129,7 @@ object BusinessDocumentDeserializer {
             )
         }
 
-    private fun MsgHead.getDialogmelding(): Dialogmelding =
+    fun MsgHead.getDialogmelding(): Dialogmelding =
         document.firstOrNull()?.refDoc?.content?.any?.singleOrNull()?.let {
             when (it) {
                 is no.kith.xmlstds.dialog._2006_10_11.Dialogmelding -> DialogmeldingConverter.toLatest(it)
@@ -145,7 +138,7 @@ object BusinessDocumentDeserializer {
             }
         }!!
 
-    private fun MsgHead.getVedlegg() =
+    fun MsgHead.getAttachments() =
         document.drop(1).mapIndexedNotNull { _, doc ->
             doc.refDoc.let { refDoc ->
                 refDoc
@@ -175,7 +168,7 @@ object BusinessDocumentDeserializer {
             }
         }
 
-    private fun MsgHead.getConversationRef() =
+    fun MsgHead.getConversationRef() =
         if (
             msgInfo.conversationRef?.refToConversation.isNullOrBlank() &&
                 msgInfo.conversationRef?.refToParent.isNullOrBlank()

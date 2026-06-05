@@ -39,7 +39,7 @@ import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.edi.v1_0.AppRecDeserializer
 
 object ApplicationReceiptDeserializer {
-    private const val APP_REC_ROOT = "AppRec"
+    const val APP_REC_ROOT = "AppRec"
     private const val APPREC_VERSION_1_0 = "1.0 2004-11-21"
     private const val APPREC_VERSION_1_1 = "v1.1 2012-02-15"
 

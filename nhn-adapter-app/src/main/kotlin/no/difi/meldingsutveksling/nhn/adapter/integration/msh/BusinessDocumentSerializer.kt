@@ -6,7 +6,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.xml.datatype.DatatypeFactory
 import kotlin.time.Clock
-import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentMetadata
+import no.difi.meldingsutveksling.nhn.adapter.config.AttachmentMetadata
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.kith.xmlstds.base64container.Base64Container
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding

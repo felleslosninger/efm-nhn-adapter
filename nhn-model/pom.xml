@@ -35,6 +35,10 @@
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-datetime-jvm</artifactId>
         </dependency>
+        <dependency>
+            <groupId>no.difi.move-common</groupId>
+            <artifactId>domain</artifactId>
+        </dependency>
     </dependencies>
 
 <!--    <build>-->
