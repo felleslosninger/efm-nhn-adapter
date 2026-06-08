@@ -134,26 +134,28 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
                                 }
                             }
 
-                        businessScope = BusinessScope().apply {
-                            msgHead.getConversationRef()?.let { conversationRef ->
-                                addScope(
-                                    Scope().apply {
-                                        type = ScopeType.CONVERSATION_ID.fullname
-                                        identifier = PROCESS
-                                        instanceIdentifier = conversationRef.refToConversation ?: msgHead.msgInfo.msgId
-                                    }
-                                )
-                                conversationRef.refToParent?.let { refToParent ->
+                        businessScope =
+                            BusinessScope().apply {
+                                msgHead.getConversationRef()?.let { conversationRef ->
                                     addScope(
                                         Scope().apply {
-                                            type = ScopeType.PARENT_ID.fullname
+                                            type = ScopeType.CONVERSATION_ID.fullname
                                             identifier = PROCESS
-                                            instanceIdentifier = refToParent
+                                            instanceIdentifier =
+                                                conversationRef.refToConversation ?: msgHead.msgInfo.msgId
                                         }
                                     )
+                                    conversationRef.refToParent?.let { refToParent ->
+                                        addScope(
+                                            Scope().apply {
+                                                type = ScopeType.PARENT_ID.fullname
+                                                identifier = PROCESS
+                                                instanceIdentifier = refToParent
+                                            }
+                                        )
+                                    }
                                 }
                             }
-                        }
                     }
 
                 senderHerId = msgHead.getSender().child.herId!!
@@ -222,15 +224,16 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
                                 appRec.genDate?.let { genDate -> creationDateAndTime = genDate.toOffsetDateTime() }
                             }
 
-                        businessScope = BusinessScope().apply {
-                            addScope(
-                                Scope().apply {
-                                    type = ScopeType.CONVERSATION_ID.fullname
-                                    identifier = PROCESS
-                                    instanceIdentifier = appRec.id
-                                }
-                            )
-                        }
+                        businessScope =
+                            BusinessScope().apply {
+                                addScope(
+                                    Scope().apply {
+                                        type = ScopeType.CONVERSATION_ID.fullname
+                                        identifier = PROCESS
+                                        instanceIdentifier = appRec.id
+                                    }
+                                )
+                            }
                     }
                 senderHerId = appRec.sender.hcp.toHerId()
                 receiverHerId = appRec.receiver.hcp.toHerId()

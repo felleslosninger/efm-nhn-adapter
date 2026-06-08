@@ -17,7 +17,7 @@ Det er planlagt at adapteret skal byggje på eit bibliotek utvikla av KS Digital
 
 ## Teknologi
 
-- Java 21
+- Java 25
 - Maven
 - JUnit 5
 

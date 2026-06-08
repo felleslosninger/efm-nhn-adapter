@@ -24,7 +24,7 @@ jobs:
     with:
       module-name: nhn-adapter-app
       image-name: efm-nhn-adapter
-      java-version: 21
+      java-version: 25
       slack-channel-id: C05NLQCFR41
     secrets: inherit
 
