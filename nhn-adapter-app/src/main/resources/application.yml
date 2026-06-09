@@ -5,7 +5,7 @@ project:
 
 spring:
   webflux:
-    base-path: /api
+    base-path: /nhn-adapter/api
     multipart:
       max-in-memory-size: 50MB
   http:
