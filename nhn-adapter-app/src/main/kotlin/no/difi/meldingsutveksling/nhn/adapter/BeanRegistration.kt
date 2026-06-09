@@ -117,7 +117,7 @@ private fun properties() = BeanRegistrarDsl {
 }
 
 private fun security() = BeanRegistrarDsl {
-    registerBean { SecurityBeans.securityFilterChain(bean(), bean()) }
+    registerBean { SecurityBeans.securityFilterChain(bean(), bean(), bean()) }
     registerBean { SecurityBeans.helseIdConfiguration(bean<HelseId>()) }
 }
 
