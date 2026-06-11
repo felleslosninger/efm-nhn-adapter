@@ -47,7 +47,7 @@ fun Jwt.getSupplier(): Iso6523? = getIso6523(Claims.SUPPLIER)
 
 fun Jwt.getDelegationSource(): String? = getClaimAsString(Claims.DELEGATION_SOURCE)
 
-fun Jwt.getScopes(): Set<String> = getClaimAsString(Claims.SCOPE).split(' ').toSet()
+fun Jwt.getScopes(): Set<String> = getClaimAsString(Claims.SCOPE)?.split(' ')?.toSet() ?: emptySet()
 
 private fun Jwt.getIso6523(claim: String): Iso6523? {
     val claimAsMap = getClaimAsMap(claim)
@@ -57,5 +57,5 @@ private fun Jwt.getIso6523(claim: String): Iso6523? {
 
 fun SecurityContext.getJwt(): Jwt? {
     val authentication = this.authentication
-    return if (authentication is JwtAuthenticationToken) authentication.token as Jwt else null
+    return if (authentication is JwtAuthenticationToken) authentication.token else null
 }

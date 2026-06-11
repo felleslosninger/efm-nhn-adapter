@@ -14,7 +14,7 @@ object SecurityBeans {
     fun securityFilterChain(
         http: ServerHttpSecurity,
         config: SecurityConfig,
-        webFluxProperties: WebFluxProperties
+        webFluxProperties: WebFluxProperties,
     ): SecurityWebFilterChain {
         http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)

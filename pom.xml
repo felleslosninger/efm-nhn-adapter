@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.0</version>
     </parent>
 
     <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
@@ -41,7 +41,6 @@
         <helseid.version>1.3.0</helseid.version>
         <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
         <efm-common.version>3.1.0-RC1</efm-common.version>
-        <netty.version>4.2.15.Final</netty.version>
     </properties>
 
     <profiles>
@@ -66,18 +65,10 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- CVE-2026-42583 -->
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-bom</artifactId>
-                <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
-                <version>4.0.6</version>
+                <version>4.1.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
