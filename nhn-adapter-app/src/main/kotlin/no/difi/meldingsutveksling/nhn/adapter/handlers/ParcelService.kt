@@ -71,13 +71,6 @@ class ParcelService(
         return asicParser.parse(asice)
     }
 
-    //    fun getForretningsmelding(businessDokument: BusinessDocumentResponse, certificate:
-    // X509Certificate): Resource {
-    //        val json = jsonParser.encodeToString(businessDokument.toSerializable())
-    //        val jwe = signAndEncrypt(json, certificate)
-    //        return ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
-    //    }
-
     fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<Attachment>): Resource {
         val resource: InMemoryWithTempFileFallbackResource = inMemoryWithTempFileFallbackResource()
 
