@@ -69,7 +69,7 @@ keystore:
   path: ${KEYSTORE_VALUE}
   alias: ${KEYSTORE_ALIAS}
   password: ${KEYSTORE_PASSWORD}
-  type: "JKS"
+  type: ${KEYSTORE_TYPE:JKS}
 
 logging:
   level:
