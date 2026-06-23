@@ -40,7 +40,7 @@
         <msh-client.version>1.7.0</msh-client.version>
         <helseid.version>1.3.0</helseid.version>
         <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
-        <efm-common.version>3.1.0-RC1</efm-common.version>
+        <efm-common.version>3.1.0</efm-common.version>
     </properties>
 
     <profiles>
@@ -65,6 +65,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
+                <artifactId>nhn-model</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -98,11 +103,6 @@
                 <artifactId>kotest-extensions-spring</artifactId>
                 <version>${kotest.version}</version>
                 <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
-                <artifactId>nhn-model</artifactId>
-                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>no.ks.fiks</groupId>
@@ -291,11 +291,16 @@
             <id>central</id>
             <name>Central Repository</name>
             <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
         <repository>
             <id>github</id>
-            <name>GitHub felleslosninger Apache Maven Packages</name>
-            <url>https://maven.pkg.github.com/felleslosninger/.github</url>
+            <url>https://maven.pkg.github.com/felleslosninger/*</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
     </repositories>
 

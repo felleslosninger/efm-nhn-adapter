@@ -1,0 +1,30 @@
+name: Call CI PR Checks
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, edited, synchronize, reopened ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: read
+  pull-requests: write
+
+jobs:
+  call-build-and-scan-nhn-adapter-app-image:
+    uses: felleslosninger/github-workflows/.github/workflows/ci-pr-checks-image.yml@main
+    with:
+      application-type: spring-boot
+      java-version: 25
+      module-name: nhn-adapter-app
+      image-name: nhn-adapter-app
+      pull-request-title: ${{ github.event.pull_request.title }}
+      pull-request-allowed-prefixes: "MOVE-,Bump,PF-"
+      auto-merge-types: "semver-patch"
+      maven-lifecycle: 'verify'
+      maven-skip-tests: false
+    secrets: inherit
