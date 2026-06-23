@@ -66,6 +66,11 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
+                <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
+                <artifactId>nhn-model</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>4.1.0</version>
@@ -98,11 +103,6 @@
                 <artifactId>kotest-extensions-spring</artifactId>
                 <version>${kotest.version}</version>
                 <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
-                <artifactId>nhn-model</artifactId>
-                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>no.ks.fiks</groupId>
@@ -291,6 +291,9 @@
             <id>central</id>
             <name>Central Repository</name>
             <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
         <repository>
             <id>github</id>
