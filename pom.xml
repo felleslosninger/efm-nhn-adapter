@@ -41,6 +41,7 @@
         <helseid.version>1.3.0</helseid.version>
         <idporten-audit-log.version>4.0.2</idporten-audit-log.version>
         <efm-common.version>3.1.0</efm-common.version>
+        <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
     </properties>
 
     <profiles>
@@ -95,6 +96,13 @@
                 <groupId>no.difi.move-common</groupId>
                 <artifactId>move-common-bom</artifactId>
                 <version>${efm-common.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-bom</artifactId>
+                <version>${springdoc-openapi.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

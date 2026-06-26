@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import io.swagger.v3.oas.annotations.Parameter
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
@@ -42,7 +43,10 @@ class InHandler(
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
 ) {
-    suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): ServerResponse {
+    suspend fun getMessagesWithMetadata(
+        receiverHerId: Int,
+        @Parameter(hidden = true) clientContext: ClientContext,
+    ): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
                 .auditId(NHNAdapterAuditIdentifier.GET_MESSAGES_WITH_METADATA)
@@ -60,7 +64,10 @@ class InHandler(
         }
     }
 
-    suspend fun getBusinessDocument(request: ServerRequest, clientContext: ClientContext): ServerResponse {
+    suspend fun getBusinessDocument(
+        request: ServerRequest,
+        @Parameter(hidden = true) clientContext: ClientContext,
+    ): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
                 .auditId(NHNAdapterAuditIdentifier.GET_BUSINESS_DOCUMENT)
@@ -102,7 +109,11 @@ class InHandler(
         }
     }
 
-    suspend fun markMessageRead(messageId: UUID, receiverHerId: Int, clientContext: ClientContext): ServerResponse {
+    suspend fun markMessageRead(
+        messageId: UUID,
+        receiverHerId: Int,
+        @Parameter(hidden = true) clientContext: ClientContext,
+    ): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
                 .auditId(NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_READ)

@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import io.swagger.v3.oas.annotations.Parameter
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +60,7 @@ class OutHandler(
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
 ) {
-    suspend fun getStatus(messageId: UUID, clientContext: ClientContext): ServerResponse {
+    suspend fun getStatus(messageId: UUID, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
                 .auditId(NHNAdapterAuditIdentifier.GET_STATUS)
@@ -72,7 +73,10 @@ class OutHandler(
         }
     }
 
-    suspend fun sendMessage(request: ServerRequest, clientContext: ClientContext): ServerResponse {
+    suspend fun sendMessage(
+        request: ServerRequest,
+        @Parameter(hidden = true) clientContext: ClientContext,
+    ): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
                 .auditId(NHNAdapterAuditIdentifier.SEND_MESSAGE)
@@ -111,7 +115,7 @@ class OutHandler(
     private suspend fun sendDialogmelding(
         sbd: StandardBusinessDocument,
         multipartData: MultiValueMap<String, Part>,
-        clientContext: ClientContext,
+        @Parameter(hidden = true) clientContext: ClientContext,
     ): UUID {
         val message = sbd.dialogmelding
 
@@ -158,7 +162,7 @@ class OutHandler(
     private suspend fun sendApplicationReceipt(
         sbd: StandardBusinessDocument,
         auditEntryBuilder: AuditEntry.AuditEntryBuilder,
-        clientContext: ClientContext,
+        @Parameter(hidden = true) clientContext: ClientContext,
     ): UUID {
         val receipt = sbd.dialogmeldingKvittering
         auditEntryBuilder.attribute("status", receipt.status)

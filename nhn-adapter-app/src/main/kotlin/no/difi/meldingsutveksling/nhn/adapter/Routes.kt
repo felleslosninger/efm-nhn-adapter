@@ -14,26 +14,26 @@ val logger = KotlinLogging.logger {}
 val APPLICATION_JOSE = MediaType.parseMediaType("application/jose")
 
 fun CoRouterFunctionDsl.outHandler(outHandler: OutHandler) {
-    GET("/messages/out/{messageId}/statuses", accept(MediaType.APPLICATION_JSON)) {
+    GET("/api/messages/out/{messageId}/statuses", accept(MediaType.APPLICATION_JSON)) {
         outHandler.getStatus(it.getMessageId(), getClientContext())
     }
-    POST("/messages/out", contentType(MediaType.MULTIPART_FORM_DATA).and(accept(MediaType.TEXT_PLAIN))) {
+    POST("/api/messages/out", contentType(MediaType.MULTIPART_FORM_DATA).and(accept(MediaType.TEXT_PLAIN))) {
         outHandler.sendMessage(it, getClientContext())
     }
 }
 
 fun CoRouterFunctionDsl.lookupHandler(lookupHandler: LookupHandler) {
-    GET("/lookup/{identifier}") { lookupHandler.arLookup(it.pathVariable("identifier"), getClientContext()) }
+    GET("/api/lookup/{identifier}") { lookupHandler.arLookup(it.pathVariable("identifier"), getClientContext()) }
 }
 
 fun CoRouterFunctionDsl.inHandler(inHandler: InHandler) {
-    GET("/messages/in", accept(MediaType.APPLICATION_JSON)) {
+    GET("/api/messages/in", accept(MediaType.APPLICATION_JSON)) {
         inHandler.getMessagesWithMetadata(it.getReceiverHerId(), getClientContext())
     }
-    POST("/messages/in", contentType(APPLICATION_JOSE).and(accept(MediaType.MULTIPART_MIXED))) {
+    POST("/api/messages/in", contentType(APPLICATION_JOSE).and(accept(MediaType.MULTIPART_MIXED))) {
         inHandler.getBusinessDocument(it, getClientContext())
     }
-    POST("/messages/in/{messageId}/read") {
+    POST("/api/messages/in/{messageId}/read") {
         inHandler.markMessageRead(it.getMessageId(), it.getReceiverHerId(), getClientContext())
     }
 }

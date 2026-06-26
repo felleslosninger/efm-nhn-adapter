@@ -5,7 +5,7 @@ project:
 
 spring:
   webflux:
-    base-path: /nhn-adapter/api
+    base-path: /nhn-adapter
     multipart:
       max-in-memory-size: 50MB
   http:
@@ -79,6 +79,20 @@ logging:
 temp:
   threshold: 10000000
   initial-buffer-size: 100000
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  enable-kotlin: true
+  enable-spring-security: true
+  swagger-ui:
+    enabled: true
+    use-root-path: true
+    oauth:
+
+  scalar:
+    enabled: true
 
 ---
 spring:

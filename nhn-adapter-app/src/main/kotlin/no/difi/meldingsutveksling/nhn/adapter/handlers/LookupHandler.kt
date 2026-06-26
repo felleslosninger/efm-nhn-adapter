@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import io.swagger.v3.oas.annotations.Parameter
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
@@ -19,7 +20,7 @@ class LookupHandler(
     private val adresseregisteretService: AdresseregisteretService,
     private val keystoreHelper: KeystoreHelper,
 ) {
-    suspend fun arLookup(identifier: String, clientContext: ClientContext): ServerResponse {
+    suspend fun arLookup(identifier: String, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
         auditLogService.log(
             AuditEntry.builder()
                 .auditId(NHNAdapterAuditIdentifier.AR_LOOKUP)

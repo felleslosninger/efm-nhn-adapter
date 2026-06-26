@@ -2,6 +2,12 @@
 
 package no.difi.meldingsutveksling.nhn.adapter
 
+import io.swagger.v3.oas.models.Components
+import io.swagger.v3.oas.models.OpenAPI
+import io.swagger.v3.oas.models.info.Info
+import io.swagger.v3.oas.models.security.SecurityRequirement
+import io.swagger.v3.oas.models.security.SecurityScheme
+import io.swagger.v3.oas.models.servers.Server
 import java.util.Date
 import kotlin.time.ExperimentalTime
 import no.difi.certvalidator.BusinessCertificateValidator
@@ -36,16 +42,18 @@ import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import org.apache.hc.client5.http.classic.HttpClient
 import org.apache.hc.client5.http.impl.classic.HttpClients
+import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.io.ApplicationResourceLoader
+import org.springframework.context.ApplicationContextInitializer
+import org.springframework.context.support.GenericApplicationContext
 import org.springframework.core.env.get
 import org.springframework.core.io.ResourceLoader
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
-import org.springframework.web.reactive.function.server.RouterFunction
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
-import org.springframework.web.reactive.function.server.coRouter
 import reactor.core.publisher.Mono
 import tools.jackson.databind.json.JsonMapper
 
@@ -117,7 +125,7 @@ private fun properties() = BeanRegistrarDsl {
 }
 
 private fun security() = BeanRegistrarDsl {
-    registerBean { SecurityBeans.securityFilterChain(bean(), bean(), bean()) }
+    registerBean { SecurityBeans.securityFilterChain(bean(), bean()) }
     registerBean { SecurityBeans.helseIdConfiguration(bean<HelseId>()) }
 }
 
@@ -132,6 +140,7 @@ private fun integrations() = BeanRegistrarDsl {
 }
 
 class BeanRegistration :
+    ApplicationContextInitializer<GenericApplicationContext>,
     BeanRegistrarDsl({
         this.register(properties())
         this.register(security())
@@ -146,15 +155,37 @@ class BeanRegistration :
         registerBean { InHandler(bean(), bean(), bean(), bean(), bean(), bean()) }
         registerBean { OutHandler(jsonMapper(bean()), bean(), bean(), bean(), bean(), bean()) }
         registerBean { LookupHandler(bean(), bean(), bean()) }
-        registerBean<RouterFunction<*>> {
-            coRouter {
-                    inHandler(bean())
-                    outHandler(bean())
-                    lookupHandler(bean())
-                }
-                .filter(nhnErrorFilter())
+        registerBean {
+            OpenAPI()
+                .info(
+                    Info().title("NHN Adapter API").description("API documentation for NHN Adapter").version("1.0.0")
+                )
+                .servers(
+                    mutableListOf(
+                        Server().url("http://localhost:8082/nhn-adapter").description("localhost"),
+                        Server().url("https://test.eformidling.no/nhn-adapter").description("Test"),
+                        Server().url("https://eformidling.no/nhn-adapter").description("Production"),
+                    )
+                )
+                .components(
+                    Components()
+                        .addSecuritySchemes(
+                            "maskinporten",
+                            SecurityScheme()
+                                .type(SecurityScheme.Type.APIKEY)
+                                .`in`(SecurityScheme.In.HEADER)
+                                .name(HttpHeaders.AUTHORIZATION)
+                                .description("Bearer <Maskinportentoken>"),
+                        )
+                )
+                .addSecurityItem(SecurityRequirement().addList("maskinporten"))
         }
-    })
+        registerBean { GroupedOpenApi.builder().group("api").pathsToMatch("/api/**").build() }
+
+        registerBean<BeanRegistration>("beanRegistration") { BeanRegistration() }
+    }) {
+    override fun initialize(applicationContext: GenericApplicationContext) {}
+}
 
 fun jsonMapper(builder: JsonMapper.Builder): JsonMapper = builder.build()
 

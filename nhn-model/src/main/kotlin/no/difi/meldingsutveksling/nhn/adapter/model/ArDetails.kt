@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ArDetails(
-    val parentHerId1: Int,
+    val parentHerId: Int,
     val parentName: String,
     val orgNumber: String,
     val herId: Int,
