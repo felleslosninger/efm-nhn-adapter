@@ -314,10 +314,6 @@
             <name>GitHub felleslosninger Apache Maven Packages</name>
             <url>https://maven.pkg.github.com/felleslosninger/efm-nhn-adapter</url>
         </repository>
-        <snapshotRepository>
-            <id>github</id>
-            <url>https://maven.pkg.github.com/felleslosninger/efm-nhn-adapter</url>
-        </snapshotRepository>
     </distributionManagement>
 
     <repositories>
