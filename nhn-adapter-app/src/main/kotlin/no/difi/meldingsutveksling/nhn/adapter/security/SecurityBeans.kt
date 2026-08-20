@@ -10,10 +10,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtIss
 import org.springframework.security.web.server.SecurityWebFilterChain
 
 object SecurityBeans {
-    fun securityFilterChain(
-        http: ServerHttpSecurity,
-        config: SecurityConfig,
-    ): SecurityWebFilterChain {
+    fun securityFilterChain(http: ServerHttpSecurity, config: SecurityConfig): SecurityWebFilterChain {
         http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
             .authorizeExchange { exchange: ServerHttpSecurity.AuthorizeExchangeSpec? ->
