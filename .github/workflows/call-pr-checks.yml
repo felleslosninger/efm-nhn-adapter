@@ -23,7 +23,7 @@ jobs:
       module-name: nhn-adapter-app
       image-name: nhn-adapter-app
       pull-request-title: ${{ github.event.pull_request.title }}
-      pull-request-allowed-prefixes: "MOVE-,Bump,PF-"
+      pull-request-allowed-prefixes: "Build(Deps),MOVE-,Bump,PF-"
       auto-merge-types: "semver-patch"
       maven-lifecycle: 'verify'
       maven-skip-tests: false
