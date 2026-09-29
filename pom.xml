@@ -39,7 +39,7 @@
         <kotlin-coroutines.version>1.11.0</kotlin-coroutines.version>
         <kotest.version>6.2.5</kotest.version>
         <msh-client.version>1.8.0</msh-client.version>
-        <helseid.version>1.4.0</helseid.version>
+        <helseid.version>1.5.0</helseid.version>
         <idporten-audit-log.version>4.0.5</idporten-audit-log.version>
         <efm-common.version>3.1.4</efm-common.version>
         <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
