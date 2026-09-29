@@ -223,6 +223,18 @@
                 <version>3.13.2</version>
                 <scope>test</scope>
             </dependency>
+
+            <!-- CVE-2026-68497 -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>2.21.6</version>
+            </dependency>
+            <dependency>
+                <groupId>tools.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>3.1.6</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
