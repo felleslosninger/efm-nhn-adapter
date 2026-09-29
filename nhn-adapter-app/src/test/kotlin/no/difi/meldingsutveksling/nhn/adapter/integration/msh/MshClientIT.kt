@@ -1,7 +1,18 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import com.github.tomakehurst.wiremock.WireMockServer
-import com.github.tomakehurst.wiremock.client.WireMock.*
+import com.github.tomakehurst.wiremock.client.WireMock.aResponse
+import com.github.tomakehurst.wiremock.client.WireMock.containing
+import com.github.tomakehurst.wiremock.client.WireMock.equalTo
+import com.github.tomakehurst.wiremock.client.WireMock.get
+import com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor
+import com.github.tomakehurst.wiremock.client.WireMock.matching
+import com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath
+import com.github.tomakehurst.wiremock.client.WireMock.post
+import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
+import com.github.tomakehurst.wiremock.client.WireMock.put
+import com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor
+import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import com.github.tomakehurst.wiremock.stubbing.Scenario
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
@@ -25,8 +36,10 @@ import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
+import org.junit.jupiter.api.parallel.Isolated
 
-class MshClientIntegrationTest :
+@Isolated
+class MshClientIT :
     DescribeSpec({
         val wireMockServer = WireMockServer(wireMockConfig().dynamicPort())
         val rsaJwk = RSAKeyGenerator(2048).keyID("test-key").generate().toJSONString()
