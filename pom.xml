@@ -40,7 +40,7 @@
         <kotest.version>6.2.5</kotest.version>
         <msh-client.version>1.9.1</msh-client.version>
         <helseid.version>1.5.0</helseid.version>
-        <idporten-audit-log.version>4.0.5</idporten-audit-log.version>
+        <idporten-audit-log.version>4.0.6</idporten-audit-log.version>
         <efm-common.version>3.1.4</efm-common.version>
         <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
         <netty.version>4.2.18.Final</netty.version>
