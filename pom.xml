@@ -48,6 +48,10 @@
 
         <!-- CVE-2026-54399 -->
         <httpcore5.version>5.4.3</httpcore5.version>
+
+        <!-- CVE-2026-89407 -->
+        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
     </properties>
 
     <profiles>
@@ -72,6 +76,21 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Jackson BOMs must be imported before spring-boot-dependencies, otherwise the versions it imports win over the overrides above -->
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-2-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>no.difi.meldingsutveksling.nhn-adapter</groupId>
                 <artifactId>nhn-model</artifactId>
