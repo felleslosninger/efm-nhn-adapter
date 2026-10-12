@@ -1,0 +1,9 @@
+<Dialogmelding xmlns="http://www.kith.no/xmlstds/dialog/2013-01-23">
+    <Notat>
+        <TemaKodet V="6" S="2.16.578.1.12.4.1.1.7322" DN="Henvendelse om pasient"/>
+        <Tema>Test tema</Tema>
+        <TekstNotatInnhold xsi:type="xs:string" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">Testing 1 2 3
+        </TekstNotatInnhold>
+    </Notat>
+</Dialogmelding>
