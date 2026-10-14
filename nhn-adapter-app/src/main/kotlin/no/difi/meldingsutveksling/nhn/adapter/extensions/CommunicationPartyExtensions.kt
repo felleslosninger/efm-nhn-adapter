@@ -11,6 +11,7 @@ import no.ks.fiks.nhn.ar.OrganizationCommunicationParty
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.ar.PhysicalAddress
 import no.ks.fiks.nhn.ar.PostalAddressType
+import no.ks.fiks.nhn.ar.ServiceCommunicationParty
 import no.ks.fiks.nhn.msh.Address
 import no.ks.fiks.nhn.msh.OrganizationId
 import no.ks.fiks.nhn.msh.Patient
@@ -44,8 +45,12 @@ private fun CommunicationParty.toMshChild(): no.ks.fiks.nhn.msh.CommunicationPar
         is PersonCommunicationParty -> {
             this.toMsh()
         }
-        else -> {
-            throw IllegalArgumentException("Unknown communication party type: $this")
+        // MSH has no service type; a service is sent as an organisational unit under its parent.
+        is ServiceCommunicationParty -> {
+            no.ks.fiks.nhn.msh.OrganizationCommunicationParty(
+                name = name,
+                ids = listOf(OrganizationId(herId.toString(), OrganizationIdType.HER_ID)),
+            )
         }
     }
 

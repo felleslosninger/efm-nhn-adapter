@@ -61,6 +61,7 @@ import no.ks.fiks.nhn.ar.CommunicationPartyParent
 import no.ks.fiks.nhn.ar.ElectronicAddress
 import no.ks.fiks.nhn.ar.OrganizationCommunicationParty
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
+import no.ks.fiks.nhn.ar.ServiceCommunicationParty
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.PatientGP
 import no.ks.fiks.nhn.msh.AppRecStatus
@@ -124,6 +125,16 @@ private val kommune =
         physicalAddresses = emptyList(),
         electronicAddresses = emptyList(),
         organizationNumber = null,
+    )
+
+/** The same HER-id as [kommune], but registered as a service (tjeneste) in AR. */
+private val kommuneTjeneste =
+    ServiceCommunicationParty(
+        herId = KOMMUNE_HER_ID,
+        name = "Helsetjenesten",
+        parent = CommunicationPartyParent(KOMMUNE_PARENT_HER_ID, "Test kommune", CONSUMER_ORG_NUMBER),
+        physicalAddresses = emptyList(),
+        electronicAddresses = emptyList(),
     )
 
 private val fastlege =
@@ -348,6 +359,27 @@ class NhnAdapterApiIT(
                 attachment.mimeType shouldBe "application/pdf"
                 attachment.description shouldBe "Testvedlegg"
                 attachment.data!!.readAllBytes() shouldBe testPdf
+            }
+
+            it("sends the dialogmelding to MSH when the sender is a service") {
+                every { adresseregisteretClient.lookupHerId(KOMMUNE_HER_ID) } returns kommuneTjeneste
+                val postMessageRequest = slot<PostMessageRequest>()
+                coEvery { mshInternalClient.postMessage(capture(postMessageRequest), consumerTenant()) } returns
+                    UUID.randomUUID()
+
+                sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke())
+                    .expectStatus()
+                    .isOk
+
+                val sender =
+                    BusinessDocumentDeserializer.deserializeMsgHead(
+                            String(Base64.getDecoder().decode(postMessageRequest.captured.businessDocument))
+                        )
+                        .getSender()
+                sender.parent.herId shouldBe KOMMUNE_PARENT_HER_ID
+                sender.child.shouldBeInstanceOf<no.ks.fiks.nhn.msh.OrganizationCommunicationParty>()
+                sender.child.herId shouldBe KOMMUNE_HER_ID
+                sender.child.fullName shouldBe "Helsetjenesten"
             }
 
             it("sends the conversation reference to MSH when the dialogmelding is a reply") {
