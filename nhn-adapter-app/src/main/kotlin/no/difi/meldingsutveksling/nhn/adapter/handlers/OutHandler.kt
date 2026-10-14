@@ -40,6 +40,7 @@ import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.TemaForHelsefagligDialog
 import no.ks.fiks.nhn.ar.AddressComponent
+import no.ks.fiks.nhn.ar.CommunicationParty
 import no.ks.fiks.nhn.ar.PersonCommunicationParty
 import no.ks.fiks.nhn.edi.toCV
 import no.ks.fiks.nhn.msh.ConversationRef
@@ -119,15 +120,14 @@ class OutHandler(
     ): UUID {
         val message = sbd.dialogmelding
 
-        val fastlege: PersonCommunicationParty =
-            adresseregisteretService.lookupByHerId(sbd.receiverHerId) as PersonCommunicationParty
+        val receiverParty = adresseregisteretService.lookupByHerId(sbd.receiverHerId)
 
         val dokumentpakke = multipartData.getFirst(MultipartNames.DOKUMENTPAKKE)!!
 
         return withContext(Dispatchers.IO) {
             val asicFiles = parcelService.getAttachments(dokumentpakke)
             val dialogmelding = getDialogmelding(asicFiles, message.hoveddokument)
-            setDefaults(dialogmelding, fastlege)
+            setDefaults(dialogmelding, receiverParty)
 
             val vedlegg = getVedlegg(asicFiles, message.hoveddokument)
 
@@ -136,7 +136,7 @@ class OutHandler(
                     .assertAccess(clientContext, adresseregisteretService.lookupByHerId(sbd.senderHerId))
                     .toSender()
 
-            val receiver = adresseregisteretService.lookupByHerId(sbd.receiverHerId).toReceiver(message.pasient!!)
+            val receiver = receiverParty.toReceiver(message.pasient!!)
 
             val input =
                 SendMessageInput(
@@ -171,16 +171,19 @@ class OutHandler(
         }
     }
 
-    private fun setDefaults(dialogmelding: Dialogmelding, fastlege: PersonCommunicationParty) {
-        dialogmelding.notat.forEach { setDefaults(it, fastlege) }
+    private fun setDefaults(dialogmelding: Dialogmelding, receiver: CommunicationParty) {
+        dialogmelding.notat.forEach { setDefaults(it, receiver) }
     }
 
-    private fun setDefaults(notat: Notat, fastlege: PersonCommunicationParty) {
+    private fun setDefaults(notat: Notat, receiver: CommunicationParty) {
         if (notat.temaKodet?.v == TemaForHelsefagligDialog.HENVENDELSE_OM_PASIENT.verdi) {
             if (notat.rollerRelatertNotat.isEmpty()) {
                 notat.rollerRelatertNotat =
-                    listOf(
-                        toFastlegeRole(fastlege),
+                    listOfNotNull(
+                        // A person receiver is the patient's fastlege; organisations and services
+                        // have no
+                        // fastlege role.
+                        (receiver as? PersonCommunicationParty)?.let { toFastlegeRole(it) },
                         // Ved opprettelse av Helsefaglig dialog uten referanse til tidligere
                         // melding, skal rollen
                         // "Kontakt hos mottaker" oppgis med profesjonsgruppe og ev. navn på
