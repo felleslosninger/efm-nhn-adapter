@@ -663,6 +663,80 @@ class NhnAdapterApiIT(
                 notat.tema shouldBe "Test tema"
                 notat.tekstNotatInnhold.toString() shouldContain "Testing 1 2 3"
             }
+
+            it("returns an application receipt from a party that is not a person") {
+                val messageId = UUID.randomUUID()
+                val originalMessageId = UUID.randomUUID()
+                val appRec =
+                    """
+                    <AppRec xmlns="http://www.kith.no/xmlstds/apprec/2012-02-15">
+                      <MsgType V="APPREC"/>
+                      <MIGversion>v1.1 2012-02-15</MIGversion>
+                      <GenDate>2026-10-14T12:00:00</GenDate>
+                      <Id>$messageId</Id>
+                      <Sender>
+                        <HCP>
+                          <Inst>
+                            <Name>Legekontor</Name>
+                            <Id>$LEGEKONTOR_HER_ID</Id>
+                            <TypeId V="HER"/>
+                            <Dept>
+                              <Name>Legekontor tjeneste</Name>
+                              <Id>$LEGEKONTOR_TJENESTE_HER_ID</Id>
+                              <TypeId V="HER"/>
+                            </Dept>
+                          </Inst>
+                        </HCP>
+                      </Sender>
+                      <Receiver>
+                        <HCP>
+                          <Inst>
+                            <Name>Kommune</Name>
+                            <Id>$KOMMUNE_HER_ID</Id>
+                            <TypeId V="HER"/>
+                          </Inst>
+                        </HCP>
+                      </Receiver>
+                      <Status V="1" DN="OK"/>
+                      <OriginalMsgId>
+                        <MsgType V="DIALOG_NOTAT"/>
+                        <IssueDate>2026-10-14T11:00:00</IssueDate>
+                        <Id>$originalMessageId</Id>
+                      </OriginalMsgId>
+                    </AppRec>
+                    """
+                        .trimIndent()
+                coEvery { mshInternalClient.getBusinessDocument(messageId, consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(appRec.toByteArray()))
+
+                val result =
+                    client()
+                        .post()
+                        .uri("/api/messages/in")
+                        .contentType(APPLICATION_JOSE)
+                        .accept(MediaType.MULTIPART_MIXED)
+                        .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                        .exchange()
+                        .expectStatus()
+                        .isOk
+                        .expectBody<ByteArray>()
+                        .returnResult()
+
+                val parts = readMultipart(result.responseHeaders.contentType!!, result.responseBody!!)
+                val jws =
+                    parcelService.decryptAndVerify(
+                        PartUtils.toString(parts.getValue(MultipartNames.FORRETNINGSMELDING))
+                    )
+                val sbd = jsonMapper.readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
+                sbd.type shouldBe BusinessMessageType.DIALOGMELDING_KVITTERING.type
+                sbd.senderHerId shouldBe LEGEKONTOR_TJENESTE_HER_ID
+                sbd.receiverHerId shouldBe KOMMUNE_HER_ID
+                sbd.dialogmeldingKvittering.relatedToMessageId shouldBe originalMessageId.toString()
+                sbd.dialogmeldingKvittering.status shouldBe DialogmeldingKvitteringStatus.OK
+            }
         }
 
         describe("POST /api/messages/in/{messageId}/read") {
