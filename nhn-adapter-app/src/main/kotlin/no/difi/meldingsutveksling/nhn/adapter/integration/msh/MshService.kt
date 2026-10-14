@@ -267,7 +267,13 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
     }
 }
 
-private fun HCP.toHerId(): Int = if (inst != null) inst.hcPerson.first().id.toInt() else hcProf.id.toInt()
+// The most specific party wins: a person, then a department/service, then the institution itself.
+private fun HCP.toHerId(): Int =
+    if (inst != null) {
+        (inst.hcPerson?.firstOrNull()?.id ?: inst.dept?.firstOrNull()?.id ?: inst.id).toInt()
+    } else {
+        hcProf.id.toInt()
+    }
 
 private fun toXML(): (GetBusinessDocumentResponse) -> String = {
     if (it.contentTransferEncoding != CONTENT_TRANSFER_ENCODING) {
