@@ -55,6 +55,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingD
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.PartUtils
 import no.difi.move.common.dokumentpakking.domain.Document
+import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.nhn.ar.AddressComponent
 import no.ks.fiks.nhn.ar.AdresseregisteretClient
 import no.ks.fiks.nhn.ar.CommunicationPartyParent
@@ -102,6 +103,7 @@ private const val KOMMUNE_HER_ID = 1000002
 private const val LEGEKONTOR_HER_ID = 2000001
 private const val LEGEKONTOR_ORG_NUMBER = "987654321"
 private const val FASTLEGE_HER_ID = 2000002
+private const val LEGEKONTOR_TJENESTE_HER_ID = 2000003
 private const val UNKNOWN_HER_ID = 9999999
 private const val PASIENT_FNR = "16822449879"
 
@@ -133,6 +135,15 @@ private val kommuneTjeneste =
         herId = KOMMUNE_HER_ID,
         name = "Helsetjenesten",
         parent = CommunicationPartyParent(KOMMUNE_PARENT_HER_ID, "Test kommune", CONSUMER_ORG_NUMBER),
+        physicalAddresses = emptyList(),
+        electronicAddresses = emptyList(),
+    )
+
+private val legekontorTjeneste =
+    ServiceCommunicationParty(
+        herId = LEGEKONTOR_TJENESTE_HER_ID,
+        name = "Legekontorets resepsjon",
+        parent = CommunicationPartyParent(LEGEKONTOR_HER_ID, "Legekontoret", LEGEKONTOR_ORG_NUMBER),
         physicalAddresses = emptyList(),
         electronicAddresses = emptyList(),
     )
@@ -380,6 +391,36 @@ class NhnAdapterApiIT(
                 sender.child.shouldBeInstanceOf<no.ks.fiks.nhn.msh.OrganizationCommunicationParty>()
                 sender.child.herId shouldBe KOMMUNE_HER_ID
                 sender.child.fullName shouldBe "Helsetjenesten"
+            }
+
+            it("sends the dialogmelding to MSH when the receiver is a service") {
+                every { adresseregisteretClient.lookupHerId(LEGEKONTOR_TJENESTE_HER_ID) } returns legekontorTjeneste
+                val postMessageRequest = slot<PostMessageRequest>()
+                coEvery { mshInternalClient.postMessage(capture(postMessageRequest), consumerTenant()) } returns
+                    UUID.randomUUID()
+
+                sendOutgoing(
+                        dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()).apply {
+                            receiverHerId = LEGEKONTOR_TJENESTE_HER_ID
+                        },
+                        dokumentpakke(),
+                    )
+                    .expectStatus()
+                    .isOk
+
+                val msgHead =
+                    BusinessDocumentDeserializer.deserializeMsgHead(
+                        String(Base64.getDecoder().decode(postMessageRequest.captured.businessDocument))
+                    )
+                val receiver = msgHead.getReceiver()
+                receiver.parent.herId shouldBe LEGEKONTOR_HER_ID
+                receiver.child.shouldBeInstanceOf<no.ks.fiks.nhn.msh.OrganizationCommunicationParty>()
+                receiver.child.herId shouldBe LEGEKONTOR_TJENESTE_HER_ID
+
+                // Only "kontakt hos mottaker" is added, since there is no fastlege to refer to
+                val roller = msgHead.getDialogmelding().notat.single().rollerRelatertNotat
+                roller shouldHaveSize 1
+                roller.single().roleToPatient.v shouldBe HelsepersonellsFunksjoner.KONTAKT_HOS_MOTTAKER.verdi
             }
 
             it("sends the conversation reference to MSH when the dialogmelding is a reply") {
