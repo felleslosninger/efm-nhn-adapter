@@ -53,24 +53,35 @@ jobs:
           echo "- Instructions: $(awk "BEGIN { printf \"%.1f\", $COVERAGE * 100 }")%" >> "$GITHUB_STEP_SUMMARY"
           echo "- Branches: $(awk "BEGIN { printf \"%.1f\", $BRANCHES * 100 }")%" >> "$GITHUB_STEP_SUMMARY"
 
-      # The badge lives on its own branch so main (protected) is never written to by CI
+      # The badge lives on its own branch so main (protected) is never written to by CI.
+      # The commit is made through the GitHub API instead of git push, because the repository
+      # rules require verified signatures and GitHub only signs bot commits created via the API.
       - name: Publish badge to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp badges/jacoco.svg "$RUNNER_TEMP/jacoco.svg"
-          if git fetch origin badges; then
-            git worktree add "$RUNNER_TEMP/badges" origin/badges
-            git -C "$RUNNER_TEMP/badges" checkout -B badges
+          BLOB=$(gh api "repos/$REPO/git/blobs" -f encoding=base64 -f content="$(base64 -w0 badges/jacoco.svg)" --jq .sha)
+          TREE=$(jq -n --arg sha "$BLOB" '{tree: [{path: "jacoco.svg", mode: "100644", type: "blob", sha: $sha}]}' \
+            | gh api "repos/$REPO/git/trees" --input - --jq .sha)
+
+          if PARENT=$(gh api "repos/$REPO/git/ref/heads/badges" --jq .object.sha 2>/dev/null); then
+            if [ "$(gh api "repos/$REPO/git/commits/$PARENT" --jq .tree.sha)" == "$TREE" ]; then
+              echo "Badge unchanged"
+              exit 0
+            fi
           else
-            git worktree add --orphan -b badges "$RUNNER_TEMP/badges"
+            PARENT=""
           fi
-          cp "$RUNNER_TEMP/jacoco.svg" "$RUNNER_TEMP/badges/jacoco.svg"
-          cd "$RUNNER_TEMP/badges"
-          git add jacoco.svg
-          if git diff --cached --quiet; then
-            echo "Badge unchanged"
+
+          # No author/committer is given, so GitHub signs the commit as github-actions[bot]
+          COMMIT=$(jq -n --arg msg "Update coverage badge for ${GITHUB_SHA::7}" --arg tree "$TREE" --arg parent "$PARENT" \
+              '{message: $msg, tree: $tree, parents: (if $parent == "" then [] else [$parent] end)}' \
+            | gh api "repos/$REPO/git/commits" --input - --jq .sha)
+
+          if [ -n "$PARENT" ]; then
+            gh api -X PATCH "repos/$REPO/git/refs/heads/badges" -f sha="$COMMIT" > /dev/null
           else
-            git commit -m "Update coverage badge for ${GITHUB_SHA::7}"
-            git push origin badges
+            gh api "repos/$REPO/git/refs" -f ref=refs/heads/badges -f sha="$COMMIT" > /dev/null
           fi
+          echo "Published badge in commit $COMMIT"
