@@ -14,6 +14,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
+import io.mockk.verify
 import java.time.OffsetDateTime
 import java.util.Base64
 import java.util.UUID
@@ -483,6 +484,28 @@ class NhnAdapterApiIT(
                     .isBadRequest
 
                 coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("returns 403 and sends nothing when the dialogmelding sender belongs to another organization") {
+                val sbd =
+                    dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()).apply {
+                        senderHerId = FASTLEGE_HER_ID
+                        receiverHerId = KOMMUNE_HER_ID
+                    }
+
+                sendOutgoing(sbd, dokumentpakke()).expectStatus().isForbidden
+
+                // The sender is checked before the receiver is looked up
+                verify(exactly = 0) { adresseregisteretClient.lookupHerId(KOMMUNE_HER_ID) }
+                coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("returns 403 and sends nothing when the application receipt sender belongs to another organization") {
+                val sbd = kvitteringSbd(UUID.randomUUID(), UUID.randomUUID()).apply { senderHerId = FASTLEGE_HER_ID }
+
+                sendOutgoing(sbd).expectStatus().isForbidden
+
+                coVerify(exactly = 0) { mshInternalClient.postAppRec(any(), any(), any(), any()) }
             }
         }
 
