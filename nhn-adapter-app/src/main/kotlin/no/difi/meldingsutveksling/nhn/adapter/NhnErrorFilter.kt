@@ -12,14 +12,18 @@ import no.ks.fiks.nhn.ar.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HttpException
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.reactive.function.server.HandlerFilterFunction
+import org.springframework.web.reactive.function.server.RouterFunctions
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.util.pattern.PathPattern
 import reactor.core.publisher.Mono
 
 private val logger = KotlinLogging.logger {}
 
 private const val CLIENT_ERROR = "Client error"
+private const val ACCESS_DENIED = "Access denied"
 private const val UNEXPECTED_ERROR_CODE = "E7777"
 private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
@@ -31,9 +35,19 @@ fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = Ha
 
 private fun ServerRequest.toApiError(error: Throwable): ApiError =
     when (error) {
+        // Unknown HER-id: 404 when it is the looked-up resource, 400 (bad input) elsewhere.
+        is HerIdNotFoundException ->
+            if (matchesRoute(ApiPaths.LOOKUP)) {
+                toApiError(HttpStatus.NOT_FOUND, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+            } else {
+                clientError(error.message ?: CLIENT_ERROR)
+            }
         is IllegalArgumentException,
-        is DialogmeldingNotFoundException,
-        is HerIdNotFoundException -> clientError(error.message ?: CLIENT_ERROR)
+        is DialogmeldingNotFoundException -> clientError(error.message ?: CLIENT_ERROR)
+        is AccessDeniedException -> {
+            logger.warn("Access denied for ${path()}: ${error.message}")
+            toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
+        }
         is ApplicationReceiptException -> toApiError(HttpStatus.BAD_REQUEST, error.error, error.message)
         is AdresseregisteretApiException -> badGateway(error.errorCode)
         is AdresseregisteretException -> {
@@ -67,6 +81,9 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             )
         }
     }
+
+private fun ServerRequest.matchesRoute(pattern: String): Boolean =
+    (attribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE).orElse(null) as? PathPattern)?.patternString == pattern
 
 private fun ServerRequest.clientError(details: String): ApiError =
     toApiError(HttpStatus.BAD_REQUEST, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, details)

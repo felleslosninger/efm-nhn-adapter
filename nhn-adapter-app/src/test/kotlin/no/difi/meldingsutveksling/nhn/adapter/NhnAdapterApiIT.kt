@@ -309,8 +309,8 @@ class NhnAdapterApiIT(
                     .isEqualTo(LEGEKONTOR_HER_ID)
             }
 
-            // Disabled: NhnErrorFilter maps HerIdNotFoundException to 400, not 404.
-            xit("returns 404 when the HER-id is unknown") {
+            // HerIdNotFoundException maps to 404 on the lookup route only; other routes keep 400.
+            it("returns 404 when the HER-id is unknown") {
                 client().get().uri("/api/lookup/her-id:$UNKNOWN_HER_ID").exchange().expectStatus().isNotFound
             }
 
@@ -570,8 +570,21 @@ class NhnAdapterApiIT(
                     .isBadRequest
             }
 
-            // Disabled: NhnErrorFilter does not map AccessDeniedException, so 500 is returned.
-            xit("denies access to messages for a HER-id belonging to another organization") {
+            // HerIdNotFoundException is only a 404 on the lookup route.
+            it("returns 400 when receiverHerId is unknown") {
+                client()
+                    .get()
+                    .uri("/api/messages/in?receiverHerId=$UNKNOWN_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.getMessagesWithMetadata(any(), any()) }
+            }
+
+            // AccessDeniedException from SecurityService.assertAccessToHerId maps to 403.
+            it("denies access to messages for a HER-id belonging to another organization") {
                 client()
                     .get()
                     .uri("/api/messages/in?receiverHerId=$FASTLEGE_HER_ID")
