@@ -216,7 +216,7 @@ på `/nhn-adapter/v3/api-docs`. Begge er opne utan token.
 
 ### Feil
 
-Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`:
+Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timestamp` på ISO-8601-format i UTC:
 
 | Exception                                                                | Status         |
 |--------------------------------------------------------------------------|----------------|
@@ -224,7 +224,8 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`:
 | `HerIdNotFoundException` elles, `IllegalArgumentException`, `DialogmeldingNotFoundException`, `ApplicationReceiptException` | 400 |
 | `AccessDeniedException`                                                  | 403            |
 | Feil frå AR (`E7778`) eller FLR (`E7779`)                                | 502            |
-| `HttpException` frå MSH                                                  | same status som MSH gav |
+| 4xx frå MSH, unnateke 401 og 403                                         | same status og melding som MSH gav |
+| Anna feil frå MSH (`E7780`), til dømes 401, 403 og 5xx                   | 502            |
 | Alt anna (`E7777`)                                                       | 500            |
 
 ## Kom i gang
@@ -271,8 +272,8 @@ Køyr éin testklasse:
 
 ### Git-hook
 
-[`.githooks/pre-commit`](.githooks/pre-commit) formaterer koden og køyrer bygget før kvar commit. Han er ikkje aktiv
-før du slår han på:
+[`.githooks/pre-commit`](.githooks/pre-commit) formaterer Kotlin-filene som er med i commiten, med Spotless, før kvar
+commit. Han er ikkje aktiv før du slår han på:
 
 ```bash
 git config core.hooksPath .githooks
@@ -451,7 +452,7 @@ Actuator køyrer på eigen port (`8090`) utan kontekststi:
 |----------------------------------------------|----------------------------------------|
 | `/health`, `/health/liveness`, `/health/readiness` | Helsesjekk og Kubernetes-prober |
 | `/prometheus`                                | Metrikkar                              |
-| `/info`, `/env`                              | Versjon og konfigurasjon               |
+| `/info`                                      | Versjon                                |
 
 Auditloggen vert skriven med `idporten-log-audit` og har `auditId` på forma `NHN-ADAPTER-<OPERASJON>`, med kven som
 kalla, på vegner av kven, og om kallet gjekk bra.

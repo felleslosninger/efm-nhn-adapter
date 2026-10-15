@@ -1,6 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
-import java.util.Date
+import java.time.Instant
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
@@ -27,6 +27,10 @@ private const val ACCESS_DENIED = "Access denied"
 private const val UNEXPECTED_ERROR_CODE = "E7777"
 private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
+private const val MSH_ERROR_CODE = "E7780"
+
+/** MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client. */
+private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
 
 /** Translates exceptions thrown by the handlers into [ApiError] responses. */
 fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = HandlerFilterFunction { request, next ->
@@ -64,14 +68,7 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             )
             badGateway(FASTLEGEREGISTERET_ERROR_CODE)
         }
-        is HttpException -> {
-            logger.error("HttpException: ${error.message}")
-            toApiError(
-                HttpStatus.valueOf(error.status),
-                FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
-                error.message,
-            )
-        }
+        is HttpException -> mshError(error)
         else -> {
             logger.error("Unexpected error: ${error.message}", error)
             toApiError(
@@ -81,6 +78,21 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             )
         }
     }
+
+/**
+ * A client error from MSH is caused by the request (e.g. an unknown message id), so its status and message are passed
+ * on. Anything else is a problem between the adapter and MSH and is reported as 502, without MSH's message.
+ */
+private fun ServerRequest.mshError(error: HttpException): ApiError {
+    val clientErrorStatus =
+        HttpStatus.resolve(error.status)?.takeIf { it.is4xxClientError && it !in MSH_AUTHORIZATION_ERRORS }
+    if (clientErrorStatus != null) {
+        logger.warn("MSH rejected the request for ${path()}: ${error.message}")
+        return toApiError(clientErrorStatus, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+    }
+    logger.error("MSH failed for ${path()}: ${error.message}")
+    return badGateway(MSH_ERROR_CODE)
+}
 
 private fun ServerRequest.matchesRoute(pattern: String): Boolean =
     (attribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE).orElse(null) as? PathPattern)?.patternString == pattern
@@ -99,7 +111,7 @@ private fun ServerRequest.toApiError(
     details: String? = null,
 ): ApiError =
     ApiError(
-        timestamp = Date().toString(),
+        timestamp = Instant.now().toString(),
         status = status.value(),
         reason = status.reasonPhrase,
         errorCode = error.verdi,

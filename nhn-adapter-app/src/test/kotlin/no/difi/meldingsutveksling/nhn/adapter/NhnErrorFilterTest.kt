@@ -8,7 +8,10 @@ import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.ar.AdresseregisteretApiException
 import no.ks.fiks.nhn.ar.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
+import no.ks.fiks.nhn.msh.HttpClientException
 import no.ks.fiks.nhn.msh.HttpException
+import no.ks.fiks.nhn.msh.HttpServerException
+import org.hamcrest.Matchers.matchesPattern
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.test.web.reactive.server.WebTestClient
@@ -17,6 +20,7 @@ import reactor.core.publisher.Mono
 
 private const val LOOKUP_PATH = "/api/lookup/123"
 private const val OUTGOING_PATH = ApiPaths.OUTGOING_MESSAGES
+private const val ISO_8601_INSTANT = """\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z"""
 
 class NhnErrorFilterTest :
     DescribeSpec({
@@ -59,6 +63,8 @@ class NhnErrorFilterTest :
                 .isEqualTo(details)
                 .jsonPath("$.path")
                 .isEqualTo(path)
+                .jsonPath("$.timestamp")
+                .value(String::class.java, matchesPattern(ISO_8601_INSTANT))
         }
 
         describe("nhnErrorFilter") {
@@ -138,10 +144,27 @@ class NhnErrorFilterTest :
                 )
             }
 
-            it("passes on the status of MSH HTTP errors") {
-                val httpException = HttpException(404, 200, "Message not found")
+            it("passes on the status and message of MSH client errors") {
+                val httpException = HttpClientException(404, body = "Message not found")
                 expectApiError(OUTGOING_PATH, httpException, HttpStatus.NOT_FOUND, httpException.message)
             }
+
+            listOf(
+                    HttpClientException(401, body = "Invalid token"),
+                    HttpClientException(403, body = "Not allowed"),
+                    HttpServerException(500, body = "Internal error"),
+                    HttpException(499, 200, "Unknown status"),
+                )
+                .forEach { httpException ->
+                    it("maps MSH status ${httpException.status} to 502 without the MSH message") {
+                        expectApiError(
+                            OUTGOING_PATH,
+                            httpException,
+                            HttpStatus.BAD_GATEWAY,
+                            "Not able to process, try later. ErrorCode: E7780",
+                        )
+                    }
+                }
 
             it("maps unexpected errors to 500") {
                 expectApiError(
