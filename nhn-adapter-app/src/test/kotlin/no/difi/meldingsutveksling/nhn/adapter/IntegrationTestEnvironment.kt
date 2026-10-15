@@ -1,5 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import com.nimbusds.jose.JWSAlgorithm
+import com.nimbusds.jose.jwk.KeyOperation
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
 import java.math.BigInteger
 import java.nio.file.Files
 import java.nio.file.Path
@@ -18,7 +21,8 @@ import org.springframework.context.ConfigurableApplicationContext
 
 /**
  * A freshly generated self-signed keystore used both by the adapter and by the tests acting as integrasjonspunktet, so
- * that the JOSE/CMS round trips are real without depending on a certificate that expires.
+ * that the JOSE/CMS round trips are real without depending on a certificate that expires. The HelseID signing key is
+ * generated as well, so no real HelseID client key is needed in the tests.
  */
 object IntegrationTestEnvironment {
     const val CONSUMER_ORG_NUMBER = "123456789"
@@ -27,6 +31,15 @@ object IntegrationTestEnvironment {
     private const val KEYSTORE_PASSWORD = "changeit"
 
     val keystorePath: Path by lazy { createSelfSignedKeystore() }
+
+    private val helseIdPrivateKey: String by lazy {
+        RSAKeyGenerator(2048)
+            .keyID("nhn-adapter-it")
+            .algorithm(JWSAlgorithm.PS256)
+            .keyOperations(setOf(KeyOperation.SIGN))
+            .generate()
+            .toJSONString()
+    }
 
     private fun createSelfSignedKeystore(): Path {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
@@ -65,6 +78,7 @@ object IntegrationTestEnvironment {
                     "keystore.alias=$KEYSTORE_ALIAS",
                     "keystore.password=$KEYSTORE_PASSWORD",
                     "keystore.type=PKCS12",
+                    "oauth2.helse-id.private-key=$helseIdPrivateKey",
                 )
                 .applyTo(applicationContext)
         }

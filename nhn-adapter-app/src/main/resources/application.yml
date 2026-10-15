@@ -57,8 +57,6 @@ nhn:
     flr:
       username: ${NHN_SERVICES_USERNAME}
       password: ${NHN_SERVICES_PASSWORD}
-    msh:
-      source-system: "digidir"
 
 oauth2:
   helse-id:
@@ -87,11 +85,6 @@ springdoc:
   enable-kotlin: true
   enable-spring-security: true
   swagger-ui:
-    enabled: true
-    use-root-path: true
-    oauth:
-
-  scalar:
     enabled: true
 
 ---
