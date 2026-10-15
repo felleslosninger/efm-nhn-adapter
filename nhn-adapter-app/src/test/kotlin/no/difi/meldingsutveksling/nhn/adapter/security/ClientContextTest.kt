@@ -1,15 +1,21 @@
 package no.difi.meldingsutveksling.nhn.adapter.security
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.reactor.awaitSingle
+import kotlinx.coroutines.reactor.mono
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.model.Claims
 import org.springframework.security.core.Authentication
+import org.springframework.security.core.context.ReactiveSecurityContextHolder
 import org.springframework.security.core.context.SecurityContext
+import org.springframework.security.core.context.SecurityContextImpl
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
+import reactor.core.publisher.Mono
 
 class ClientContextTest :
     DescribeSpec({
@@ -76,6 +82,56 @@ class ClientContextTest :
             it("getScopes should return set of scopes") {
                 every { jwt.getClaimAsString(Claims.SCOPE) } returns "a b c"
                 jwt.getScopes() shouldBe setOf("a", "b", "c")
+            }
+
+            it("getScopes should return an empty set when the scope claim is missing") {
+                every { jwt.getClaimAsString(Claims.SCOPE) } returns null
+                jwt.getScopes() shouldBe emptySet()
+            }
+
+            it("getClientId should fail when the claim is missing") {
+                every { jwt.getClaimAsString(Claims.CLIENT_ID) } returns null
+                shouldThrow<IllegalStateException> { jwt.getClientId() }.message shouldBe
+                    "Missing claim ${Claims.CLIENT_ID}"
+            }
+
+            it("getConsumer should fail when the claim is missing") {
+                every { jwt.getClaimAsMap(Claims.CONSUMER) } returns null
+                shouldThrow<IllegalStateException> { jwt.getConsumer() }.message shouldBe
+                    "Missing claim ${Claims.CONSUMER}"
+            }
+
+            it("getConsumer should fail when the claim has no ID") {
+                every { jwt.getClaimAsMap(Claims.CONSUMER) } returns mapOf("authority" to "iso6523-actorid-upis")
+                shouldThrow<IllegalStateException> { jwt.getConsumer() }
+            }
+        }
+
+        describe("getClientContext") {
+            it("should create a client context from the JWT in the reactive security context") {
+                val jwt =
+                    Jwt.withTokenValue("token").header("alg", "none").claim(Claims.CLIENT_ID, "test-client").build()
+                val securityContext = SecurityContextImpl(JwtAuthenticationToken(jwt))
+
+                val clientContext =
+                    mono { getClientContext() }
+                        .contextWrite(ReactiveSecurityContextHolder.withSecurityContext(Mono.just(securityContext)))
+                        .awaitSingle()
+
+                clientContext.clientId shouldBe "test-client"
+            }
+
+            it("should fail when the security context is not JWT authenticated") {
+                val securityContext = SecurityContextImpl(mockk<Authentication>())
+
+                shouldThrow<IllegalStateException> {
+                        mono { getClientContext() }
+                            .contextWrite(
+                                ReactiveSecurityContextHolder.withSecurityContext(Mono.just(securityContext))
+                            )
+                            .awaitSingle()
+                    }
+                    .message shouldBe "Expected a JWT authenticated security context"
             }
         }
 

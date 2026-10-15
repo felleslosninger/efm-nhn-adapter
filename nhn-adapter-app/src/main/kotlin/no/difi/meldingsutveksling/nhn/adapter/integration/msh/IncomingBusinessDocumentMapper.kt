@@ -29,11 +29,13 @@ import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils
+import no.kith.xmlstds.CS
 import no.kith.xmlstds.CV
 import no.kith.xmlstds.apprec._2012_02_15.HCP
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.MsgHead
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
+import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.ar.toOffsetDateTime
 import no.ks.fiks.nhn.msh.CommunicationParty
 import org.springframework.core.io.ByteArrayResource
@@ -127,7 +129,7 @@ object IncomingBusinessDocumentMapper {
                     dialogmeldingKvittering =
                         DialogmeldingKvitteringMessage(
                             relatedToMessageId = appRec.originalMsgId.id,
-                            status = DialogmeldingKvitteringStatus.valueOf(appRec.status.dn),
+                            status = appRec.status.toKvitteringStatus(),
                             messages = appRec.error.map { it.toKvitteringStatusMessage() },
                             rawReceipt = xml,
                         )
@@ -175,6 +177,19 @@ object IncomingBusinessDocumentMapper {
             (inst.hcPerson?.firstOrNull()?.id ?: inst.dept?.firstOrNull()?.id ?: inst.id).toInt()
         } else {
             hcProf.id.toInt()
+        }
+
+    /** The status is coded in kodeverk 8222. Only the code (V) is reliable, the display name (DN) is e.g. "Avvist". */
+    private fun CS.toKvitteringStatus(): DialogmeldingKvitteringStatus =
+        when (StatusForMottakAvMelding.entries.firstOrNull { it.verdi == v }) {
+            StatusForMottakAvMelding.OK -> DialogmeldingKvitteringStatus.OK
+            StatusForMottakAvMelding.AVVIST -> DialogmeldingKvitteringStatus.REJECTED
+            StatusForMottakAvMelding.OK_FEIL_I_DELMELDING -> DialogmeldingKvitteringStatus.OK_ERROR_IN_MESSAGE_PART
+            null ->
+                throw ApplicationReceiptException(
+                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                    "Unknown AppRec status V=$v DN=$dn",
+                )
         }
 
     private fun CV.toKvitteringStatusMessage() = KvitteringStatusMessage(code = v, text = dn)
