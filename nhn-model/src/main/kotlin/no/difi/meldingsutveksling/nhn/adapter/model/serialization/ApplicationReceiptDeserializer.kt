@@ -2,9 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter.model.serialization
 
 import jakarta.xml.bind.JAXBContext
 import java.io.StringReader
-import javax.xml.XMLConstants
 import javax.xml.transform.stream.StreamSource
-import javax.xml.validation.SchemaFactory
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils.getVersion
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils.validateRootElement
 import no.kith.xmlstds.CS
@@ -36,7 +34,6 @@ import no.kith.xmlstds.apprec._2012_02_15.HCProf
 import no.kith.xmlstds.apprec._2012_02_15.Inst
 import no.kith.xmlstds.apprec._2012_02_15.OriginalMsgId
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
-import no.ks.fiks.nhn.edi.v1_0.AppRecDeserializer
 
 object ApplicationReceiptDeserializer {
     const val APP_REC_ROOT = "AppRec"
@@ -45,45 +42,28 @@ object ApplicationReceiptDeserializer {
 
     private val context1_0 = JAXBContext.newInstance(AppRec1_0::class.java)
     private val context1_1 = JAXBContext.newInstance(AppRec::class.java)
-    private val headSchema1_0 = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI).newSchema(
-        arrayOf(
-            StreamSource(AppRecDeserializer::class.java.classLoader.getResourceAsStream("xsd/kith.xsd")),
-            StreamSource(AppRecDeserializer::class.java.classLoader.getResourceAsStream("xsd/apprec-v1.0.xsd")),
-        )
-    )
-    private val headSchema1_1 = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI).newSchema(
-        arrayOf(
-            StreamSource(AppRecDeserializer::class.java.classLoader.getResourceAsStream("xsd/kith.xsd")),
-            StreamSource(AppRecDeserializer::class.java.classLoader.getResourceAsStream("xsd/apprec-v1.1.xsd")),
-        )
-    )
+    private val schema1_0 = XmlSchemas.load("xsd/kith.xsd", "xsd/apprec-v1.0.xsd")
+    private val schema1_1 = XmlSchemas.load("xsd/kith.xsd", "xsd/apprec-v1.1.xsd")
 
     @JvmStatic
     fun deserializeAppRec(appRecXml: String): AppRec {
         validateRootElement(appRecXml, APP_REC_ROOT)
-        return when (getAppRecVersion(appRecXml)) {
-            AppRecVersion.V1_0 -> fromApplicationReceipt10(appRecXml)
-            AppRecVersion.V1_1 -> fromApplicationReceipt11(appRecXml)
-        }
-    }
-
-    private fun getAppRecVersion(appRecXml: String) = getVersion(appRecXml).let { version ->
-        when (version) {
-            APPREC_VERSION_1_0 -> AppRecVersion.V1_0
-            APPREC_VERSION_1_1 -> AppRecVersion.V1_1
+        return when (getVersion(appRecXml)) {
+            APPREC_VERSION_1_0 -> fromApplicationReceipt10(appRecXml)
+            APPREC_VERSION_1_1 -> fromApplicationReceipt11(appRecXml)
             else -> throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT)
         }
     }
 
     private fun fromApplicationReceipt10(xml: String): AppRec {
-        headSchema1_0.newValidator().validate(StreamSource(StringReader(xml)))
+        schema1_0.newValidator().validate(StreamSource(StringReader(xml)))
         val appRec =
             context1_0.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec1_0::class.java).value
         return toLatest(appRec)
     }
 
     private fun fromApplicationReceipt11(xml: String): AppRec {
-        headSchema1_1.newValidator().validate(StreamSource(StringReader(xml)))
+        schema1_1.newValidator().validate(StreamSource(StringReader(xml)))
         return context1_1.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec::class.java).value
     }
 
@@ -228,8 +208,4 @@ private fun OriginalMsgId1_0.toLatest(): OriginalMsgId {
         issueDate = input.issueDate
         id = input.id
     }
-}
-
-private enum class AppRecVersion {
-    V1_0, V1_1,
 }

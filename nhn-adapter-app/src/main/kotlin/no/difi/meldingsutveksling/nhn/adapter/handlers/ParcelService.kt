@@ -22,8 +22,8 @@ import no.difi.move.common.io.ResourceUtils
 import org.bouncycastle.cms.CMSAlgorithm
 import org.springframework.core.io.Resource
 import org.springframework.http.codec.multipart.Part
-import org.springframework.util.MimeType
 
+/** Signs, encrypts, decrypts and verifies the forretningsmelding (JOSE) and dokumentpakke (CMS encrypted ASiC-E). */
 class ParcelService(
     private val verifyJWT: VerifyJWT,
     private val asicParser: AsicParser,
@@ -50,54 +50,46 @@ class ParcelService(
         return verifyJWT.verify(signed)
     }
 
-    fun getSigningCertificate(jwsObject: JWSObject): X509Certificate {
+    fun getSigningCertificate(jwsObject: JWSObject): X509Certificate =
         try {
-            return X509CertChainUtils.parse(jwsObject.header.x509CertChain).first()
+            X509CertChainUtils.parse(jwsObject.header.x509CertChain).firstOrNull()
                 ?: throw IllegalArgumentException("Expected to find certificate in JWS header!")
         } catch (e: ParseException) {
-            throw IllegalStateException("Could not parse certificate in JWS heade!", e)
+            throw IllegalStateException("Could not parse certificate in JWS header!", e)
         }
-    }
 
-    fun getAttachments(part: Part): List<Document> {
-        val resource = resourceFactory.getResource("dph-", ".asic.cms")
-        ResourceUtils.copy(part.content(), resource)
+    fun getAttachments(dokumentpakke: Part): List<Document> {
+        val encryptedAsic = newTempResource()
+        ResourceUtils.copy(dokumentpakke.content(), encryptedAsic)
 
-        val asice =
+        val asic =
             decryptCMSDocument.decrypt(
-                DecryptCMSDocument.Input.builder().resource(resource).keystoreHelper(keystoreHelper).build()
+                DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
             )
 
-        return asicParser.parse(asice)
+        return asicParser.parse(asic)
     }
 
-    fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<Attachment>): Resource {
-        val resource: InMemoryWithTempFileFallbackResource = inMemoryWithTempFileFallbackResource()
+    fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<AsicEAttachable>): Resource =
+        newTempResource().also {
+            createCmsEncryptedAsice.createCmsEncryptedAsice(
+                CreateCMSEncryptedAsice.Input.builder()
+                    .documents(attachments.stream())
+                    .certificate(certificate)
+                    .signatureMethod(SignatureMethod.CAdES)
+                    .signatureHelper(keystoreHelper.signatureHelper)
+                    .keyEncryptionScheme(CmsAlgorithm.RSAES_OAEP)
+                    .cmsEncryptionAlgorithm(CMSAlgorithm.AES256_GCM)
+                    .build(),
+                it,
+            )
+        }
 
-        createCmsEncryptedAsice.createCmsEncryptedAsice(
-            CreateCMSEncryptedAsice.Input.builder()
-                .documents(attachments.stream())
-                .certificate(certificate)
-                .signatureMethod(SignatureMethod.CAdES)
-                .signatureHelper(keystoreHelper.signatureHelper)
-                .keyEncryptionScheme(CmsAlgorithm.RSAES_OAEP)
-                .cmsEncryptionAlgorithm(CMSAlgorithm.AES256_GCM)
-                .build(),
-            resource,
-        )
+    private fun newTempResource(): InMemoryWithTempFileFallbackResource =
+        resourceFactory.getResource(TEMP_FILE_PREFIX, ENCRYPTED_ASIC_SUFFIX)
 
-        return resource
+    private companion object {
+        const val TEMP_FILE_PREFIX = "dph-"
+        const val ENCRYPTED_ASIC_SUFFIX = ".asic.cms"
     }
-
-    private fun inMemoryWithTempFileFallbackResource(): InMemoryWithTempFileFallbackResource =
-        resourceFactory.getResource("dph-", ".asic.cms")
-}
-
-data class Attachment(private val filename: String, private val resource: Resource, private val mimeType: MimeType) :
-    AsicEAttachable {
-    override fun getFilename(): String = filename
-
-    override fun getResource(): Resource = resource
-
-    override fun getMimeType(): MimeType = mimeType
 }

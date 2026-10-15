@@ -1,6 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.extensions
 
-import no.difi.meldingsutveksling.nhn.adapter.config.Pasient
+import no.difi.meldingsutveksling.nhn.adapter.messages.Pasient
 import no.ks.fiks.hdir.Adressetype
 import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.PersonIdType
@@ -13,61 +13,51 @@ import no.ks.fiks.nhn.ar.PhysicalAddress
 import no.ks.fiks.nhn.ar.PostalAddressType
 import no.ks.fiks.nhn.ar.ServiceCommunicationParty
 import no.ks.fiks.nhn.msh.Address
+import no.ks.fiks.nhn.msh.CommunicationParty as MshCommunicationParty
+import no.ks.fiks.nhn.msh.Country as MshCountry
+import no.ks.fiks.nhn.msh.OrganizationCommunicationParty as MshOrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OrganizationId
 import no.ks.fiks.nhn.msh.Patient
+import no.ks.fiks.nhn.msh.PersonCommunicationParty as MshPersonCommunicationParty
 import no.ks.fiks.nhn.msh.PersonId
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.Sender
 
-fun CommunicationParty.toSender(): Sender = Sender(parent!!.toMsh(), toMshChild())
+fun CommunicationParty.toSender(): Sender = Sender(requireParent().toMsh(), toMshChild())
 
 fun CommunicationParty.toReceiver(pasient: Pasient): Receiver =
     Receiver(
-        parent!!.toMsh(),
+        requireParent().toMsh(),
         toMshChild(),
         Patient(pasient.fnr, pasient.fornavn, pasient.mellomnavn, pasient.etternavn),
     )
 
-private fun CommunicationParty.toMshChild(): no.ks.fiks.nhn.msh.CommunicationParty =
+private fun CommunicationParty.requireParent(): CommunicationPartyParent =
+    checkNotNull(parent) { "Communication party $herId has no parent organization" }
+
+private fun CommunicationParty.toMshChild(): MshCommunicationParty =
     when (this) {
-        is OrganizationCommunicationParty -> {
-            no.ks.fiks.nhn.msh.OrganizationCommunicationParty(
-                name = name,
-                ids =
-                    organizationNumber?.let {
-                        listOf(
-                            OrganizationId(herId.toString(), OrganizationIdType.HER_ID),
-                            OrganizationId(it, OrganizationIdType.ENH),
-                        )
-                    } ?: listOf(OrganizationId(herId.toString(), OrganizationIdType.HER_ID)),
-            )
-        }
-        is PersonCommunicationParty -> {
-            this.toMsh()
-        }
+        is OrganizationCommunicationParty ->
+            MshOrganizationCommunicationParty(name = name, ids = organizationIds(herId, organizationNumber))
+        is PersonCommunicationParty -> toMsh()
         // MSH has no service type; a service is sent as an organisational unit under its parent.
-        is ServiceCommunicationParty -> {
-            no.ks.fiks.nhn.msh.OrganizationCommunicationParty(
-                name = name,
-                ids = listOf(OrganizationId(herId.toString(), OrganizationIdType.HER_ID)),
-            )
-        }
+        is ServiceCommunicationParty ->
+            MshOrganizationCommunicationParty(name = name, ids = organizationIds(herId, organizationNumber = null))
     }
 
-private fun CommunicationPartyParent.toMsh(): no.ks.fiks.nhn.msh.OrganizationCommunicationParty =
-    no.ks.fiks.nhn.msh.OrganizationCommunicationParty(
-        name = name,
-        ids =
-            listOf(
-                OrganizationId(herId.toString(), OrganizationIdType.HER_ID),
-                OrganizationId(organizationNumber, OrganizationIdType.ENH),
-            ),
+private fun CommunicationPartyParent.toMsh(): MshOrganizationCommunicationParty =
+    MshOrganizationCommunicationParty(name = name, ids = organizationIds(herId, organizationNumber))
+
+private fun organizationIds(herId: Int, organizationNumber: String?): List<OrganizationId> =
+    listOfNotNull(
+        OrganizationId(herId.toString(), OrganizationIdType.HER_ID),
+        organizationNumber?.let { OrganizationId(it, OrganizationIdType.ENH) },
     )
 
-private fun PersonCommunicationParty.toMsh(): no.ks.fiks.nhn.msh.PersonCommunicationParty =
-    no.ks.fiks.nhn.msh.PersonCommunicationParty(
+private fun PersonCommunicationParty.toMsh(): MshPersonCommunicationParty =
+    MshPersonCommunicationParty(
         ids = listOf(PersonId(herId.toString(), PersonIdType.HER_ID)),
-        address = physicalAddresses.map { it.toMsh() }.firstOrNull(),
+        address = physicalAddresses.firstOrNull()?.toMsh(),
         firstName = firstName,
         lastName = lastName,
         middleName = middleName,
@@ -90,4 +80,4 @@ private fun PostalAddressType.toMsh(): Adressetype =
         PostalAddressType.BESOKSADRESSE -> Adressetype.BESOKSADRESSE
     }
 
-private fun Country.toMsh(): no.ks.fiks.nhn.msh.Country = no.ks.fiks.nhn.msh.Country(code = code, name = name)
+private fun Country.toMsh(): MshCountry = MshCountry(code = code, name = name)

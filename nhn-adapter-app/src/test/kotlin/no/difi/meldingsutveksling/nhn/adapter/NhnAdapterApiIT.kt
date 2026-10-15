@@ -24,21 +24,14 @@ import no.difi.meldingsutveksling.domain.sbdh.ScopeType
 import no.difi.meldingsutveksling.domain.sbdh.StandardBusinessDocument
 import no.difi.meldingsutveksling.domain.sbdh.StandardBusinessDocumentHeader
 import no.difi.meldingsutveksling.nhn.adapter.IntegrationTestEnvironment.CONSUMER_ORG_NUMBER
-import no.difi.meldingsutveksling.nhn.adapter.config.AttachmentMetadata
-import no.difi.meldingsutveksling.nhn.adapter.config.BusinessMessageType
-import no.difi.meldingsutveksling.nhn.adapter.config.DialogmeldingKvitteringMessage
-import no.difi.meldingsutveksling.nhn.adapter.config.DialogmeldingKvitteringStatus
-import no.difi.meldingsutveksling.nhn.adapter.config.DialogmeldingMessage
-import no.difi.meldingsutveksling.nhn.adapter.config.PROCESS
-import no.difi.meldingsutveksling.nhn.adapter.config.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmelding
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmeldingKvittering
 import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toReceiver
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toSender
-import no.difi.meldingsutveksling.nhn.adapter.handlers.Attachment
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.Attachment
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getAttachments
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getConversationRef
@@ -47,6 +40,13 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDe
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getSender
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
+import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
+import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
+import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
+import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
+import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingMessage
+import no.difi.meldingsutveksling.nhn.adapter.messages.PROCESS
+import no.difi.meldingsutveksling.nhn.adapter.messages.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
@@ -309,9 +309,7 @@ class NhnAdapterApiIT(
                     .isEqualTo(LEGEKONTOR_HER_ID)
             }
 
-            // Disabled: NhnErrorFilter only maps HerIdNotFound to 404 for the base path "/lookup",
-            // but the actual
-            // path is "/api/lookup", so 400 is returned.
+            // Disabled: NhnErrorFilter maps HerIdNotFoundException to 400, not 404.
             xit("returns 404 when the HER-id is unknown") {
                 client().get().uri("/api/lookup/her-id:$UNKNOWN_HER_ID").exchange().expectStatus().isNotFound
             }
@@ -369,7 +367,7 @@ class NhnAdapterApiIT(
                 val attachment = msgHead.getAttachments().single()
                 attachment.mimeType shouldBe "application/pdf"
                 attachment.description shouldBe "Testvedlegg"
-                attachment.data!!.readAllBytes() shouldBe testPdf
+                attachment.data.readAllBytes() shouldBe testPdf
             }
 
             it("sends the dialogmelding to MSH when the sender is a service") {

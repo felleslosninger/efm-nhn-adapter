@@ -6,8 +6,9 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.xml.datatype.DatatypeFactory
 import kotlin.time.Clock
-import no.difi.meldingsutveksling.nhn.adapter.config.AttachmentMetadata
+import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
+import no.difi.move.common.dokumentpakking.domain.Document as DokumentpakkeDocument
 import no.kith.xmlstds.base64container.Base64Container
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.Address as NhnAddress
@@ -43,8 +44,6 @@ import org.springframework.core.io.Resource
 
 private const val VEDLEGG_MAX_BYTES = 18 * 1000 * 1000
 
-private const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
-
 object BusinessDocumentSerializer {
     fun serializeNhnMessage(businessDocument: SendMessageInput): String {
         try {
@@ -61,11 +60,11 @@ object BusinessDocumentSerializer {
                     }
                 )
                 .also { XmlContext.validateXml(it) }
-        } catch (t: Throwable) {
+        } catch (e: Exception) {
             throw ApplicationReceiptException(
                 FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
                 "Error while serializing Dialogmelding",
-                t,
+                e,
             )
         }
     }
@@ -78,7 +77,7 @@ object BusinessDocumentSerializer {
             msgInfo =
                 MsgInfo().apply {
                     type = buildMsgInfoType(DialogmeldingVersion.V1_1)
-                    miGversion = MSG_HEAD_VERSION
+                    miGversion = BusinessDocumentDeserializer.MSG_HEAD_VERSION
                     genDate = currentDateTime()
                     msgId = businessDocument.id.toString()
                     sender =
@@ -119,44 +118,32 @@ object BusinessDocumentSerializer {
         }
 
     private fun toOrganisation(parent: OrganizationCommunicationParty, child: CommunicationParty): NhnOrganisation =
+        toOrganisation(parent).apply {
+            organisation = (child as? OrganizationCommunicationParty)?.let { toOrganisation(it) }
+            healthcareProfessional = (child as? PersonCommunicationParty)?.let { toHealthcareProfessional(it) }
+        }
+
+    private fun toOrganisation(organization: OrganizationCommunicationParty): NhnOrganisation =
         NhnOrganisation().apply {
-            organisationName = parent.name
-            ident = parent.ids.map { toIdent(it) }
-            address = parent.address?.let { convert(it) }
-            organisation =
-                child
-                    .let { it as? OrganizationCommunicationParty }
-                    ?.let { org ->
-                        NhnOrganisation().apply {
-                            organisationName = org.name
-                            ident = org.ids.map { toIdent(it) }
-                            address = org.address?.let { convert(it) }
-                        }
-                    }
-            healthcareProfessional =
-                child
-                    .let { it as? PersonCommunicationParty }
-                    ?.let { person ->
-                        HealthcareProfessional().apply {
-                            givenName = person.firstName
-                            middleName = person.middleName
-                            familyName = person.lastName
-                            ident = person.ids.map { toIdent(it) }
-                            address = person.address?.let { convert(it) }
-                        }
-                    }
+            organisationName = organization.name
+            ident = organization.ids.map { toIdent(it) }
+            address = organization.address?.let { convert(it) }
+        }
+
+    private fun toHealthcareProfessional(person: PersonCommunicationParty): HealthcareProfessional =
+        HealthcareProfessional().apply {
+            givenName = person.firstName
+            middleName = person.middleName
+            familyName = person.lastName
+            ident = person.ids.map { toIdent(it) }
+            address = person.address?.let { convert(it) }
         }
 
     private fun buildMsgInfoType(version: DialogmeldingVersion) =
         when (version) {
             DialogmeldingVersion.V1_0 -> MeldingensFunksjon.DIALOG_FORESPORSEL
             DialogmeldingVersion.V1_1 -> MeldingensFunksjon.DIALOG_HELSEFAGLIG
-        }.run {
-            CS().apply {
-                v = verdi
-                dn = navn
-            }
-        }
+        }.toMsgHeadCS()
 
     private fun currentDateTime() =
         DatatypeFactory.newInstance()
@@ -179,31 +166,13 @@ object BusinessDocumentSerializer {
 
     private fun convert(address: Address) =
         NhnAddress().apply {
-            type =
-                address.type?.let {
-                    CS().apply {
-                        v = it.verdi
-                        dn = it.navn
-                    }
-                }
+            type = address.type?.toMsgHeadCS()
             streetAdr = address.streetAdr
             postalCode = address.postalCode
             city = address.city
             postbox = address.postbox
-            county =
-                address.county?.let {
-                    CS().apply {
-                        v = it.code
-                        dn = it.name
-                    }
-                }
-            country =
-                address.country?.let {
-                    CS().apply {
-                        v = it.code
-                        dn = it.name
-                    }
-                }
+            county = address.county?.let { msgHeadCS(it.code, it.name) }
+            country = address.country?.let { msgHeadCS(it.code, it.name) }
         }
 
     private fun buildDialogmeldingDocument(dialogmelding: Dialogmelding) =
@@ -216,10 +185,10 @@ object BusinessDocumentSerializer {
         }
 
     private fun buildVedleggDocument(
-        attachment: no.difi.move.common.dokumentpakking.domain.Document,
+        attachment: DokumentpakkeDocument,
         metadataFiler: Map<String, AttachmentMetadata?>?,
     ): Document {
-        val metadata = metadataFiler?.getOrDefault(attachment.filename, null)
+        val metadata = metadataFiler?.get(attachment.filename)
 
         return Document().apply {
             refDoc =
@@ -248,8 +217,10 @@ object BusinessDocumentSerializer {
         }
 }
 
-private fun KodeverkVerdi.toMsgHeadCS() =
+private fun KodeverkVerdi.toMsgHeadCS() = msgHeadCS(verdi, navn)
+
+private fun msgHeadCS(value: String?, displayName: String?) =
     CS().apply {
-        v = verdi
-        dn = navn
+        v = value
+        dn = displayName
     }

@@ -1,19 +1,15 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import io.swagger.v3.oas.annotations.Parameter
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.builtins.ListSerializer
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
-import no.difi.meldingsutveksling.nhn.adapter.audit.clientContext
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
 import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toJWEToken
-import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
-import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentResponse
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
 import no.difi.meldingsutveksling.nhn.adapter.model.GetDocumentInput
@@ -24,7 +20,6 @@ import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
-import no.idporten.logging.audit.AuditEntry
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
@@ -41,23 +36,19 @@ class InHandler(
     private val parcelService: ParcelService,
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
-    private val adresseregisteretService: AdresseregisteretService,
 ) {
     suspend fun getMessagesWithMetadata(
         receiverHerId: Int,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
-        auditLogService.log(
-            AuditEntry.builder()
-                .auditId(NHNAdapterAuditIdentifier.GET_MESSAGES_WITH_METADATA)
-                .message("Get messages with metadata")
-                .clientContext(clientContext)
+        val auditEntry =
+            NHNAdapterAuditIdentifier.GET_MESSAGES_WITH_METADATA.entry(clientContext)
                 .attribute("receiverHerId", receiverHerId)
-        ) { auditEntryBuilder ->
-            securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
-            val inMessages = mshService.getMessagesWithMetadata(receiverHerId, clientContext).map { it.toInMessage() }
 
-            auditEntryBuilder.attribute("messageCount", inMessages.size)
+        auditLogService.log(auditEntry) {
+            securityService.assertAccessToHerId(clientContext, receiverHerId)
+            val inMessages = mshService.getMessagesWithMetadata(receiverHerId, clientContext).map { it.toInMessage() }
+            auditEntry.attribute("messageCount", inMessages.size)
 
             val json = jsonParser.encodeToString(ListSerializer(IncomingMessage.serializer()), inMessages)
             return ServerResponse.ok().json().bodyValueAndAwait(json)
@@ -68,41 +59,34 @@ class InHandler(
         request: ServerRequest,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
-        auditLogService.log(
-            AuditEntry.builder()
-                .auditId(NHNAdapterAuditIdentifier.GET_BUSINESS_DOCUMENT)
-                .message("Get business document")
-                .clientContext(clientContext)
-        ) { auditEntryBuilder ->
-            val jWSObject = parcelService.decryptAndVerify(request.toJWEToken())
-            val input = jsonParser.decodeFromString<GetDocumentInput>(jWSObject.payload.toString())
-            val certificate = parcelService.getSigningCertificate(jWSObject)
-            val id = input.id
+        val auditEntry = NHNAdapterAuditIdentifier.GET_BUSINESS_DOCUMENT.entry(clientContext)
 
-            auditEntryBuilder.attribute("id", id)
-            val response: BusinessDocumentResponse = mshService.getBusinessDocument(id, clientContext)
-            val senderHerId = response.sbd.senderHerId
-            val receiverHerId = response.sbd.receiverHerId
-            auditEntryBuilder.attribute("senderHerId", senderHerId)
-            auditEntryBuilder.attribute("receiverHerId", receiverHerId)
-            securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
+        auditLogService.log(auditEntry) {
+            val jwsObject = parcelService.decryptAndVerify(request.toJWEToken())
+            val input = jsonParser.decodeFromString<GetDocumentInput>(jwsObject.payload.toString())
+            val clientCertificate = parcelService.getSigningCertificate(jwsObject)
+            auditEntry.attribute("id", input.id)
 
-            val json = jsonMapper.writeValueAsString(response.sbd)
-            val jwe = parcelService.signAndEncrypt(json, certificate)
-            val forretningsmelding = ByteArrayResource(jwe.toByteArray(StandardCharsets.UTF_8))
+            val document = mshService.getBusinessDocument(input.id, clientContext)
+            auditEntry
+                .attribute("senderHerId", document.sbd.senderHerId)
+                .attribute("receiverHerId", document.sbd.receiverHerId)
+            securityService.assertAccessToHerId(clientContext, document.sbd.receiverHerId)
+
+            val forretningsmelding =
+                parcelService.signAndEncrypt(jsonMapper.writeValueAsString(document.sbd), clientCertificate)
+            val dokumentpakke =
+                document.attachments
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { parcelService.createAndEncryptAsic(clientCertificate, it) }
 
             return ServerResponse.ok()
                 .multipartMixed()
                 .bodyValueAndAwait(
                     MultipartBodyBuilder()
                         .apply {
-                            forretningsmelding(forretningsmelding)
-
-                            if (response.attachments.isNotEmpty()) {
-                                val dokumentpakke =
-                                    parcelService.createAndEncryptAsic(certificate, response.attachments)
-                                dokumentpakke(dokumentpakke)
-                            }
+                            forretningsmelding(ByteArrayResource(forretningsmelding.toByteArray()))
+                            dokumentpakke?.let { dokumentpakke(it) }
                         }
                         .build()
                 )
@@ -114,29 +98,25 @@ class InHandler(
         receiverHerId: Int,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
-        auditLogService.log(
-            AuditEntry.builder()
-                .auditId(NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_READ)
-                .message("Mark message as read")
-                .clientContext(clientContext)
+        val auditEntry =
+            NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_READ.entry(clientContext)
                 .attribute("messageId", messageId)
                 .attribute("receiverHerId", receiverHerId)
-        ) {
-            securityService.assertAccess(clientContext, adresseregisteretService.lookupByHerId(receiverHerId))
+
+        auditLogService.log(auditEntry) {
+            securityService.assertAccessToHerId(clientContext, receiverHerId)
             mshService.markMessageRead(messageId, receiverHerId, clientContext)
             return ServerResponse.ok().textPlain().bodyValueAndAwait("Message deleted")
         }
     }
 
-    private fun MultipartBodyBuilder.forretningsmelding(resource: Resource): MultipartBodyBuilder {
+    private fun MultipartBodyBuilder.forretningsmelding(resource: Resource) {
         part(MultipartNames.FORRETNINGSMELDING, resource, MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE))
             .filename(MultipartFileNames.FORRETNINGSMELDING)
-        return this
     }
 
-    private fun MultipartBodyBuilder.dokumentpakke(resource: Resource): MultipartBodyBuilder {
+    private fun MultipartBodyBuilder.dokumentpakke(resource: Resource) {
         part(MultipartNames.DOKUMENTPAKKE, resource, MediaType.parseMediaType(ContentTypes.APPLICATION_ASICE))
             .filename(MultipartFileNames.DOKUMENTPAKKE)
-        return this
     }
 }

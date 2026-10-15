@@ -5,11 +5,21 @@ import kotlinx.coroutines.reactor.awaitSingle
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.bodyToMono
 
-fun ServerRequest.getMessageId(): UUID = this.pathVariable("messageId").toUUID()
+private const val MESSAGE_ID = "messageId"
+private const val RECEIVER_HER_ID = "receiverHerId"
+
+fun ServerRequest.getMessageId(): UUID =
+    pathVariable(MESSAGE_ID).let {
+        try {
+            UUID.fromString(it)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException("$MESSAGE_ID must be an UUID!", e)
+        }
+    }
 
 fun ServerRequest.getReceiverHerId(): Int =
-    this.queryParam("receiverHerId")
-        .map { it.toInt() }
-        .orElseThrow { IllegalArgumentException("receiverHerId cannot be null") }
+    queryParam(RECEIVER_HER_ID)
+        .map { it.toIntOrNull() ?: throw IllegalArgumentException("$RECEIVER_HER_ID must be an integer") }
+        .orElseThrow { IllegalArgumentException("$RECEIVER_HER_ID cannot be null") }
 
-suspend fun ServerRequest.toJWEToken() = bodyToMono<String>().awaitSingle()
+suspend fun ServerRequest.toJWEToken(): String = bodyToMono<String>().awaitSingle()

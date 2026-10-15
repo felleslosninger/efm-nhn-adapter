@@ -36,12 +36,14 @@ data class ClientContextImpl(val jwt: Jwt) : ClientContext {
 
 suspend fun getClientContext(): ClientContext {
     val securityContext: SecurityContext = ReactiveSecurityContextHolder.getContext().awaitSingle()
-    return ClientContextImpl(securityContext.getJwt()!!)
+    val jwt = checkNotNull(securityContext.getJwt()) { "Expected a JWT authenticated security context" }
+    return ClientContextImpl(jwt)
 }
 
-fun Jwt.getClientId(): String = getClaimAsString(Claims.CLIENT_ID)!!
+fun Jwt.getClientId(): String =
+    checkNotNull(getClaimAsString(Claims.CLIENT_ID)) { "Missing claim ${Claims.CLIENT_ID}" }
 
-fun Jwt.getConsumer(): Iso6523 = getIso6523(Claims.CONSUMER)!!
+fun Jwt.getConsumer(): Iso6523 = checkNotNull(getIso6523(Claims.CONSUMER)) { "Missing claim ${Claims.CONSUMER}" }
 
 fun Jwt.getSupplier(): Iso6523? = getIso6523(Claims.SUPPLIER)
 
@@ -49,13 +51,7 @@ fun Jwt.getDelegationSource(): String? = getClaimAsString(Claims.DELEGATION_SOUR
 
 fun Jwt.getScopes(): Set<String> = getClaimAsString(Claims.SCOPE)?.split(' ')?.toSet() ?: emptySet()
 
-private fun Jwt.getIso6523(claim: String): Iso6523? {
-    val claimAsMap = getClaimAsMap(claim)
-    val id = claimAsMap?.get("ID")
-    return if (id is String) Iso6523.parse(id) else null
-}
+private fun Jwt.getIso6523(claim: String): Iso6523? =
+    (getClaimAsMap(claim)?.get("ID") as? String)?.let { Iso6523.parse(it) }
 
-fun SecurityContext.getJwt(): Jwt? {
-    val authentication = this.authentication
-    return if (authentication is JwtAuthenticationToken) authentication.token else null
-}
+fun SecurityContext.getJwt(): Jwt? = (authentication as? JwtAuthenticationToken)?.token
