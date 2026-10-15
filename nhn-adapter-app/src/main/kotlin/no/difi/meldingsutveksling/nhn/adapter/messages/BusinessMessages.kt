@@ -1,9 +1,6 @@
-package no.difi.meldingsutveksling.nhn.adapter.config
+package no.difi.meldingsutveksling.nhn.adapter.messages
 
 import java.io.InputStream
-import java.util.Arrays
-import java.util.function.Supplier
-import java.util.stream.Collectors
 import kotlin.time.Instant
 import no.difi.meldingsutveksling.domain.BusinessMessage
 import no.difi.meldingsutveksling.jackson.StandardBusinessDocumentType
@@ -14,7 +11,7 @@ enum class BusinessMessageType(
     val type: String,
     val standard: String,
     val version: String,
-    val clazz: Class<out BusinessMessage?>,
+    private val valueType: Class<out BusinessMessage>,
 ) : StandardBusinessDocumentType {
     DIALOGMELDING("dialogmelding", "urn:no:difi:helse:xsd::dialogmelding", "2.0", DialogmeldingMessage::class.java),
     DIALOGMELDING_KVITTERING(
@@ -24,33 +21,16 @@ enum class BusinessMessageType(
         DialogmeldingKvitteringMessage::class.java,
     );
 
-    override fun getFieldName(): String? {
-        return type
-    }
+    override fun getFieldName(): String = type
 
-    override fun getValueType(): Class<*>? {
-        return clazz
-    }
+    override fun getValueType(): Class<*> = valueType
 
     companion object {
-        fun fromType(type: String): StandardBusinessDocumentType {
-            return Arrays.stream(entries.toTypedArray())
-                .filter { p: BusinessMessageType -> p.type.equals(type, ignoreCase = true) }
-                .findAny()
-                .orElseThrow(
-                    Supplier {
-                        IllegalArgumentException(
-                            String.format(
-                                "Unknown BusinessMessageType = %s. Expecting one of %s",
-                                type,
-                                Arrays.stream(entries.toTypedArray())
-                                    .map { obj: BusinessMessageType -> obj.type }
-                                    .collect(Collectors.joining(",")),
-                            )
-                        )
-                    }
+        fun fromType(type: String): StandardBusinessDocumentType =
+            entries.firstOrNull { it.type.equals(type, ignoreCase = true) }
+                ?: throw IllegalArgumentException(
+                    "Unknown BusinessMessageType = $type. Expecting one of ${entries.joinToString(",") { it.type }}"
                 )
-        }
     }
 }
 
@@ -64,7 +44,7 @@ data class IncomingAttachment(
     val issueDate: Instant?,
     val description: String?,
     val mimeType: String,
-    val data: InputStream?,
+    val data: InputStream,
 )
 
 data class AttachmentMetadata(val issueDate: String?, val description: String?)
@@ -81,7 +61,7 @@ data class DialogmeldingKvitteringMessage(
 enum class DialogmeldingKvitteringStatus {
     OK,
     REJECTED,
-    OK_ERROR_IN_MESSAGE_PART
+    OK_ERROR_IN_MESSAGE_PART,
 }
 
 data class KvitteringStatusMessage(val code: String, val text: String)

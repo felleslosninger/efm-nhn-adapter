@@ -5,7 +5,7 @@ import java.io.StringReader
 import javax.xml.transform.stream.StreamSource
 import kotlin.time.toKotlinInstant
 import mu.KotlinLogging
-import no.difi.meldingsutveksling.nhn.adapter.config.IncomingAttachment
+import no.difi.meldingsutveksling.nhn.adapter.messages.IncomingAttachment
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingConverter
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils
@@ -16,6 +16,7 @@ import no.kith.xmlstds.msghead._2006_05_24.CV
 import no.kith.xmlstds.msghead._2006_05_24.Ident
 import no.kith.xmlstds.msghead._2006_05_24.MsgHead
 import no.kith.xmlstds.msghead._2006_05_24.Organisation
+import no.kith.xmlstds.msghead._2006_05_24.RefDoc
 import no.ks.fiks.hdir.Adressetype
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.IdType
@@ -39,7 +40,7 @@ import no.ks.fiks.nhn.parseOffsetDateTimeOrNull
 
 object BusinessDocumentDeserializer {
     const val MSG_HEAD_ROOT = "MsgHead"
-    private const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
+    const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
 
     private val log = KotlinLogging.logger {}
 
@@ -53,8 +54,8 @@ object BusinessDocumentDeserializer {
         }
         try {
             XmlContext.validateXml(xml)
-        } catch (t: Throwable) {
-            throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.UGYLDIG_XML, t.message)
+        } catch (e: Exception) {
+            throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.UGYLDIG_XML, e.message, e)
         }
 
         val msgHead =
@@ -83,20 +84,16 @@ object BusinessDocumentDeserializer {
             name = organisationName,
         )
 
+    /**
+     * The child is either a sub-organization or a healthcare professional within the parent organization. Note that a
+     * healthcare professional is given the address of the parent organization, not its own.
+     */
     fun Organisation.getChild() =
-        organisation?.let {
-            with(organisation) {
-                OrganizationCommunicationParty(
-                    ids = ident.getOrganisasjonId(),
-                    address = convertAddress(),
-                    name = it.organisationName,
-                )
-            }
-        }
+        organisation?.getParent()
             ?: with(healthcareProfessional) {
                 PersonCommunicationParty(
                     ids = ident.getPersonId(),
-                    address = convertAddress(),
+                    address = this@getChild.convertAddress(),
                     firstName = givenName,
                     middleName = middleName,
                     lastName = familyName,
@@ -120,53 +117,47 @@ object BusinessDocumentDeserializer {
         with(msgInfo.patient) {
             Patient(
                 fnr =
-                    ident.getPersonId().let { ids ->
-                        ids.firstOrNull()?.id ?: throw IllegalArgumentException("Found multiple ids for patient: $ids")
-                    },
+                    ident.getPersonId().firstOrNull()?.id
+                        ?: throw IllegalArgumentException("Found no ids for patient"),
                 firstName = givenName,
                 middleName = middleName,
                 lastName = familyName,
             )
         }
 
+    /** The first document of a MsgHead is the Dialogmelding itself; older versions are converted to the latest. */
     fun MsgHead.getDialogmelding(): Dialogmelding =
-        document.firstOrNull()?.refDoc?.content?.any?.singleOrNull()?.let {
-            when (it) {
-                is no.kith.xmlstds.dialog._2006_10_11.Dialogmelding -> DialogmeldingConverter.toLatest(it)
-                is Dialogmelding -> it
-                else -> throw IllegalArgumentException("Unsupported message type: $it")
-            }
-        }!!
-
-    fun MsgHead.getAttachments() =
-        document.drop(1).mapIndexedNotNull { _, doc ->
-            doc.refDoc.let { refDoc ->
-                refDoc
-                    .takeIf { refDoc.msgType?.toTypeDokumentreferanse() == TypeDokumentreferanse.VEDLEGG }
-                    .also {
-                        if (it == null) {
-                            log.info {
-                                "Ignoring ref doc of type ${refDoc.msgType.v}, as only 'A, Vedlegg' is supported"
-                            }
-                        }
-                    }
-                    ?.let {
-                        IncomingAttachment(
-                            issueDate =
-                                refDoc.issueDate?.v?.parseOffsetDateTimeOrNull()?.toInstant()?.toKotlinInstant(),
-                            description = refDoc.description,
-                            mimeType = refDoc.mimeType,
-                            data =
-                                (refDoc.content.any.single() as? Base64Container)?.let {
-                                    ByteArrayInputStream(it.value)
-                                }
-                                    ?: throw IllegalArgumentException(
-                                        "Expected Base64Container, but got ${refDoc.content}"
-                                    ),
-                        )
-                    }
-            }
+        when (val content = document.firstOrNull()?.refDoc?.content?.any?.singleOrNull()) {
+            is no.kith.xmlstds.dialog._2006_10_11.Dialogmelding -> DialogmeldingConverter.toLatest(content)
+            is Dialogmelding -> content
+            null -> throw IllegalArgumentException("Found no Dialogmelding in MsgHead")
+            else -> throw IllegalArgumentException("Unsupported message type: $content")
         }
+
+    /** The documents following the Dialogmelding are its attachments. Only 'A, Vedlegg' is supported. */
+    fun MsgHead.getAttachments(): List<IncomingAttachment> =
+        document
+            .drop(1)
+            .map { it.refDoc }
+            .filter { refDoc ->
+                (refDoc.msgType?.toTypeDokumentreferanse() == TypeDokumentreferanse.VEDLEGG).also { isVedlegg ->
+                    if (!isVedlegg) {
+                        log.info { "Ignoring ref doc of type ${refDoc.msgType?.v}, as only 'A, Vedlegg' is supported" }
+                    }
+                }
+            }
+            .map { refDoc ->
+                IncomingAttachment(
+                    issueDate = refDoc.issueDate?.v?.parseOffsetDateTimeOrNull()?.toInstant()?.toKotlinInstant(),
+                    description = refDoc.description,
+                    mimeType = refDoc.mimeType,
+                    data = ByteArrayInputStream(refDoc.base64Content().value),
+                )
+            }
+
+    private fun RefDoc.base64Content(): Base64Container =
+        content.any.single() as? Base64Container
+            ?: throw IllegalArgumentException("Expected Base64Container, but got $content")
 
     fun MsgHead.getConversationRef() =
         if (

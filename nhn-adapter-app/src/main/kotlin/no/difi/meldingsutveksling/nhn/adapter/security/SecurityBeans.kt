@@ -10,34 +10,37 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtIss
 import org.springframework.security.web.server.SecurityWebFilterChain
 
 object SecurityBeans {
-    fun securityFilterChain(http: ServerHttpSecurity, config: SecurityConfig): SecurityWebFilterChain {
+    private val PUBLIC_PATHS =
+        arrayOf(
+            "/health/**",
+            "/prometheus",
+            "/swagger-ui/**",
+            "/swagger-ui.html",
+            "/swagger-resources/**",
+            "/v3/api-docs/**",
+        )
+
+    private val API_AUTHORITIES = arrayOf("SCOPE_eformidling:dph", "SCOPE_move/dph.read")
+
+    fun securityFilterChain(http: ServerHttpSecurity, config: SecurityConfig): SecurityWebFilterChain =
         http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
-            .authorizeExchange { exchange: ServerHttpSecurity.AuthorizeExchangeSpec? ->
-                exchange!!
-                    .pathMatchers(
-                        "/health/**",
-                        "/prometheus",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html",
-                        "/swagger-resources/**",
-                        "/v3/api-docs/**",
-                    )
+            .authorizeExchange { exchange ->
+                exchange
+                    .pathMatchers(*PUBLIC_PATHS)
                     .permitAll()
                     .pathMatchers("/api/**")
-                    .hasAnyAuthority("SCOPE_eformidling:dph", "SCOPE_move/dph.read")
+                    .hasAnyAuthority(*API_AUTHORITIES)
                     .anyExchange()
                     .authenticated()
             }
-            .headers { headers: ServerHttpSecurity.HeaderSpec -> headers.frameOptions(Customizer.withDefaults()) }
-            .oauth2ResourceServer { oauth2: ServerHttpSecurity.OAuth2ResourceServerSpec ->
-                oauth2.authenticationManagerResolver(
+            .headers { it.frameOptions(Customizer.withDefaults()) }
+            .oauth2ResourceServer {
+                it.authenticationManagerResolver(
                     JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers(config.trustedIssuers)
                 )
             }
-
-        return http.build()
-    }
+            .build()
 
     fun helseIdConfiguration(helseId: HelseId) =
         HelseIdConfiguration(Environment(helseId.issuer, helseId.audience), helseId.clientId, helseId.privateKey)

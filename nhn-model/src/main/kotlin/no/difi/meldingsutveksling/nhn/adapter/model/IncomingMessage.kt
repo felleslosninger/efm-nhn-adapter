@@ -4,8 +4,7 @@ import java.time.OffsetDateTime
 import kotlinx.serialization.Serializable
 import no.ks.fiks.nhn.msh.MessageWithMetadata
 
-@Serializable
-data class GetDocumentInput(val id: String)
+@Serializable data class GetDocumentInput(val id: String)
 
 @Serializable
 data class IncomingMessage(
@@ -19,11 +18,10 @@ data class IncomingMessage(
 
 fun MessageWithMetadata.toInMessage(): IncomingMessage =
     IncomingMessage(
-        this.id.toString(),
-        this.receiverHerId,
-        this.senderHerId,
-        this.businessDocumentId,
-        this.businessDocumentDate,
-        this.isAppRec
+        id = id.toString(),
+        receiverHerId = receiverHerId,
+        senderHerId = senderHerId,
+        businessDocumentId = businessDocumentId,
+        businessDocumentDate = businessDocumentDate,
+        isAppRec = isAppRec,
     )
-
