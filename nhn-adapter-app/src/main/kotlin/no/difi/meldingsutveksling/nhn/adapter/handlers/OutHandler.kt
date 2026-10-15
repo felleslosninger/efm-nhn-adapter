@@ -31,6 +31,7 @@ import no.difi.move.common.dokumentpakking.domain.Document
 import no.difi.move.common.io.ResourceUtils
 import no.idporten.logging.audit.AuditEntry
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
+import no.ks.fiks.nhn.ar.CommunicationParty
 import no.ks.fiks.nhn.msh.ConversationRef
 import org.springframework.http.codec.multipart.Part
 import org.springframework.util.MultiValueMap
@@ -75,9 +76,13 @@ class OutHandler(
                 .attribute("senderHerId", sbd.senderHerId)
                 .attribute("receiverHerId", sbd.receiverHerId)
 
+            // Authorize before any further lookups or decryption of the dokumentpakke
+            val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
+
             val messageReference =
                 when (sbd.type) {
-                    BusinessMessageType.DIALOGMELDING.type -> sendDialogmelding(sbd, multipartData, clientContext)
+                    BusinessMessageType.DIALOGMELDING.type ->
+                        sendDialogmelding(sbd, sender, multipartData, clientContext)
                     BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
                         sendApplicationReceipt(sbd, auditEntry, clientContext)
                     else -> throw IllegalArgumentException("Unsupported message type ${sbd.type}")
@@ -95,6 +100,7 @@ class OutHandler(
 
     private suspend fun sendDialogmelding(
         sbd: StandardBusinessDocument,
+        sender: CommunicationParty,
         multipartData: MultiValueMap<String, Part>,
         clientContext: ClientContext,
     ): UUID {
@@ -111,7 +117,7 @@ class OutHandler(
             val input =
                 SendMessageInput(
                     id = UUID.fromString(sbd.messageId),
-                    sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId).toSender(),
+                    sender = sender.toSender(),
                     receiver = receiverParty.toReceiver(pasient),
                     dialogmelding = dialogmelding,
                     vedlegg = documents.filter { it.filename != message.hoveddokument },
