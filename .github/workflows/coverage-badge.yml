@@ -1,0 +1,76 @@
+name: Code coverage badge
+
+on:
+  push:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-badge
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  coverage-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # pin@v7.0.1
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # pin@v6.0.0
+        with:
+          distribution: liberica
+          java-version: 25
+          cache: maven
+          server-id: github
+          server-username-env-var: GH_PACKAGES_READ_USER
+          server-password-env-var: GH_PACKAGES_READ_PAT
+
+      - name: Run tests with JaCoCo
+        env:
+          GH_PACKAGES_READ_USER: ${{ secrets.GH_PACKAGES_READ_USER }}
+          GH_PACKAGES_READ_PAT: ${{ secrets.GH_PACKAGES_READ_PAT }}
+        run: mvn -B verify
+
+      - name: Generate coverage badge
+        id: jacoco
+        uses: cicirello/jacoco-badge-generator@72266185b7ee48a6fd74eaf0238395cc8b14fef8 # pin@v2.12.1
+        with:
+          jacoco-csv-file: nhn-adapter-app/target/site/jacoco/jacoco.csv
+          badges-directory: badges
+          coverage-label: coverage
+
+      - name: Coverage summary
+        env:
+          COVERAGE: ${{ steps.jacoco.outputs.coverage }}
+          BRANCHES: ${{ steps.jacoco.outputs.branches }}
+        run: |
+          echo "### Code coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Instructions: $(awk "BEGIN { printf \"%.1f\", $COVERAGE * 100 }")%" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branches: $(awk "BEGIN { printf \"%.1f\", $BRANCHES * 100 }")%" >> "$GITHUB_STEP_SUMMARY"
+
+      # The badge lives on its own branch so main (protected) is never written to by CI
+      - name: Publish badge to the badges branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp badges/jacoco.svg "$RUNNER_TEMP/jacoco.svg"
+          if git fetch origin badges; then
+            git worktree add "$RUNNER_TEMP/badges" origin/badges
+            git -C "$RUNNER_TEMP/badges" checkout -B badges
+          else
+            git worktree add --orphan -b badges "$RUNNER_TEMP/badges"
+          fi
+          cp "$RUNNER_TEMP/jacoco.svg" "$RUNNER_TEMP/badges/jacoco.svg"
+          cd "$RUNNER_TEMP/badges"
+          git add jacoco.svg
+          if git diff --cached --quiet; then
+            echo "Badge unchanged"
+          else
+            git commit -m "Update coverage badge for ${GITHUB_SHA::7}"
+            git push origin badges
+          fi

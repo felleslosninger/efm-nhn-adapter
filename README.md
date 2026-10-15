@@ -1,5 +1,6 @@
 # efm-nhn-adapter
 
+[![Code coverage](https://raw.githubusercontent.com/felleslosninger/efm-nhn-adapter/badges/jacoco.svg)](https://github.com/felleslosninger/efm-nhn-adapter/actions/workflows/coverage-badge.yml)
 
 # Dette er ein test
 

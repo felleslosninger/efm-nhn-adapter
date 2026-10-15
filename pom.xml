@@ -45,6 +45,7 @@
         <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
         <netty.version>4.2.19.Final</netty.version>
         <cxf.version>4.2.4</cxf.version>
+        <jacoco.version>0.8.15</jacoco.version>
 
         <!-- CVE-2026-54399 -->
         <httpcore5.version>5.4.3</httpcore5.version>
@@ -345,6 +346,27 @@
                         <goals>
                             <goal>integration-test</goal>
                             <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Code coverage, used by the coverage badge in README -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
                         </goals>
                     </execution>
                 </executions>
