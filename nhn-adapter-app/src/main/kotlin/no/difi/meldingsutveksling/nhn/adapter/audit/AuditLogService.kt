@@ -5,16 +5,30 @@ import no.idporten.logging.audit.AuditEntry
 import no.idporten.logging.audit.AuditLogger
 
 class AuditLogService(val auditLogger: AuditLogger) {
-    /** Runs [action] and writes the audit entry afterwards, recording whether the action succeeded. */
-    inline fun <T> log(builder: AuditEntry.AuditEntryBuilder, action: (AuditEntry.AuditEntryBuilder) -> T): T {
+    /**
+     * Runs [action] and writes the audit entry afterwards, recording whether the action succeeded. When the action
+     * succeeds and [skipOnSuccess] returns true, nothing is logged; failures are always logged.
+     *
+     * Logging happens in `finally` because callers return from the enclosing function inside [action].
+     */
+    inline fun <T> log(
+        builder: AuditEntry.AuditEntryBuilder,
+        skipOnSuccess: () -> Boolean = { false },
+        action: (AuditEntry.AuditEntryBuilder) -> T,
+    ): T {
+        var succeeded = true
         try {
-            return action(builder).also { builder.attribute("success", true) }
+            return action(builder)
         } catch (e: Exception) {
+            succeeded = false
             builder.attribute("success", false)
             builder.attribute("exception", e.message)
             throw e
         } finally {
-            auditLogger.log(builder.build())
+            if (!succeeded || !skipOnSuccess()) {
+                if (succeeded) builder.attribute("success", true)
+                auditLogger.log(builder.build())
+            }
         }
     }
 }

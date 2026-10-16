@@ -45,10 +45,13 @@ class InHandler(
             NHNAdapterAuditIdentifier.GET_MESSAGES_WITH_METADATA.entry(clientContext)
                 .attribute("receiverHerId", receiverHerId)
 
-        auditLogService.log(auditEntry) {
+        // Clients poll this endpoint frequently, so empty results are not audit logged
+        var messageCount = 0
+        auditLogService.log(auditEntry, skipOnSuccess = { messageCount == 0 }) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
             val inMessages = mshService.getMessagesWithMetadata(receiverHerId, clientContext).map { it.toInMessage() }
-            auditEntry.attribute("messageCount", inMessages.size)
+            messageCount = inMessages.size
+            auditEntry.attribute("messageCount", messageCount)
 
             val json = jsonParser.encodeToString(ListSerializer(IncomingMessage.serializer()), inMessages)
             return ServerResponse.ok().json().bodyValueAndAwait(json)
