@@ -4,6 +4,9 @@ project:
   version: '@project.version@'
 
 spring:
+  application:
+    # Same name as the image and the deployment; used as the "application" field in the logs
+    name: efm-nhn-adapter
   webflux:
     base-path: /nhn-adapter
     multipart:

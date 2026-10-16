@@ -4,6 +4,7 @@ import com.ninjasquad.springmockk.MockkBean
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -80,11 +81,15 @@ import no.nhn.msh.v2.model.PostMessageRequest
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.core.ResolvableType
+import org.springframework.core.codec.StringDecoder
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
+import org.springframework.http.codec.DecoderHttpMessageReader
+import org.springframework.http.codec.ServerCodecConfigurer
+import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
 import org.springframework.http.codec.multipart.DefaultPartHttpMessageReader
 import org.springframework.http.codec.multipart.Part
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
@@ -176,6 +181,7 @@ class NhnAdapterApiIT(
     private val keystoreHelper: KeystoreHelper,
     private val jsonMapper: JsonMapper,
     private val applicationContext: ApplicationContext,
+    private val serverCodecConfigurer: ServerCodecConfigurer,
 ) :
     DescribeSpec({
         val anonymousClient by lazy {
@@ -248,6 +254,18 @@ class NhnAdapterApiIT(
             every { adresseregisteretClient.lookupHerId(any()) } returns null
             every { adresseregisteretClient.lookupHerId(KOMMUNE_HER_ID) } returns kommune
             every { adresseregisteretClient.lookupHerId(FASTLEGE_HER_ID) } returns fastlege
+        }
+
+        describe("Codecs") {
+            it("gives the kotlinx.serialization JSON codec the same size limit as the default codecs") {
+                val decoders =
+                    serverCodecConfigurer.readers.filterIsInstance<DecoderHttpMessageReader<*>>().map { it.decoder }
+                val defaultLimit = decoders.filterIsInstance<StringDecoder>().first().maxInMemorySize
+
+                val kotlinxDecoders = decoders.filterIsInstance<KotlinSerializationJsonDecoder>()
+                kotlinxDecoders.shouldNotBeEmpty()
+                kotlinxDecoders.forEach { it.maxInMemorySize shouldBe defaultLimit }
+            }
         }
 
         describe("Security") {
@@ -785,7 +803,7 @@ class NhnAdapterApiIT(
                     .expectStatus()
                     .isOk
                     .expectBody<String>()
-                    .isEqualTo("Message deleted")
+                    .isEqualTo("Message marked as read")
 
                 coVerify(exactly = 1) { mshClient.markMessageRead(messageId, KOMMUNE_HER_ID, consumerTenant()) }
             }

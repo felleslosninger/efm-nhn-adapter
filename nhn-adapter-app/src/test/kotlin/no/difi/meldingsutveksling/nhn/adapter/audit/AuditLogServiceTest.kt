@@ -54,5 +54,12 @@ class AuditLogServiceTest :
                 logged.single().getAttribute("success") shouldBe false
                 logged.single().getAttribute("exception") shouldBe "boom"
             }
+
+            it("logs an Error as a failure") {
+                shouldThrow<NotImplementedError> { auditLogService.log(newEntry()) { TODO("not yet") } }
+
+                verifyLogged()
+                logged.single().getAttribute("success") shouldBe false
+            }
         }
     })

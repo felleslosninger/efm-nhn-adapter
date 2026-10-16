@@ -19,7 +19,8 @@ class AuditLogService(val auditLogger: AuditLogger) {
         var succeeded = true
         try {
             return action(builder)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable, so that an Error (e.g. NotImplementedError) is not logged as a success
             succeeded = false
             builder.attribute("success", false)
             builder.attribute("exception", e.message)
