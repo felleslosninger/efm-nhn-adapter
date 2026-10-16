@@ -36,8 +36,8 @@ if [ ! -x "./mvnw" ]; then
 fi
 
 
-# Spotless is configured in nhn-adapter-app only
-./mvnw -q -pl nhn-adapter-app spotless:apply || {
+# Spotless is configured in the parent POM, so this formats both nhn-model and nhn-adapter-app
+./mvnw -q spotless:apply || {
   echo "Commit blocked: formatting failed (see output above)."
   exit 1
 }
