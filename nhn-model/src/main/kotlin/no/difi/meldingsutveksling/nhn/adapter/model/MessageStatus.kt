@@ -38,7 +38,9 @@ fun StatusInfo.toMessageStatus(): MessageStatus =
         apprecStatus = appRecStatus?.let { ApplicationReceiptStatus.fromValue(it.name) },
     )
 
-/** Matches on either the display value (e.g. "OkErrorInMessagePart") or the constant name (OK_ERROR_IN_MESSAGE_PART). */
+/**
+ * Matches on either the display value (e.g. "OkErrorInMessagePart") or the constant name (OK_ERROR_IN_MESSAGE_PART).
+ */
 private fun <E : Enum<E>> List<E>.fromValue(value: String?, displayValue: (E) -> String): E =
     firstOrNull { displayValue(it).equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true) }
         ?: throw IllegalArgumentException("Unexpected value '$value'")

@@ -2,16 +2,16 @@ package no.difi.meldingsutveksling.nhn.adapter.model.serialization
 
 import no.kith.xmlstds.dialog._2006_10_11.Dialogmelding as Dialogmelding1_0
 import no.kith.xmlstds.dialog._2006_10_11.Foresporsel as Foresporsel1_0
-import no.kith.xmlstds.dialog._2006_10_11.Person as Person1_0
-import no.kith.xmlstds.dialog._2006_10_11.RollerRelatertNotat as RollerRelatertNotat1_0
 import no.kith.xmlstds.dialog._2006_10_11.HealthcareProfessional as HealthcareProfessional1_0
 import no.kith.xmlstds.dialog._2006_10_11.Notat as Notat1_0
+import no.kith.xmlstds.dialog._2006_10_11.Person as Person1_0
+import no.kith.xmlstds.dialog._2006_10_11.RollerRelatertNotat as RollerRelatertNotat1_0
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.dialog._2013_01_23.Foresporsel
-import no.kith.xmlstds.dialog._2013_01_23.Person
-import no.kith.xmlstds.dialog._2013_01_23.RollerRelatertNotat
 import no.kith.xmlstds.dialog._2013_01_23.HealthcareProfessional
 import no.kith.xmlstds.dialog._2013_01_23.Notat
+import no.kith.xmlstds.dialog._2013_01_23.Person
+import no.kith.xmlstds.dialog._2013_01_23.RollerRelatertNotat
 
 object DialogmeldingConverter {
     fun toLatest(input: Dialogmelding1_0): Dialogmelding {
@@ -96,4 +96,3 @@ object DialogmeldingConverter {
         }
     }
 }
-

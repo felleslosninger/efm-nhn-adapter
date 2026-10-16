@@ -144,9 +144,7 @@ private fun Address1_0.toLatest(): Address {
 
 private fun URL1_0.toLatest(): URL {
     val input = this
-    return URL().apply {
-        v = input.v
-    }
+    return URL().apply { v = input.v }
 }
 
 private fun HCProf1_0.toLatest(): HCProf {

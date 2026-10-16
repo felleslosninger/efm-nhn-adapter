@@ -36,9 +36,7 @@ object XMLUtils {
         val reader = createReader(xml)
         var skippedEvents = 0
         while (
-            reader.hasNext() &&
-                reader.next() != XMLStreamConstants.START_ELEMENT &&
-                skippedEvents < MAX_PROLOG_EVENTS
+            reader.hasNext() && reader.next() != XMLStreamConstants.START_ELEMENT && skippedEvents < MAX_PROLOG_EVENTS
         ) {
             skippedEvents++
         }

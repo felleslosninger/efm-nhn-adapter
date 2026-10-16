@@ -33,7 +33,8 @@ class MessageStatusTest :
 
         describe("StatusInfo.toMessageStatus") {
             it("maps the delivery state and application receipt status") {
-                StatusInfo(1000002, DeliveryState.REJECTED, AppRecStatus.OK_ERROR_IN_MESSAGE_PART).toMessageStatus() shouldBe
+                StatusInfo(1000002, DeliveryState.REJECTED, AppRecStatus.OK_ERROR_IN_MESSAGE_PART)
+                    .toMessageStatus() shouldBe
                     MessageStatus(
                         receiverHerId = 1000002,
                         transportStatus = TransportStatus.REJECTED,
