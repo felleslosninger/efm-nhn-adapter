@@ -25,6 +25,14 @@ class XMLUtilsTest :
 
                 shouldThrow<IllegalStateException> { XMLUtils.getRootElement("$prolog<MsgHead/>") }
             }
+
+            // A DOCTYPE only declares entities, which can read external resources (XXE)
+            it("rejects a DOCTYPE") {
+                shouldThrow<ApplicationReceiptException> {
+                        XMLUtils.getRootElement("""<!DOCTYPE MsgHead [<!ENTITY x "y">]><MsgHead>&x;</MsgHead>""")
+                    }
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
         }
 
         describe("validateRootElement") {
@@ -46,6 +54,15 @@ class XMLUtilsTest :
 
             it("returns null when there is no MIGversion") {
                 XMLUtils.getVersion("<AppRec><Id>1</Id></AppRec>").shouldBeNull()
+            }
+
+            it("rejects a DOCTYPE") {
+                shouldThrow<ApplicationReceiptException> {
+                        XMLUtils.getVersion(
+                            """<!DOCTYPE AppRec><AppRec><MIGversion>v1.1 2012-02-15</MIGversion></AppRec>"""
+                        )
+                    }
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
             }
         }
     })

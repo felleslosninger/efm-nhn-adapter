@@ -12,9 +12,17 @@ object XMLUtils {
     /** Upper bound on prolog events (comments, processing instructions, ...) skipped before the root element. */
     private const val MAX_PROLOG_EVENTS = 100
 
+    /** The input is untrusted, so DTDs are never processed: no external DTD or entity is ever fetched. */
     private val factory =
-        XMLInputFactory.newInstance().apply { setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false) }
+        XMLInputFactory.newInstance().apply {
+            setProperty(XMLInputFactory.SUPPORT_DTD, false)
+            setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
+        }
 
+    /**
+     * Checks the root element. Documents with a DOCTYPE are rejected, so this must run before the document is given to
+     * a parser that processes DTDs (e.g. schema validation).
+     */
     fun validateRootElement(xml: String, expectedRoot: String) {
         if (getRootElement(xml) != expectedRoot) {
             throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT)
@@ -24,7 +32,10 @@ object XMLUtils {
     fun getVersion(xml: String): String? {
         val reader = createReader(xml)
         while (reader.hasNext()) {
-            if (reader.next() == XMLStreamConstants.START_ELEMENT && reader.localName == MIG_VERSION_ELEMENT) {
+            if (
+                reader.nextRejectingDoctype() == XMLStreamConstants.START_ELEMENT &&
+                    reader.localName == MIG_VERSION_ELEMENT
+            ) {
                 reader.next()
                 return reader.text
             }
@@ -36,7 +47,9 @@ object XMLUtils {
         val reader = createReader(xml)
         var skippedEvents = 0
         while (
-            reader.hasNext() && reader.next() != XMLStreamConstants.START_ELEMENT && skippedEvents < MAX_PROLOG_EVENTS
+            reader.hasNext() &&
+                reader.nextRejectingDoctype() != XMLStreamConstants.START_ELEMENT &&
+                skippedEvents < MAX_PROLOG_EVENTS
         ) {
             skippedEvents++
         }
@@ -44,4 +57,15 @@ object XMLUtils {
     }
 
     private fun createReader(xml: String): XMLStreamReader = factory.createXMLStreamReader(StringReader(xml))
+
+    /** Business documents and receipts never have a DOCTYPE; one is only there to declare entities. */
+    private fun XMLStreamReader.nextRejectingDoctype(): Int =
+        next().also {
+            if (it == XMLStreamConstants.DTD) {
+                throw ApplicationReceiptException(
+                    FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                    "DOCTYPE declarations are not allowed",
+                )
+            }
+        }
 }
