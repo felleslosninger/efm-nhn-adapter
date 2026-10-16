@@ -109,7 +109,7 @@ class InHandler(
         auditLogService.log(auditEntry) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
             mshService.markMessageRead(messageId, receiverHerId, clientContext)
-            return ServerResponse.ok().textPlain().bodyValueAndAwait("Message deleted")
+            return ServerResponse.ok().textPlain().bodyValueAndAwait("Message marked as read")
         }
     }
 

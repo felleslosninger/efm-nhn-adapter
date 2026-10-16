@@ -129,6 +129,7 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
         </dependency>
+        <!-- Jackson 2 on purpose: springdoc's Kotlin support (springdoc.enable-kotlin) uses the Jackson 2 KotlinModule -->
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
             <artifactId>jackson-module-kotlin</artifactId>

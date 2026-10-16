@@ -26,8 +26,6 @@ import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.config.KeystoreProperties
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResourceFactory
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
-import org.apache.hc.client5.http.classic.HttpClient
-import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
@@ -77,7 +75,6 @@ private fun integrations() = BeanRegistrarDsl {
     registerBean { IntegrationBeans.arClient(bean(BeanNames.AR_CONFIG)) }
     registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(BeanNames.FLR_CONFIG)) }
     registerBean { AdresseregisteretService(bean(), bean()) }
-    registerBean<HttpClient> { HttpClients.createDefault() }
     registerBean { IntegrationBeans.mshClient(bean(), env.getRequiredProperty(SERVICES_MSH_URL)) }
     registerBean { IntegrationBeans.mshInternalClient(bean(), env.getRequiredProperty(SERVICES_MSH_URL)) }
     registerBean { IntegrationBeans.mshService(bean(), bean()) }
