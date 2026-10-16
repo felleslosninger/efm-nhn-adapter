@@ -1,12 +1,16 @@
 #!/bin/sh
-# Fast auto-format and lint before committing
+# Formats the staged Kotlin files before committing
 
 # Always run from repo root
 ROOT="$(git rev-parse --show-toplevel)";
 cd "$ROOT"
 
-
-# Add multiple switches; some Maven/JLine/Jansi combos ignore single flags
+# Only the files in the commit are re-staged, so unrelated changes in the working tree are never added.
+# A file that is only partly staged is staged in full after formatting.
+STAGED="$(git diff --cached --name-only --diff-filter=ACMR -- '*.kt' '*.kts')"
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
 
 
 # --- Find Java even when GUI apps don't load your shell profile ---
@@ -15,7 +19,7 @@ if [ -d "$HOME/.sdkman/candidates/java/current" ]; then
   export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
   export PATH="$JAVA_HOME/bin:$PATH"
 elif command -v /usr/libexec/java_home >/dev/null 2>&1; then
-  export JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home 2>/dev/null || true)"
+  export JAVA_HOME="$(/usr/libexec/java_home -v 25 2>/dev/null || /usr/libexec/java_home 2>/dev/null || true)"
   [ -n "${JAVA_HOME:-}" ] && export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
@@ -32,20 +36,12 @@ if [ ! -x "./mvnw" ]; then
 fi
 
 
-# 1) Format (does not run tests)
-./mvnw -q -DskipTests  \
-  verify || {
-    echo "Commit blocked: fix formatting/lint issues."
-    exit 1
-  }
-
-# 2) Re-stage any files changed by formatting
-git add -A
-
-# 3) Verify formatting + linting (fail commit if issues remain)
-./mvnw -q -DskipTests  verify || {
-  echo "Commit blocked: fix formatting/lint issues (see output above)."
+# Spotless is configured in nhn-adapter-app only
+./mvnw -q -pl nhn-adapter-app spotless:apply || {
+  echo "Commit blocked: formatting failed (see output above)."
   exit 1
 }
 
-echo "Formatting & lint OK."
+echo "$STAGED" | xargs git add --
+
+echo "Formatting OK."
