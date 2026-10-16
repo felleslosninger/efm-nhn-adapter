@@ -56,14 +56,14 @@ object ApplicationReceiptDeserializer {
     }
 
     private fun fromApplicationReceipt10(xml: String): AppRec {
-        schema1_0.newValidator().validate(StreamSource(StringReader(xml)))
+        schema1_0.newSecureValidator().validate(StreamSource(StringReader(xml)))
         val appRec =
             context1_0.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec1_0::class.java).value
         return toLatest(appRec)
     }
 
     private fun fromApplicationReceipt11(xml: String): AppRec {
-        schema1_1.newValidator().validate(StreamSource(StringReader(xml)))
+        schema1_1.newSecureValidator().validate(StreamSource(StringReader(xml)))
         return context1_1.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec::class.java).value
     }
 
