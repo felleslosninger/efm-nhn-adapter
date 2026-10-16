@@ -78,7 +78,9 @@ class DialogmeldingTest :
             }
 
             it("rejects malformed XML") {
-                shouldThrow<ApplicationReceiptException> { DialogmeldingDeserializer.deserializeDialogmelding("<Dialog") }
+                shouldThrow<ApplicationReceiptException> {
+                        DialogmeldingDeserializer.deserializeDialogmelding("<Dialog")
+                    }
                     .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
             }
         }

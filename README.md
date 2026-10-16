@@ -390,9 +390,9 @@ Testdekninga for begge modulane samla ligg i `nhn-adapter-app/target/site/jacoco
 
 ## Kodestil
 
-- Koden vert formatert med [ktfmt](https://github.com/facebook/ktfmt) (KOTLINLANG-stil, maks 119 teikn) via Spotless.
-  `spotless:apply` køyrer automatisk i `validate`-fasen, og `spotless:check` i `verify`, så eit bygg formaterer koden
-  for deg. Køyr bygget før du committar, elles feilar PR-sjekken.
+- Koden i begge modulane vert formatert med [ktfmt](https://github.com/facebook/ktfmt) (KOTLINLANG-stil, maks 119
+  teikn) via Spotless. Bygget formaterer ikkje koden, men `spotless:check` i `verify` feilar dersom han ikkje er
+  formatert. Formater med `./mvnw spotless:apply` (eller git-hooken) før du committar, elles feilar PR-sjekken.
 - [`.editorconfig`](.editorconfig) har ktlint-reglane for IntelliJ (ingen wildcard-import, ingen ubrukte import osv.).
 - Følg mønstera som finst: små handlar-metodar, logikk i tenester, extension-funksjonar for omforming og konstantar
   for namn og stiar.

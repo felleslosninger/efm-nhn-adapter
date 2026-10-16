@@ -20,5 +20,6 @@ object KxJson {
     fun <T> decode(jsonElement: JsonElement, serializer: KSerializer<T>): T =
         jsonParser.decodeFromJsonElement(serializer, jsonElement)
 
-    @JvmStatic fun <T> encode(value: T, serializer: KSerializer<T>): String = jsonParser.encodeToString(serializer, value)
+    @JvmStatic
+    fun <T> encode(value: T, serializer: KSerializer<T>): String = jsonParser.encodeToString(serializer, value)
 }
