@@ -58,13 +58,8 @@ import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.PartUtils
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
-import no.ks.fiks.nhn.ar.AddressComponent
-import no.ks.fiks.nhn.ar.AdresseregisteretClient
-import no.ks.fiks.nhn.ar.CommunicationPartyParent
-import no.ks.fiks.nhn.ar.ElectronicAddress
-import no.ks.fiks.nhn.ar.OrganizationCommunicationParty
-import no.ks.fiks.nhn.ar.PersonCommunicationParty
-import no.ks.fiks.nhn.ar.ServiceCommunicationParty
+import no.ks.fiks.nhn.ar.rest.AddressNotFoundException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.PatientGP
 import no.ks.fiks.nhn.msh.AppRecStatus
@@ -124,47 +119,22 @@ private val testPdf: ByteArray = readResource("/dialogmelding/$PDF_FILENAME")
 
 private val pasient = Pasient(fnr = PASIENT_FNR, fornavn = "Kari", mellomnavn = null, etternavn = "Nordmann")
 
-/** The organization the Maskinporten client acts on behalf of. */
-private val kommune =
-    OrganizationCommunicationParty(
-        herId = KOMMUNE_HER_ID,
-        name = "Helse og omsorg",
-        parent = CommunicationPartyParent(KOMMUNE_PARENT_HER_ID, "Test kommune", CONSUMER_ORG_NUMBER),
-        physicalAddresses = emptyList(),
-        electronicAddresses = emptyList(),
-        organizationNumber = null,
-    )
+private val legekontor = ArTestData.parentOrganization(LEGEKONTOR_HER_ID, "Legekontoret", LEGEKONTOR_ORG_NUMBER)
+
+/** The organization the Maskinporten client acts on behalf of. An organization is its own parent. */
+private val kommune = ArTestData.organization(KOMMUNE_HER_ID, "Helse og omsorg", CONSUMER_ORG_NUMBER)
 
 /** The same HER-id as [kommune], but registered as a service (tjeneste) in AR. */
 private val kommuneTjeneste =
-    ServiceCommunicationParty(
-        herId = KOMMUNE_HER_ID,
-        name = "Helsetjenesten",
-        parent = CommunicationPartyParent(KOMMUNE_PARENT_HER_ID, "Test kommune", CONSUMER_ORG_NUMBER),
-        physicalAddresses = emptyList(),
-        electronicAddresses = emptyList(),
+    ArTestData.service(
+        KOMMUNE_HER_ID,
+        "Helsetjenesten",
+        ArTestData.parentOrganization(KOMMUNE_PARENT_HER_ID, "Test kommune", CONSUMER_ORG_NUMBER),
     )
 
-private val legekontorTjeneste =
-    ServiceCommunicationParty(
-        herId = LEGEKONTOR_TJENESTE_HER_ID,
-        name = "Legekontorets resepsjon",
-        parent = CommunicationPartyParent(LEGEKONTOR_HER_ID, "Legekontoret", LEGEKONTOR_ORG_NUMBER),
-        physicalAddresses = emptyList(),
-        electronicAddresses = emptyList(),
-    )
+private val legekontorTjeneste = ArTestData.service(LEGEKONTOR_TJENESTE_HER_ID, "Legekontorets resepsjon", legekontor)
 
-private val fastlege =
-    PersonCommunicationParty(
-        herId = FASTLEGE_HER_ID,
-        name = "Lege Legesen",
-        parent = CommunicationPartyParent(LEGEKONTOR_HER_ID, "Legekontoret", LEGEKONTOR_ORG_NUMBER),
-        physicalAddresses = emptyList(),
-        electronicAddresses = listOf(ElectronicAddress(AddressComponent.TELEFONNUMMER, "22334455", null)),
-        firstName = "Lege",
-        middleName = null,
-        lastName = "Legesen",
-    )
+private val fastlege = ArTestData.person(FASTLEGE_HER_ID, "Lege Legesen", legekontor, phoneNumber = "22334455")
 
 /**
  * Exercises every endpoint through the full application context. The external integrations (Maskinporten, AR, FLR and
@@ -333,6 +303,29 @@ class NhnAdapterApiIT(
                 client().get().uri("/api/lookup/her-id:$UNKNOWN_HER_ID").exchange().expectStatus().isNotFound
             }
 
+            it("returns 404 when Adresseregisteret does not know the HER-id") {
+                every { adresseregisteretClient.lookupHerId(UNKNOWN_HER_ID) } throws
+                    AddressNotFoundException("Not found")
+
+                client().get().uri("/api/lookup/her-id:$UNKNOWN_HER_ID").exchange().expectStatus().isNotFound
+            }
+
+            it("returns the organization itself as parent for an organization") {
+                client()
+                    .get()
+                    .uri("/api/lookup/her-id:$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.parentHerId")
+                    .isEqualTo(KOMMUNE_HER_ID)
+                    .jsonPath("$.parentName")
+                    .isEqualTo("Helse og omsorg")
+                    .jsonPath("$.orgNumber")
+                    .isEqualTo(CONSUMER_ORG_NUMBER)
+            }
+
             it("returns 400 for a malformed identifier") {
                 client().get().uri("/api/lookup/not-an-identifier").exchange().expectStatus().isBadRequest
             }
@@ -363,8 +356,9 @@ class NhnAdapterApiIT(
                 msgHead.msgInfo.msgId shouldBe messageId.toString()
                 msgHead.getConversationRef() shouldBe null
 
+                // The sender is an organization, which is sent as its own parent
                 val sender = msgHead.getSender()
-                sender.parent.herId shouldBe KOMMUNE_PARENT_HER_ID
+                sender.parent.herId shouldBe KOMMUNE_HER_ID
                 sender.child.herId shouldBe KOMMUNE_HER_ID
 
                 val receiver = msgHead.getReceiver()

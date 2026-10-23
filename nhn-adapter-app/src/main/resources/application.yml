@@ -53,9 +53,6 @@ digdir:
 
 nhn:
   services:
-    ar:
-      username: ${NHN_SERVICES_USERNAME}
-      password: ${NHN_SERVICES_PASSWORD}
     flr:
       username: ${NHN_SERVICES_USERNAME}
       password: ${NHN_SERVICES_PASSWORD}

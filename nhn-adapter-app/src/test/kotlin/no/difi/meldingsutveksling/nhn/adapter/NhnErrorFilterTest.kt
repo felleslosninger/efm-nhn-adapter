@@ -5,8 +5,8 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundExcept
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
-import no.ks.fiks.nhn.ar.AdresseregisteretApiException
-import no.ks.fiks.nhn.ar.AdresseregisteretException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretApiException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HttpClientException
 import no.ks.fiks.nhn.msh.HttpException
@@ -117,12 +117,12 @@ class NhnErrorFilterTest :
                 )
             }
 
-            it("maps Adresseregisteret API errors to 502 with the registry error code") {
+            it("maps Adresseregisteret API errors to 502") {
                 expectApiError(
                     LOOKUP_PATH,
-                    AdresseregisteretApiException("SomeError", "Fault", "Fault"),
+                    AdresseregisteretApiException(500, "Server error"),
                     HttpStatus.BAD_GATEWAY,
-                    "Not able to process, try later. ErrorCode: SomeError",
+                    "Not able to process, try later. ErrorCode: E7778",
                 )
             }
 

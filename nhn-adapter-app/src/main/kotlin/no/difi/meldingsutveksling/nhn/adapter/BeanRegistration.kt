@@ -35,12 +35,10 @@ import org.springframework.core.io.ResourceLoader
 import org.springframework.http.HttpHeaders
 
 private object BeanNames {
-    const val AR_CONFIG = "ArConfig"
     const val FLR_CONFIG = "FlrConfig"
 }
 
 private object PropertyPrefixes {
-    const val NHN_SERVICE_AR = "nhn.services.ar"
     const val NHN_SERVICE_FLR = "nhn.services.flr"
     const val OAUTH2_HELSE_ID = "oauth2.helse-id"
     const val SECURITY = "security"
@@ -49,12 +47,12 @@ private object PropertyPrefixes {
     const val CERTIFICATE = "certificate"
 }
 
+private const val SERVICES_AR_URL = "nhn.services.ar.url"
 private const val SERVICES_MSH_URL = "nhn.services.msh.url"
 
 private const val OPENAPI_SECURITY_SCHEME = "maskinporten"
 
 private fun properties() = BeanRegistrarDsl {
-    registerBean<NhnConfig>(BeanNames.AR_CONFIG) { env.bindRequired(PropertyPrefixes.NHN_SERVICE_AR) }
     registerBean<NhnConfig>(BeanNames.FLR_CONFIG) { env.bindRequired(PropertyPrefixes.NHN_SERVICE_FLR) }
     registerBean<HelseId> { env.bindRequired(PropertyPrefixes.OAUTH2_HELSE_ID) }
     registerBean<SecurityConfig> { env.bindRequired(PropertyPrefixes.SECURITY) }
@@ -72,7 +70,7 @@ private fun security() = BeanRegistrarDsl {
 }
 
 private fun integrations() = BeanRegistrarDsl {
-    registerBean { IntegrationBeans.arClient(bean(BeanNames.AR_CONFIG)) }
+    registerBean { IntegrationBeans.arClient(bean(), env.getRequiredProperty(SERVICES_AR_URL)) }
     registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(BeanNames.FLR_CONFIG)) }
     registerBean { AdresseregisteretService(bean(), bean()) }
     registerBean { IntegrationBeans.mshClient(bean(), env.getRequiredProperty(SERVICES_MSH_URL)) }

@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import no.difi.meldingsutveksling.nhn.adapter.extensions.personName
 import no.kith.xmlstds.CS
 import no.kith.xmlstds.URL
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
@@ -10,9 +11,8 @@ import no.kith.xmlstds.felleskomponent1.TeleCom
 import no.ks.fiks.hdir.Helsepersonell
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.hdir.TemaForHelsefagligDialog
-import no.ks.fiks.nhn.ar.AddressComponent
-import no.ks.fiks.nhn.ar.CommunicationParty
-import no.ks.fiks.nhn.ar.PersonCommunicationParty
+import no.ks.fiks.nhn.ar.rest.model.CommunicationParty
+import no.ks.fiks.nhn.ar.rest.model.CommunicationPartyType
 import no.ks.fiks.nhn.edi.toCV
 
 /** Fills in information required by the Dialogmelding standard that the sender is not expected to provide. */
@@ -34,9 +34,12 @@ object DialogmeldingDefaults {
      * A person receiver is the patient's fastlege; organizations and services have no fastlege role.
      */
     private fun defaultRoller(receiver: CommunicationParty): List<RollerRelatertNotat> =
-        listOfNotNull((receiver as? PersonCommunicationParty)?.let { fastlegeRolle(it) }, kontaktHosMottakerRolle())
+        listOfNotNull(
+            receiver.takeIf { it.type == CommunicationPartyType.PERSON }?.let { fastlegeRolle(it) },
+            kontaktHosMottakerRolle(),
+        )
 
-    private fun fastlegeRolle(fastlege: PersonCommunicationParty) =
+    private fun fastlegeRolle(fastlege: CommunicationParty) =
         RollerRelatertNotat().apply {
             roleToPatient = HelsepersonellsFunksjoner.FASTLEGE.toCV()
             healthcareProfessional = toHealthcareProfessional(fastlege)
@@ -55,14 +58,13 @@ object DialogmeldingDefaults {
                 }
         }
 
-    private fun toHealthcareProfessional(person: PersonCommunicationParty) =
+    private fun toHealthcareProfessional(person: CommunicationParty) =
         HealthcareProfessional().apply {
-            givenName = person.firstName
-            middleName = person.middleName
-            familyName = person.lastName
-            person.phoneNumber()?.let { teleCom.add(TeleCom().apply { teleAddress = URL().apply { v = "tel:$it" } }) }
+            val name = person.personName
+            givenName = name.firstName
+            familyName = name.lastName
+            person.phoneNumber
+                ?.takeIf { it.isNotBlank() }
+                ?.let { teleCom.add(TeleCom().apply { teleAddress = URL().apply { v = "tel:$it" } }) }
         }
-
-    private fun PersonCommunicationParty.phoneNumber(): String? =
-        electronicAddresses.find { it.type == AddressComponent.TELEFONNUMMER }?.address
 }

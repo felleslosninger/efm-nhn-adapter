@@ -31,7 +31,7 @@ import no.difi.move.common.dokumentpakking.domain.Document
 import no.difi.move.common.io.ResourceUtils
 import no.idporten.logging.audit.AuditEntry
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
-import no.ks.fiks.nhn.ar.CommunicationParty
+import no.ks.fiks.nhn.ar.rest.model.CommunicationParty
 import no.ks.fiks.nhn.msh.ConversationRef
 import org.springframework.http.codec.multipart.Part
 import org.springframework.util.MultiValueMap

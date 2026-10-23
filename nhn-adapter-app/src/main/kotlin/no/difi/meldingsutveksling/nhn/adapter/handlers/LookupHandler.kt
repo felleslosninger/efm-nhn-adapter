@@ -5,6 +5,7 @@ import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.extensions.parentOrganizationOrNull
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toBase64Der
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
@@ -24,17 +25,23 @@ class LookupHandler(
 
         auditLogService.log(auditEntry) {
             val communicationParty = adresseregisteretService.lookupByNhnIdentifier(NhnIdentifier.parse(identifier))
-            val parent = communicationParty.parent ?: throw HerIdNotFoundException()
+            val parent = communicationParty.parentOrganizationOrNull ?: throw HerIdNotFoundException()
 
             return ServerResponse.ok()
                 .json()
                 .bodyValueAndAwait(
                     ArDetails(
                         parentHerId = parent.herId,
-                        parentName = parent.name,
-                        orgNumber = parent.organizationNumber,
+                        parentName = checkNotNull(parent.name) { "Parent organization ${parent.herId} has no name" },
+                        orgNumber =
+                            checkNotNull(parent.organizationNumber) {
+                                "Parent organization ${parent.herId} has no organization number"
+                            },
                         herId = communicationParty.herId,
-                        name = communicationParty.name,
+                        name =
+                            checkNotNull(communicationParty.name) {
+                                "Communication party ${communicationParty.herId} has no name"
+                            },
                         derCertificate = keystoreHelper.x509Certificate.toBase64Der(),
                     )
                 )

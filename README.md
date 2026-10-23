@@ -137,7 +137,8 @@ flowchart LR
     Handler --> Parcel[ParcelService<br/>JOSE + CMS/ASiC-E]
     Handler --> ArSvc[AdresseregisteretService]
     Handler --> Msh[MshService]
-    ArSvc --> AR[(AR / FLR<br/>SOAP)]
+    ArSvc --> AR[(AR REST<br/>HelseID + DPoP)]
+    ArSvc --> FLR[(FLR<br/>SOAP)]
     Msh --> MSH[(MSH REST<br/>HelseID + DPoP)]
     Router -. exceptions .-> Err[NhnErrorFilter → ApiError]
 ```
@@ -151,7 +152,7 @@ Kvar handlar-metode følgjer same mønster:
 4. Kall NHN via `MshService` / `AdresseregisteretService`.
 5. Returner svaret. Exceptions vert ikkje fanga i handlarane, men omsett av `NhnErrorFilter`.
 
-Blokkerande kall (SOAP mot AR/FLR, kryptering og ASiC-handsaming) vert køyrde på `Dispatchers.IO`.
+Blokkerande kall (AR og FLR, kryptering og ASiC-handsaming) vert køyrde på `Dispatchers.IO`.
 
 ### Bønner
 
@@ -301,9 +302,7 @@ management:
 nhn:
   services:
     ar:
-      url: "https://ws-web.test.nhn.no/v1/Ar"
-      username: "<brukarnamn>"
-      password: "<passord>"
+      url: "https://cpapi.test.grunndata.nhn.no"
     flr:
       url: "https://ws-web.test.nhn.no/v2/flr"
       username: "<brukarnamn>"
@@ -357,9 +356,10 @@ Felles oppsett ligg i [`application.yml`](nhn-adapter-app/src/main/resources/app
 
 | Property                                      | Miljøvariabel                               | Beskriving                                                        |
 |-----------------------------------------------|---------------------------------------------|-------------------------------------------------------------------|
-| `nhn.services.ar.*`, `nhn.services.flr.*`     | `NHN_SERVICES_USERNAME`, `NHN_SERVICES_PASSWORD` | URL og innlogging til Adresseregisteret og Fastlegeregisteret. |
+| `nhn.services.ar.url`                         | –                                           | URL til REST-API-et til Adresseregisteret.                        |
+| `nhn.services.flr.*`                          | `NHN_SERVICES_USERNAME`, `NHN_SERVICES_PASSWORD` | URL og innlogging til Fastlegeregisteret.                    |
 | `nhn.services.msh.url`                        | –                                           | URL til MSH-API-et.                                               |
-| `oauth2.helse-id.client-id`, `.private-key`   | `NHN_CLIENT_ID`, `NHN_PRIVATE_KEY`          | HelseID-klienten adapteret brukar mot MSH. Nøkkelen er ein JWK.   |
+| `oauth2.helse-id.client-id`, `.private-key`   | `NHN_CLIENT_ID`, `NHN_PRIVATE_KEY`          | HelseID-klienten adapteret brukar mot MSH og Adresseregisteret. Nøkkelen er ein JWK. |
 | `oauth2.helse-id.issuer`, `.audience`         | –                                           | HelseID-miljø.                                                    |
 | `keystore.path`, `.alias`, `.password`, `.type` | `KEYSTORE_VALUE`, `KEYSTORE_ALIAS`, `KEYSTORE_PASSWORD`, `KEYSTORE_TYPE` (standard `JKS`) | Nøkkellager med adapteret sitt virksomheitssertifikat. |
 | `security.trusted-issuers`                    | –                                           | Maskinporten-issuer(ar) som vert godtekne.                        |

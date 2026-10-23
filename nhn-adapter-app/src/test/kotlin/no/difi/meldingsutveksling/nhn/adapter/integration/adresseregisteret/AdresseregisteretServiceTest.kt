@@ -10,10 +10,11 @@ import jakarta.xml.ws.soap.SOAPFaultException
 import java.net.ConnectException
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
-import no.ks.fiks.nhn.ar.AdresseregisteretApiException
-import no.ks.fiks.nhn.ar.AdresseregisteretClient
-import no.ks.fiks.nhn.ar.AdresseregisteretException
-import no.ks.fiks.nhn.ar.CommunicationParty
+import no.ks.fiks.nhn.ar.rest.AddressNotFoundException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretApiException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretClient
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
+import no.ks.fiks.nhn.ar.rest.model.CommunicationParty
 import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
@@ -46,19 +47,17 @@ class AdresseregisteretServiceTest :
                 shouldThrow<HerIdNotFoundException> { service.lookupByHerId(HER_ID) }
             }
 
-            it("throws HerIdNotFoundException when the HER-id is invalid") {
-                every { adresseregisteretClient.lookupHerId(HER_ID) } throws
-                    AdresseregisteretApiException("InvalidHerIdSupplied", "Invalid HER-id", "Invalid HER-id")
+            it("throws HerIdNotFoundException when Adresseregisteret does not know the HER-id") {
+                every { adresseregisteretClient.lookupHerId(HER_ID) } throws AddressNotFoundException("Not found")
 
                 shouldThrow<HerIdNotFoundException> { service.lookupByHerId(HER_ID) }
             }
 
-            it("rethrows other API errors") {
-                val error = AdresseregisteretApiException("OtherError", "Other error", "Other error")
+            it("keeps other API errors wrapped") {
+                val error = AdresseregisteretApiException(500, "Server error", RuntimeException("Internal"))
                 every { adresseregisteretClient.lookupHerId(HER_ID) } throws error
 
-                shouldThrow<AdresseregisteretApiException> { service.lookupByHerId(HER_ID) }.errorCode shouldBe
-                    "OtherError"
+                shouldThrow<AdresseregisteretApiException> { service.lookupByHerId(HER_ID) }.statusCode shouldBe 500
             }
 
             it("unwraps technical errors to their cause") {
@@ -66,13 +65,6 @@ class AdresseregisteretServiceTest :
                     AdresseregisteretException("Technical error", connectionError)
 
                 shouldThrow<ConnectException> { service.lookupByHerId(HER_ID) }.message shouldBe "Connection refused"
-            }
-
-            it("keeps SOAP faults wrapped") {
-                val error = AdresseregisteretException("SOAP fault", soapFault)
-                every { adresseregisteretClient.lookupHerId(HER_ID) } throws error
-
-                shouldThrow<AdresseregisteretException> { service.lookupByHerId(HER_ID) }.message shouldBe "SOAP fault"
             }
 
             it("keeps errors without a cause as is") {
