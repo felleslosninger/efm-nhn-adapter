@@ -1,6 +1,9 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.util.TimeZone
+import javax.xml.datatype.XMLGregorianCalendar
 import no.difi.meldingsutveksling.domain.sbdh.BusinessScope
 import no.difi.meldingsutveksling.domain.sbdh.DocumentIdentification
 import no.difi.meldingsutveksling.domain.sbdh.Scope
@@ -36,12 +39,13 @@ import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.MsgHead
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.StatusForMottakAvMelding
-import no.ks.fiks.nhn.ar.toOffsetDateTime
 import no.ks.fiks.nhn.msh.CommunicationParty
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.InputStreamResource
 import org.springframework.http.MediaType
 import org.springframework.util.MimeType
+
+private val NORWEGIAN_TIME_ZONE = ZoneId.of("Europe/Oslo")
 
 data class BusinessDocumentResponse(val sbd: StandardBusinessDocument, val attachments: List<Attachment>)
 
@@ -193,4 +197,8 @@ object IncomingBusinessDocumentMapper {
         }
 
     private fun CV.toKvitteringStatusMessage() = KvitteringStatusMessage(code = v, text = dn)
+
+    /** Dates without a time zone are interpreted as Norwegian time. */
+    private fun XMLGregorianCalendar.toOffsetDateTime(): OffsetDateTime =
+        toGregorianCalendar(TimeZone.getTimeZone(NORWEGIAN_TIME_ZONE), null, null).toZonedDateTime().toOffsetDateTime()
 }

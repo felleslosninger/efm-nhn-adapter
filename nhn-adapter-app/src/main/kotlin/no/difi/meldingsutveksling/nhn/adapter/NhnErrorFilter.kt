@@ -7,8 +7,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
-import no.ks.fiks.nhn.ar.AdresseregisteretApiException
-import no.ks.fiks.nhn.ar.AdresseregisteretException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HttpException
 import org.springframework.http.HttpStatus
@@ -53,7 +52,6 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
         }
         is ApplicationReceiptException -> toApiError(HttpStatus.BAD_REQUEST, error.error, error.message)
-        is AdresseregisteretApiException -> badGateway(error.errorCode)
         is AdresseregisteretException -> {
             logger.error(
                 "Technical error occurred against Adresseregisteret for ${path()}. Logging cause.",

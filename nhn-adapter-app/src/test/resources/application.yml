@@ -23,9 +23,7 @@ certificate:
 nhn:
   services:
     ar:
-      url: "${external.base-url}/v1/Ar"
-      username: dummyUser
-      password: dummyPassword
+      url: "${external.base-url}/ar"
     flr:
       url: "${external.base-url}/v2/flr"
       username: dummyUser

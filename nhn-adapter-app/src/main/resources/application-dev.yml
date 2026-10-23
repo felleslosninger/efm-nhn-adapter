@@ -5,7 +5,7 @@ spring:
 nhn:
   services:
     ar:
-      url: "https://ws-web.test.nhn.no/v1/Ar"
+      url: "https://cpapi.test.grunndata.nhn.no"
     flr:
       url: "https://ws-web.test.nhn.no/v2/flr"
     msh:

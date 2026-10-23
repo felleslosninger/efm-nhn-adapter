@@ -5,7 +5,8 @@ spring:
 nhn:
   services:
     ar:
-      url: "https://ws-web.nhn.no/v1/Ar"
+      # TODO: Confirm the production URL of the Adresseregisteret REST API before release.
+      url: "https://cpapi.grunndata.nhn.no"
     flr:
       url: "https://ws-web.nhn.no/v2/flr"
     msh:

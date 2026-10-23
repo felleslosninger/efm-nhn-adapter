@@ -1,8 +1,9 @@
 package no.difi.meldingsutveksling.nhn.adapter.security
 
 import no.difi.meldingsutveksling.nhn.adapter.config.SecurityConfig
+import no.difi.meldingsutveksling.nhn.adapter.extensions.parentOrganization
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
-import no.ks.fiks.nhn.ar.CommunicationParty
+import no.ks.fiks.nhn.ar.rest.model.CommunicationParty
 import org.springframework.security.access.AccessDeniedException
 
 class SecurityService(
@@ -38,5 +39,8 @@ class SecurityService(
     }
 
     private val CommunicationParty.parentOrganizationNumber: String
-        get() = checkNotNull(parent) { "Communication party $herId has no parent organization" }.organizationNumber
+        get() =
+            checkNotNull(parentOrganization.organizationNumber) {
+                "Parent organization of communication party $herId has no organization number"
+            }
 }

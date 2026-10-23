@@ -5,15 +5,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
-import no.ks.fiks.nhn.ar.AdresseregisteretApiException
-import no.ks.fiks.nhn.ar.AdresseregisteretClient
-import no.ks.fiks.nhn.ar.AdresseregisteretException
-import no.ks.fiks.nhn.ar.CommunicationParty
+import no.ks.fiks.nhn.ar.rest.AddressNotFoundException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretApiException
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretClient
+import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
+import no.ks.fiks.nhn.ar.rest.model.CommunicationParty
 import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
 
-private const val INVALID_HER_ID_ERROR_CODE = "InvalidHerIdSupplied"
 private const val NO_FASTLEGE_FAULT_MESSAGE = "ArgumentException: Personen er ikke tilknyttet fastlegekontrakt"
 
 /** Looks up communication parties in Adresseregisteret, resolving a patient's fastlege via Fastlegeregisteret. */
@@ -32,10 +32,12 @@ class AdresseregisteretService(
         withContext(Dispatchers.IO) {
             try {
                 adresseregisteretClient.lookupHerId(herId) ?: throw HerIdNotFoundException()
+            } catch (_: AddressNotFoundException) {
+                throw HerIdNotFoundException()
             } catch (e: AdresseregisteretApiException) {
-                throw if (e.errorCode == INVALID_HER_ID_ERROR_CODE) HerIdNotFoundException() else e
+                throw e
             } catch (e: AdresseregisteretException) {
-                throw e.unwrapUnlessSoapFault()
+                throw e.cause ?: e
             }
         }
 
@@ -51,8 +53,8 @@ class AdresseregisteretService(
         }
 
     /**
-     * The registry clients wrap every failure. SOAP faults are kept as is, while other failures are unwrapped so that
-     * the underlying cause (e.g. a connection error) is reported.
+     * The registry clients wrap every failure. API errors and SOAP faults are kept as is, while other failures are
+     * unwrapped so that the underlying cause is reported.
      */
     private fun Exception.unwrapUnlessSoapFault(): Throwable = cause?.takeUnless { it is SOAPFaultException } ?: this
 }
