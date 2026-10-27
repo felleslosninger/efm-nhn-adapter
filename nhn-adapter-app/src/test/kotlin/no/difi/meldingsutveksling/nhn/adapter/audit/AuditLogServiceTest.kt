@@ -6,6 +6,7 @@ import io.kotest.matchers.shouldBe
 import io.mockk.clearMocks
 import io.mockk.mockk
 import io.mockk.verify
+import kotlin.coroutines.cancellation.CancellationException
 import no.idporten.logging.audit.AuditEntry
 import no.idporten.logging.audit.AuditLogger
 
@@ -60,6 +61,18 @@ class AuditLogServiceTest :
 
                 verifyLogged()
                 logged.single().getAttribute("success") shouldBe false
+            }
+
+            it("logs a cancellation as a failure cancelled by the client") {
+                shouldThrow<CancellationException> {
+                    auditLogService.log(newEntry(), skipOnSuccess = { true }) {
+                        throw CancellationException("MonoCoroutine was cancelled")
+                    }
+                }
+
+                verifyLogged()
+                logged.single().getAttribute("success") shouldBe false
+                logged.single().getAttribute("exception") shouldBe CANCELLED_MESSAGE
             }
         }
     })
