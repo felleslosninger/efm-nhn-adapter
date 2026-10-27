@@ -63,7 +63,7 @@ class AuditLogServiceTest :
                 logged.single().getAttribute("success") shouldBe false
             }
 
-            it("logs a cancellation as a failure cancelled by the client") {
+            it("logs a cancellation as a cancelled failure") {
                 shouldThrow<CancellationException> {
                     auditLogService.log(newEntry(), skipOnSuccess = { true }) {
                         throw CancellationException("MonoCoroutine was cancelled")

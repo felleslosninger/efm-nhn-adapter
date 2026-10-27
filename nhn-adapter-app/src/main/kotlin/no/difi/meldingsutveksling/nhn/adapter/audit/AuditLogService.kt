@@ -5,7 +5,7 @@ import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.idporten.logging.audit.AuditEntry
 import no.idporten.logging.audit.AuditLogger
 
-const val CANCELLED_MESSAGE = "Request was cancelled by the client"
+const val CANCELLED_MESSAGE = "Request was cancelled before it completed"
 
 class AuditLogService(val auditLogger: AuditLogger) {
     /**
@@ -14,9 +14,9 @@ class AuditLogService(val auditLogger: AuditLogger) {
      *
      * Logging happens in `finally` because callers return from the enclosing function inside [action].
      *
-     * A [CancellationException] means the caller went away (e.g. a client timeout) before the action completed. It is
-     * logged as a failure with [CANCELLED_MESSAGE], since the coroutine's own message ("MonoCoroutine was cancelled")
-     * says nothing about what happened.
+     * A [CancellationException] means the action was cancelled before it completed, e.g. because the client went away,
+     * a `withTimeout` expired or the application is shutting down. It is logged as a failure with [CANCELLED_MESSAGE],
+     * since the coroutine's own message ("MonoCoroutine was cancelled") says nothing about what happened.
      */
     inline fun <T> log(
         builder: AuditEntry.AuditEntryBuilder,
