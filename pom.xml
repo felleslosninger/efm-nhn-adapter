@@ -42,7 +42,7 @@
         <helseid.version>1.5.1</helseid.version>
         <idporten-audit-log.version>4.0.6</idporten-audit-log.version>
         <efm-common.version>3.2.0</efm-common.version>
-        <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
+        <springdoc-openapi.version>3.2.0</springdoc-openapi.version>
         <netty.version>4.2.19.Final</netty.version>
         <cxf.version>4.2.4</cxf.version>
         <jacoco.version>0.8.15</jacoco.version>
