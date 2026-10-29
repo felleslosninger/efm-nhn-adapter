@@ -3,6 +3,7 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import io.swagger.v3.oas.annotations.Parameter
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
+import no.difi.meldingsutveksling.nhn.adapter.audit.IdentifierPseudonymizer
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
@@ -16,20 +17,27 @@ import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.json
 
+private const val INVALID_IDENTIFIER_MESSAGE = "Invalid identifier. Expected her-id:<HER-id> or fastlege-for:<PID>"
+
 class LookupHandler(
     private val auditLogService: AuditLogService,
     private val adresseregisteretService: AdresseregisteretService,
     private val keystoreHelper: KeystoreHelper,
+    private val identifierPseudonymizer: IdentifierPseudonymizer,
 ) {
     suspend fun arLookup(identifier: String, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
-        val auditEntry = NHNAdapterAuditIdentifier.AR_LOOKUP.entry(clientContext).attribute("identifier", identifier)
+        // fastlege-for:<fnr> is a fødselsnummer, and together with the fastlege it is health data
+        val auditEntry =
+            NHNAdapterAuditIdentifier.AR_LOOKUP.entry(clientContext)
+                .attribute("identifier", identifierPseudonymizer.pseudonymize(identifier))
 
         auditLogService.log(auditEntry) {
             val nhnIdentifier =
                 try {
                     NhnIdentifier.parse(identifier)
                 } catch (e: IllegalArgumentException) {
-                    throw ClientInputException("Invalid identifier '$identifier': ${e.message}", e)
+                    // Audit logged, so without the identifier or e.message (which has it)
+                    throw ClientInputException(INVALID_IDENTIFIER_MESSAGE, e)
                 }
             val communicationParty = adresseregisteretService.lookupByNhnIdentifier(nhnIdentifier)
             val parent = communicationParty.parentOrganizationOrNull ?: throw HerIdNotFoundException()

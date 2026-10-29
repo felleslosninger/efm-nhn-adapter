@@ -12,6 +12,9 @@ data class TempFileConfig(val threshold: Int, val initialBufferSize: Int, val di
 
 data class CertificateConfig(val mode: String)
 
+/** [pseudonymizationKey] is the HMAC key used to pseudonymize fødselsnummer in the audit log. */
+data class AuditConfig(val pseudonymizationKey: String)
+
 data class KeystoreConfig(
     val alias: String,
     val password: String,

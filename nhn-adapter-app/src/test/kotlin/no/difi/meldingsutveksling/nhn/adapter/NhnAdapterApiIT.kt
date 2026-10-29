@@ -1,5 +1,8 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.ninjasquad.springmockk.MockkBean
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -8,6 +11,7 @@ import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldNotBeIn
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.Called
 import io.mockk.MockKMatcherScope
@@ -44,6 +48,7 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDe
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getSender
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentSerializer
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
+import no.difi.meldingsutveksling.nhn.adapter.logging.FnrMaskingLogstashEncoder
 import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
 import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
@@ -63,6 +68,7 @@ import no.difi.move.common.dokumentpakking.domain.Document
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.nhn.ar.rest.AddressNotFoundException
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretClient
+import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.PatientGP
 import no.ks.fiks.nhn.msh.AppRecStatus
@@ -76,6 +82,7 @@ import no.ks.fiks.nhn.msh.StatusInfo
 import no.nhn.msh.v2.model.GetBusinessDocumentResponse
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
+import org.slf4j.LoggerFactory
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.core.ResolvableType
@@ -83,6 +90,7 @@ import org.springframework.core.codec.StringDecoder
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.http.codec.DecoderHttpMessageReader
@@ -110,6 +118,8 @@ private const val FASTLEGE_HER_ID = 2000002
 private const val LEGEKONTOR_TJENESTE_HER_ID = 2000003
 private const val UNKNOWN_HER_ID = 9999999
 private const val PASIENT_FNR = "16822449879"
+
+private const val AUDIT_LOGGER = "no.idporten.logging.audit.AuditLog"
 
 private const val DIALOGMELDING_FILENAME = "dialogmelding.xml"
 private const val PDF_FILENAME = "test.pdf"
@@ -407,6 +417,83 @@ class NhnAdapterApiIT(
 
             it("returns 400 for a malformed identifier") {
                 client().get().uri("/api/lookup/not-an-identifier").exchange().expectStatus().isBadRequest
+            }
+
+            describe("logging") {
+                val auditLog = LoggerFactory.getLogger(AUDIT_LOGGER) as Logger
+                val applicationLog = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as Logger
+                val auditEvents = ListAppender<ILoggingEvent>()
+                val applicationEvents = ListAppender<ILoggingEvent>()
+                val applicationEncoder by lazy {
+                    FnrMaskingLogstashEncoder().apply {
+                        context = applicationLog.loggerContext
+                        start()
+                    }
+                }
+
+                beforeEach {
+                    listOf(auditEvents, applicationEvents).forEach {
+                        it.list.clear()
+                        it.start()
+                    }
+                    auditLog.addAppender(auditEvents)
+                    applicationLog.addAppender(applicationEvents)
+                }
+
+                afterEach {
+                    auditLog.detachAppender(auditEvents)
+                    applicationLog.detachAppender(applicationEvents)
+                }
+
+                /** The audit entry: its message and attributes, the way the audit log writes them. */
+                fun auditEntry(): String =
+                    auditEvents.list.single().let { "${it.formattedMessage} ${it.argumentArray.joinToString()}" }
+
+                /** The application log, both the messages and the JSON written by the application log's encoder. */
+                fun applicationLogLines(): List<String> =
+                    applicationEvents.list.flatMap {
+                        listOf(it.formattedMessage, applicationEncoder.encode(it).decodeToString())
+                    }
+
+                fun lookup(identifier: String) = client().get().uri("/api/lookup/$identifier").exchange()
+
+                it("pseudonymizes the fødselsnummer in the audit log") {
+                    every { fastlegeregisteretClient.getPatientGP(PASIENT_FNR) } returns
+                        PatientGP(PASIENT_FNR, FASTLEGE_HER_ID)
+
+                    lookup("fastlege-for:$PASIENT_FNR").expectStatus().isOk
+
+                    auditEntry() shouldContain "identifier=fastlege-for:hmac:"
+                    auditEntry() shouldNotContain PASIENT_FNR
+                }
+
+                it("does not log the fødselsnummer when Fastlegeregisteret fails") {
+                    every { fastlegeregisteretClient.getPatientGP(PASIENT_FNR) } throws
+                        FastlegeregisteretApiException(
+                            errorCode = "E42",
+                            faultMessage = "Ukjent pasient $PASIENT_FNR",
+                            message = "Fault for patient $PASIENT_FNR",
+                        )
+
+                    lookup("fastlege-for:$PASIENT_FNR").expectStatus().isEqualTo(HttpStatus.BAD_GATEWAY)
+
+                    auditEntry() shouldContain "exception=Fault for patient ***********"
+                    auditEntry() shouldNotContain PASIENT_FNR
+                    applicationLogLines().shouldNotBeEmpty()
+                    applicationLogLines().first() shouldBe
+                        "Technical error occurred against Fastlegeregisteret for GET ${ApiPaths.LOOKUP}"
+                    applicationLogLines().forEach { it shouldNotContain PASIENT_FNR }
+                }
+
+                // May be mistyped fødselsnummer, and the parse errors contain them
+                listOf("fastlege-for:${PASIENT_FNR.dropLast(1)}0", "her-id:$PASIENT_FNR").forEach { identifier ->
+                    it("does not log the invalid identifier $identifier") {
+                        lookup(identifier).expectStatus().isBadRequest
+
+                        auditEntry() shouldNotContain identifier.substringAfter(':')
+                        applicationLogLines().forEach { it shouldNotContain identifier.substringAfter(':') }
+                    }
+                }
             }
         }
 

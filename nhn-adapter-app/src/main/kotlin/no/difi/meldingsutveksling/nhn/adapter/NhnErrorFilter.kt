@@ -51,21 +51,21 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
         is MessageTooLargeException ->
             toApiError(HttpStatus.CONTENT_TOO_LARGE, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
         is AccessDeniedException -> {
-            logger.warn("Access denied for ${path()}: ${error.message}")
+            logger.warn("Access denied for ${route()}: ${error.message}")
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
         }
         is ApplicationReceiptException -> toApiError(HttpStatus.BAD_REQUEST, error.error, error.message)
         is AdresseregisteretException -> {
-            logger.error("Technical error occurred against Adresseregisteret for ${path()}", error)
+            logger.error("Technical error occurred against Adresseregisteret for ${route()}", error)
             badGateway(ADRESSEREGISTERET_ERROR_CODE)
         }
         is FastlegeregisteretException -> {
-            logger.error("Technical error occurred against Fastlegeregisteret for ${path()}", error)
+            logger.error("Technical error occurred against Fastlegeregisteret for ${route()}", error)
             badGateway(FASTLEGEREGISTERET_ERROR_CODE)
         }
         is HttpException -> mshError(error)
         is InvalidMshDataException -> {
-            logger.error("Invalid data from MSH for ${path()}", error)
+            logger.error("Invalid data from MSH for ${route()}", error)
             badGateway(MSH_ERROR_CODE)
         }
         else -> {
@@ -86,15 +86,23 @@ private fun ServerRequest.mshError(error: HttpException): ApiError {
     val clientErrorStatus =
         HttpStatus.resolve(error.status)?.takeIf { it.is4xxClientError && it !in MSH_AUTHORIZATION_ERRORS }
     if (clientErrorStatus != null) {
-        logger.warn("MSH rejected the request for ${path()}: ${error.message}")
+        logger.warn("MSH rejected the request for ${route()}: ${error.message}")
         return toApiError(clientErrorStatus, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
     }
-    logger.error("MSH failed for ${path()}: ${error.message}")
+    logger.error("MSH failed for ${route()}: ${error.message}")
     return badGateway(MSH_ERROR_CODE)
 }
 
-private fun ServerRequest.matchesRoute(pattern: String): Boolean =
-    (attribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE).orElse(null) as? PathPattern)?.patternString == pattern
+private fun ServerRequest.matchingPattern(): String? =
+    (attribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE).orElse(null) as? PathPattern)?.patternString
+
+private fun ServerRequest.matchesRoute(pattern: String): Boolean = matchingPattern() == pattern
+
+/**
+ * The route for log messages, e.g. `GET /api/lookup/{identifier}`. The raw path is not logged, since the path
+ * variables may be personal data, like the fødselsnummer in `/api/lookup/fastlege-for:<fnr>`.
+ */
+private fun ServerRequest.route(): String = "${method()} ${matchingPattern() ?: "<unknown route>"}"
 
 private fun ServerRequest.clientError(details: String): ApiError =
     toApiError(HttpStatus.BAD_REQUEST, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, details)

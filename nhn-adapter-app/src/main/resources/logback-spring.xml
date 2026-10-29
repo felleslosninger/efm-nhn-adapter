@@ -5,7 +5,8 @@
     <springProperty name="APP-ENV" source="spring.application.environment" defaultValue="-"/>
 
     <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <!-- Masks fødselsnummer, e.g. in exceptions from Fastlegeregisteret -->
+        <encoder class="no.difi.meldingsutveksling.nhn.adapter.logging.FnrMaskingLogstashEncoder">
             <includeMdc>true</includeMdc>
             <customFields>{"application":"${APP-NAME}","environment":"${APP-ENV}","logtype":"application"}</customFields>
         </encoder>

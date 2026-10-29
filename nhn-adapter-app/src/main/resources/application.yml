@@ -62,6 +62,11 @@ oauth2:
     client-id: ${NHN_CLIENT_ID}
     private-key: ${NHN_PRIVATE_KEY}
 
+audit:
+  # HMAC key for pseudonymizing fødselsnummer in the audit log, at least 32 characters. Keep it stable, so that lookups
+  # for the same person can be found across releases.
+  pseudonymization-key: ${AUDIT_PSEUDONYMIZATION_KEY}
+
 keystore:
   path: ${KEYSTORE_VALUE}
   alias: ${KEYSTORE_ALIAS}

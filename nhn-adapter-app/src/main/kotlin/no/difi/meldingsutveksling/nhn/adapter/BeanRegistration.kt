@@ -8,6 +8,8 @@ import io.swagger.v3.oas.models.security.SecurityScheme
 import io.swagger.v3.oas.models.servers.Server
 import no.difi.certvalidator.BusinessCertificateValidatorFactory
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
+import no.difi.meldingsutveksling.nhn.adapter.audit.IdentifierPseudonymizer
+import no.difi.meldingsutveksling.nhn.adapter.config.AuditConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.CertificateConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.KeystoreConfig
@@ -45,6 +47,7 @@ private object PropertyPrefixes {
     const val TEMP_FILE = "temp"
     const val KEYSTORE = "keystore"
     const val CERTIFICATE = "certificate"
+    const val AUDIT = "audit"
 }
 
 private const val SERVICES_AR_URL = "nhn.services.ar.url"
@@ -59,6 +62,7 @@ private fun properties() = BeanRegistrarDsl {
     registerBean<TempFileConfig> { env.bindRequired(PropertyPrefixes.TEMP_FILE) }
     registerBean<KeystoreConfig> { env.bindRequired(PropertyPrefixes.KEYSTORE) }
     registerBean<CertificateConfig> { env.bindRequired(PropertyPrefixes.CERTIFICATE) }
+    registerBean<AuditConfig> { env.bindRequired(PropertyPrefixes.AUDIT) }
 
     registerBean { ApplicationResourceLoader.get() }
     registerBean { keystoreProperties(bean(), bean()) }
@@ -81,6 +85,7 @@ private fun integrations() = BeanRegistrarDsl {
 private fun services() = BeanRegistrarDsl {
     registerBean { BusinessCertificateValidatorFactory().createValidator(bean<CertificateConfig>().mode) }
     registerBean { AuditLogService(bean()) }
+    registerBean { IdentifierPseudonymizer(bean<AuditConfig>().pseudonymizationKey) }
     registerBean { tempFileResourceFactory(bean()) }
     registerBean { SecurityService(bean(), bean()) }
     registerBean { KeystoreHelper(bean()) }
@@ -90,7 +95,7 @@ private fun services() = BeanRegistrarDsl {
 private fun handlers() = BeanRegistrarDsl {
     registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
     registerBean { OutHandler(bean(), bean(), bean(), bean(), bean(), bean()) }
-    registerBean { LookupHandler(bean(), bean(), bean()) }
+    registerBean { LookupHandler(bean(), bean(), bean(), bean()) }
 }
 
 private fun openApi() = BeanRegistrarDsl {
