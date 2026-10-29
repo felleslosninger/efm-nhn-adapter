@@ -263,6 +263,10 @@ class NhnAdapterApiIT(
 
             describe("scopes") {
                 beforeEach {
+                    coEvery { mshClient.getMessage(any(), any()) } answers
+                        {
+                            outgoingMessageMetadata(firstArg(), KOMMUNE_HER_ID, FASTLEGE_HER_ID)
+                        }
                     coEvery { mshClient.getStatus(any(), any()) } returns emptyList()
                     coEvery { mshClient.getMessagesWithMetadata(any(), any()) } returns emptyList()
                     coEvery { mshClient.markMessageRead(any(), any(), any()) } just Runs
@@ -690,6 +694,8 @@ class NhnAdapterApiIT(
         describe("GET /api/messages/out/{messageId}/statuses") {
             it("returns the delivery and application receipt status from MSH") {
                 val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId, consumerTenant()) } returns
+                    outgoingMessageMetadata(messageId, KOMMUNE_HER_ID, FASTLEGE_HER_ID)
                 coEvery { mshClient.getStatus(messageId, consumerTenant()) } returns
                     listOf(StatusInfo(FASTLEGE_HER_ID, DeliveryState.ACKNOWLEDGED, AppRecStatus.OK))
 
@@ -709,6 +715,22 @@ class NhnAdapterApiIT(
                     .isEqualTo("ACKNOWLEDGED")
                     .jsonPath("$[0].apprecStatus")
                     .isEqualTo("OK")
+            }
+
+            it("returns 403 and no status when the sender belongs to another organization") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId, consumerTenant()) } returns
+                    outgoingMessageMetadata(messageId, FASTLEGE_HER_ID, KOMMUNE_HER_ID)
+
+                client()
+                    .get()
+                    .uri("/api/messages/out/$messageId/statuses")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getStatus(any(), any()) }
             }
 
             it("returns 400 when the message id is not a UUID") {
@@ -1002,6 +1024,18 @@ private fun MockKMatcherScope.consumerTenant() =
     match<RequestParameters> {
         (it.helseId?.tenant as? SingleTenantHelseIdTokenParameters)?.childOrganization == CONSUMER_ORG_NUMBER
     }
+
+/** MSH metadata for a dialogmelding sent from [senderHerId] to [receiverHerId]. */
+private fun outgoingMessageMetadata(messageId: UUID, senderHerId: Int, receiverHerId: Int) =
+    MessageWithMetadata(
+        messageId,
+        "application/xml",
+        receiverHerId,
+        senderHerId,
+        UUID.randomUUID().toString(),
+        OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
+        false,
+    )
 
 private fun dialogmeldingSbd(messageId: UUID, conversationId: UUID, parentId: UUID? = null) =
     sbd(BusinessMessageType.DIALOGMELDING, messageId, conversationId, parentId).apply {
