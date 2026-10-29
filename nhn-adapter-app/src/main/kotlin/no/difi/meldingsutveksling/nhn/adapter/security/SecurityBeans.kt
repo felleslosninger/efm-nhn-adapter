@@ -20,7 +20,7 @@ object SecurityBeans {
             "/v3/api-docs/**",
         )
 
-    private val API_AUTHORITIES = arrayOf("SCOPE_eformidling:dph", "SCOPE_move/dph.read")
+    private const val API_AUTHORITY = "SCOPE_eformidling:dph"
 
     fun securityFilterChain(http: ServerHttpSecurity, config: SecurityConfig): SecurityWebFilterChain =
         http
@@ -30,7 +30,7 @@ object SecurityBeans {
                     .pathMatchers(*PUBLIC_PATHS)
                     .permitAll()
                     .pathMatchers("/api/**")
-                    .hasAnyAuthority(*API_AUTHORITIES)
+                    .hasAuthority(API_AUTHORITY)
                     .anyExchange()
                     .authenticated()
             }
