@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.extensions.parentOrganizationOrNull
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toBase64Der
@@ -24,7 +25,13 @@ class LookupHandler(
         val auditEntry = NHNAdapterAuditIdentifier.AR_LOOKUP.entry(clientContext).attribute("identifier", identifier)
 
         auditLogService.log(auditEntry) {
-            val communicationParty = adresseregisteretService.lookupByNhnIdentifier(NhnIdentifier.parse(identifier))
+            val nhnIdentifier =
+                try {
+                    NhnIdentifier.parse(identifier)
+                } catch (e: IllegalArgumentException) {
+                    throw ClientInputException("Invalid identifier '$identifier': ${e.message}", e)
+                }
+            val communicationParty = adresseregisteretService.lookupByNhnIdentifier(nhnIdentifier)
             val parent = communicationParty.parentOrganizationOrNull ?: throw HerIdNotFoundException()
 
             return ServerResponse.ok()

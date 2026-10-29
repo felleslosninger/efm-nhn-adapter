@@ -2,8 +2,10 @@ package no.difi.meldingsutveksling.nhn.adapter
 
 import java.time.Instant
 import mu.KotlinLogging
-import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
@@ -45,28 +47,27 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             } else {
                 clientError(error.message ?: CLIENT_ERROR)
             }
-        is IllegalArgumentException,
-        is DialogmeldingNotFoundException -> clientError(error.message ?: CLIENT_ERROR)
+        is ClientInputException -> clientError(error.message ?: CLIENT_ERROR)
+        is MessageTooLargeException ->
+            toApiError(HttpStatus.CONTENT_TOO_LARGE, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
         is AccessDeniedException -> {
             logger.warn("Access denied for ${path()}: ${error.message}")
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
         }
         is ApplicationReceiptException -> toApiError(HttpStatus.BAD_REQUEST, error.error, error.message)
         is AdresseregisteretException -> {
-            logger.error(
-                "Technical error occurred against Adresseregisteret for ${path()}. Logging cause.",
-                error.cause,
-            )
+            logger.error("Technical error occurred against Adresseregisteret for ${path()}", error)
             badGateway(ADRESSEREGISTERET_ERROR_CODE)
         }
         is FastlegeregisteretException -> {
-            logger.error(
-                "Technical error occurred against Fastlegeregisteret for ${path()}. Logging cause.",
-                error.cause,
-            )
+            logger.error("Technical error occurred against Fastlegeregisteret for ${path()}", error)
             badGateway(FASTLEGEREGISTERET_ERROR_CODE)
         }
         is HttpException -> mshError(error)
+        is InvalidMshDataException -> {
+            logger.error("Invalid data from MSH for ${path()}", error)
+            badGateway(MSH_ERROR_CODE)
+        }
         else -> {
             logger.error("Unexpected error: ${error.message}", error)
             toApiError(

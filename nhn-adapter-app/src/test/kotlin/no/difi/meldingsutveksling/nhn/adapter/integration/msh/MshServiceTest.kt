@@ -12,8 +12,11 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import java.util.Base64
 import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
@@ -82,7 +85,7 @@ class MshServiceTest :
                         .contentTransferEncoding("quoted-printable")
                         .businessDocument("")
 
-                shouldThrow<IllegalArgumentException> {
+                shouldThrow<InvalidMshDataException> {
                         mshService.getBusinessDocument(messageId.toString(), clientContext())
                     }
                     .message shouldContain "quoted-printable"
@@ -95,10 +98,28 @@ class MshServiceTest :
                         .contentTransferEncoding("base64")
                         .businessDocument("")
 
-                shouldThrow<IllegalArgumentException> {
+                shouldThrow<InvalidMshDataException> {
                         mshService.getBusinessDocument(messageId.toString(), clientContext())
                     }
                     .message shouldContain "application/json"
+            }
+
+            it("reports a business document it cannot interpret as invalid data from MSH") {
+                coEvery { internalClient.getBusinessDocument(messageId, any()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString("<Unknown/>".toByteArray()))
+
+                shouldThrow<InvalidMshDataException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                    .message shouldContain "Unknown"
+            }
+
+            it("rejects an id that is not a UUID as invalid client input") {
+                shouldThrow<ClientInputException> { mshService.getBusinessDocument("not-a-uuid", clientContext()) }
+                    .message shouldBe "id must be an UUID!"
             }
         }
 

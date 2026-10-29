@@ -9,12 +9,15 @@ import kotlinx.coroutines.withContext
 import no.difi.meldingsutveksling.domain.sbdh.StandardBusinessDocument
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmelding
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmeldingKvittering
 import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
+import no.difi.meldingsutveksling.nhn.adapter.extensions.toClientUuid
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toReceiver
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toSender
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
@@ -39,6 +42,7 @@ import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
 import org.springframework.web.reactive.function.server.json
+import tools.jackson.core.JacksonException
 import tools.jackson.databind.json.JsonMapper
 
 class OutHandler(
@@ -53,7 +57,8 @@ class OutHandler(
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
 
         auditLogService.log(auditEntry) {
-            val statuses = mshService.getStatus(messageId, clientContext).map { it.toMessageStatus() }
+            val statusInfos = mshService.getStatus(messageId, clientContext)
+            val statuses = fromMshData { statusInfos.map { it.toMessageStatus() } }
             return ServerResponse.ok().json().bodyValueAndAwait(statuses)
         }
     }
@@ -85,7 +90,7 @@ class OutHandler(
                         sendDialogmelding(sbd, sender, multipartData, clientContext)
                     BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
                         sendApplicationReceipt(sbd, auditEntry, clientContext)
-                    else -> throw IllegalArgumentException("Unsupported message type ${sbd.type}")
+                    else -> throw ClientInputException("Unsupported message type ${sbd.type}")
                 }
             auditEntry.attribute("messageReference", messageReference)
 
@@ -95,7 +100,11 @@ class OutHandler(
 
     private fun readStandardBusinessDocument(forretningsmelding: Part): StandardBusinessDocument {
         val jwsObject = parcelService.decryptAndVerify(PartUtils.toString(forretningsmelding))
-        return jsonMapper.readValue(jwsObject.payload.toString(), StandardBusinessDocument::class.java)
+        return try {
+            jsonMapper.readValue(jwsObject.payload.toString(), StandardBusinessDocument::class.java)
+        } catch (e: JacksonException) {
+            throw ClientInputException("Invalid forretningsmelding: ${e.originalMessage}", e)
+        }
     }
 
     private suspend fun sendDialogmelding(
@@ -105,7 +114,7 @@ class OutHandler(
         clientContext: ClientContext,
     ): UUID {
         val message = sbd.dialogmelding
-        val pasient = requireNotNull(message.pasient) { "Dialogmelding is missing pasient" }
+        val pasient = message.pasient ?: throw ClientInputException("Dialogmelding is missing pasient")
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
         val receiverParty = adresseregisteretService.lookupByHerId(sbd.receiverHerId)
 
@@ -116,7 +125,7 @@ class OutHandler(
 
             val input =
                 SendMessageInput(
-                    id = UUID.fromString(sbd.messageId),
+                    id = sbd.messageId.toClientUuid("messageId"),
                     sender = sender.toSender(),
                     receiver = receiverParty.toReceiver(pasient),
                     dialogmelding = dialogmelding,
@@ -149,5 +158,5 @@ class OutHandler(
     }
 
     private fun MultiValueMap<String, Part>.requirePart(name: String): Part =
-        getFirst(name) ?: throw IllegalArgumentException("Missing multipart part '$name'")
+        getFirst(name) ?: throw ClientInputException("Missing multipart part '$name'")
 }

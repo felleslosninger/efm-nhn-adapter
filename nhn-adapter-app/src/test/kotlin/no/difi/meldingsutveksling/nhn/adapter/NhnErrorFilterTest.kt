@@ -1,8 +1,12 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import io.kotest.core.spec.style.DescribeSpec
+import java.net.ConnectException
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretApiException
@@ -76,17 +80,40 @@ class NhnErrorFilterTest :
                 expectApiError(OUTGOING_PATH, HerIdNotFoundException(), HttpStatus.BAD_REQUEST, "HER-id not found")
             }
 
-            it("maps invalid arguments to 400") {
+            it("maps invalid client input to 400") {
                 expectApiError(
                     OUTGOING_PATH,
-                    IllegalArgumentException("Invalid input"),
+                    ClientInputException("Invalid input"),
                     HttpStatus.BAD_REQUEST,
                     "Invalid input",
                 )
             }
 
-            it("uses a generic message for invalid arguments without a message") {
-                expectApiError(OUTGOING_PATH, IllegalArgumentException(), HttpStatus.BAD_REQUEST, "Client error")
+            it("does not treat an IllegalArgumentException as invalid client input") {
+                expectApiError(
+                    OUTGOING_PATH,
+                    IllegalArgumentException("Invalid input"),
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Not able to process, try later. ErrorCode: E7777",
+                )
+            }
+
+            it("maps a too large message to 413") {
+                expectApiError(
+                    OUTGOING_PATH,
+                    MessageTooLargeException("Message exceeds the max size"),
+                    HttpStatus.CONTENT_TOO_LARGE,
+                    "Message exceeds the max size",
+                )
+            }
+
+            it("maps invalid data from MSH to 502 without the details") {
+                expectApiError(
+                    OUTGOING_PATH,
+                    InvalidMshDataException("Invalid data from MSH: Found no Dialogmelding in MsgHead"),
+                    HttpStatus.BAD_GATEWAY,
+                    "Not able to process, try later. ErrorCode: E7780",
+                )
             }
 
             it("maps a missing hoveddokument to 400") {
@@ -129,7 +156,16 @@ class NhnErrorFilterTest :
             it("maps technical Adresseregisteret errors to 502") {
                 expectApiError(
                     LOOKUP_PATH,
-                    AdresseregisteretException("Technical error", RuntimeException("Timeout")),
+                    AdresseregisteretException("Technical error", ConnectException("Connection refused")),
+                    HttpStatus.BAD_GATEWAY,
+                    "Not able to process, try later. ErrorCode: E7778",
+                )
+            }
+
+            it("maps Adresseregisteret errors without a cause to 502") {
+                expectApiError(
+                    LOOKUP_PATH,
+                    AdresseregisteretException("No cause", null),
                     HttpStatus.BAD_GATEWAY,
                     "Not able to process, try later. ErrorCode: E7778",
                 )
@@ -138,7 +174,7 @@ class NhnErrorFilterTest :
             it("maps Fastlegeregisteret errors to 502") {
                 expectApiError(
                     LOOKUP_PATH,
-                    FastlegeregisteretException("Technical error", RuntimeException("Timeout")),
+                    FastlegeregisteretException("Technical error", ConnectException("Connection refused")),
                     HttpStatus.BAD_GATEWAY,
                     "Not able to process, try later. ErrorCode: E7779",
                 )

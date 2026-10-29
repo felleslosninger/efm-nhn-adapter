@@ -6,13 +6,16 @@ import com.nimbusds.jose.util.X509CertChainUtils
 import java.security.cert.X509Certificate
 import java.text.ParseException
 import no.difi.asic.SignatureMethod
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.AsicParser
 import no.difi.move.common.dokumentpakking.CmsAlgorithm
 import no.difi.move.common.dokumentpakking.CreateCMSEncryptedAsice
 import no.difi.move.common.dokumentpakking.CreateSignedJWT
 import no.difi.move.common.dokumentpakking.DecryptCMSDocument
+import no.difi.move.common.dokumentpakking.DecryptException
 import no.difi.move.common.dokumentpakking.JsonWebEncryption
+import no.difi.move.common.dokumentpakking.SignatureException
 import no.difi.move.common.dokumentpakking.VerifyJWT
 import no.difi.move.common.dokumentpakking.domain.AsicEAttachable
 import no.difi.move.common.dokumentpakking.domain.Document
@@ -45,17 +48,31 @@ class ParcelService(
         return JsonWebEncryption.encrypt(signed, certificate)
     }
 
+    /**
+     * A JWE that cannot be decrypted (malformed, or not encrypted for the adapter's certificate) or a JWS that cannot
+     * be verified (malformed, bad signature or invalid business certificate) is an error in the client's request.
+     *
+     * Validating the business certificate does not depend on the network at request time: the CRLs are cached and
+     * refreshed in the background, and a CRL that cannot be downloaded is logged and skipped by the validator. A
+     * validation failure is therefore always about the certificate itself, never a transient error worth retrying.
+     */
     fun decryptAndVerify(jweToken: String): JWSObject {
-        val signed = JsonWebEncryption.decrypt(jweToken, keystoreHelper.loadPrivateKey())
-        return verifyJWT.verify(signed)
+        val privateKey = keystoreHelper.loadPrivateKey()
+        return try {
+            verifyJWT.verify(JsonWebEncryption.decrypt(jweToken, privateKey))
+        } catch (e: DecryptException) {
+            throw ClientInputException(e.message ?: "JWE decryption failed", e)
+        } catch (e: SignatureException) {
+            throw ClientInputException(e.message ?: "JWS verification failed", e)
+        }
     }
 
     fun getSigningCertificate(jwsObject: JWSObject): X509Certificate =
         try {
             X509CertChainUtils.parse(jwsObject.header.x509CertChain).firstOrNull()
-                ?: throw IllegalArgumentException("Expected to find certificate in JWS header!")
+                ?: throw ClientInputException("Expected to find certificate in JWS header!")
         } catch (e: ParseException) {
-            throw IllegalStateException("Could not parse certificate in JWS header!", e)
+            throw ClientInputException("Could not parse certificate in JWS header!", e)
         }
 
     fun getAttachments(dokumentpakke: Part): List<Document> {
