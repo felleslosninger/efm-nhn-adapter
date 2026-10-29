@@ -28,8 +28,10 @@ class IdentifierPseudonymizer(key: String) {
     }
 
     /**
-     * `her-id:<HER-id>` is returned as is, `fastlege-for:<fnr>` as `fastlege-for:hmac:<hash of fnr>`. Anything else is
-     * invalid input that may still contain a fødselsnummer, so it is hashed as a whole.
+     * `her-id:<HER-id>` is returned as is, `fastlege-for:<x>` as `fastlege-for:hmac:<hash of x>`. The latter also
+     * holds when `x` is not a valid fødselsnummer (e.g. a wrong check digit), so that a failed lookup is found with
+     * the same command as a successful one. Anything else is invalid input that may still contain a fødselsnummer, so
+     * it is hashed as a whole.
      */
     fun pseudonymize(identifier: String): String =
         when {

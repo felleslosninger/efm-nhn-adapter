@@ -32,6 +32,12 @@ class IdentifierPseudonymizerTest :
                     pseudonymizer.pseudonymize("fastlege-for:$FNR")
             }
 
+            it("hashes only the fødselsnummer when its check digit is wrong") {
+                // printf %s 16822449870 | openssl dgst -sha256 -hmac $KEY
+                pseudonymizer.pseudonymize("fastlege-for:16822449870") shouldBe
+                    "fastlege-for:hmac:5fa5fb5fc8d8a38466fd74af952c84fcd8f1b6b2b1f955143837114b62d6c8c9"
+            }
+
             listOf("her-id:$FNR", FNR, "not-an-identifier:$FNR", "fastlege-for:1682244987").forEach { identifier ->
                 it("hashes the invalid identifier '$identifier'") {
                     val pseudonym = pseudonymizer.pseudonymize(identifier)

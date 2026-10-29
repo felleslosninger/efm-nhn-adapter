@@ -461,9 +461,10 @@ kalla, på vegner av kven, og om kallet gjekk bra.
 
 Fødselsnummer skal ikkje stå i klartekst i nokon logg:
 
-- Ved oppslag på `fastlege-for:<fnr>` står identifikatoren i auditloggen som `fastlege-for:hmac:<HMAC-SHA256 av fnr>`.
-  Ugyldige identifikatorar vert hasha i heilskap. Oppslag for ein kjend person kan finnast ved å rekne ut hashen med
-  nøkkelen: `printf %s <fnr> | openssl dgst -sha256 -hmac <nøkkel>`.
+- Ved oppslag på `fastlege-for:<fnr>` står identifikatoren i auditloggen som `fastlege-for:hmac:<HMAC-SHA256 av fnr>`,
+  også når fødselsnummeret er ugyldig (t.d. feil kontrollsiffer). Oppslag for ein kjend person kan finnast ved å rekne
+  ut hashen med nøkkelen: `printf %s <fnr> | openssl dgst -sha256 -hmac <nøkkel>`. Andre ugyldige identifikatorar,
+  også `her-id:` med meir enn 9 siffer, vert hasha i heilskap.
 - Feilmeldingar i auditloggen og alle verdiar i applikasjonsloggen, også stacktracar, får frittståande tal på 11 siffer
   bytt ut med `***********`.
 - `NhnErrorFilter` loggar rutemønsteret (t.d. `GET /api/lookup/{identifier}`), ikkje den rå stien.
