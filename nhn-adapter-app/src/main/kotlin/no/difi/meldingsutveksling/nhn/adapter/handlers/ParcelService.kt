@@ -51,6 +51,10 @@ class ParcelService(
     /**
      * A JWE that cannot be decrypted (malformed, or not encrypted for the adapter's certificate) or a JWS that cannot
      * be verified (malformed, bad signature or invalid business certificate) is an error in the client's request.
+     *
+     * Validating the business certificate does not depend on the network at request time: the CRLs are cached and
+     * refreshed in the background, and a CRL that cannot be downloaded is logged and skipped by the validator. A
+     * validation failure is therefore always about the certificate itself, never a transient error worth retrying.
      */
     fun decryptAndVerify(jweToken: String): JWSObject {
         val privateKey = keystoreHelper.loadPrivateKey()
