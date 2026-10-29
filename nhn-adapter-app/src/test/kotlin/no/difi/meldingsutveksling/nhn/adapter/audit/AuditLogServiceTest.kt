@@ -56,6 +56,15 @@ class AuditLogServiceTest :
                 logged.single().getAttribute("exception") shouldBe "boom"
             }
 
+            it("masks fødselsnummer in the exception message") {
+                shouldThrow<IllegalStateException> {
+                    auditLogService.log(newEntry()) { error("Ukjent pasient 16822449879") }
+                }
+
+                verifyLogged()
+                logged.single().getAttribute("exception") shouldBe "Ukjent pasient ***********"
+            }
+
             it("logs an Error as a failure") {
                 shouldThrow<NotImplementedError> { auditLogService.log(newEntry()) { TODO("not yet") } }
 

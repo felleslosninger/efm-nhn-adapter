@@ -20,6 +20,9 @@ temp:
 certificate:
   mode: SELF_SIGNED
 
+audit:
+  pseudonymization-key: "test-pseudonymization-key-of-at-least-32-characters"
+
 nhn:
   services:
     ar:

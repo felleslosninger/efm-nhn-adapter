@@ -69,7 +69,8 @@ Alle pakkane ligg under `no.difi.meldingsutveksling.nhn.adapter`.
 | `integration.msh`                 | `MshService` mot MSH, og mapping mellom `StandardBusinessDocument` og NHN sine XML-format (MsgHead, AppRec).   |
 | `integration.IntegrationBeans`    | Opprettar klientane frå KS Fiks-biblioteka (AR, FLR, MSH, HelseID).                                            |
 | `security`                        | Spring Security-oppsett, `ClientContext` (claims frå Maskinporten-tokenet) og tilgangskontroll (`SecurityService`). |
-| `audit`                           | Auditlogging av API-kall.                                                                                      |
+| `audit`                           | Auditlogging av API-kall og pseudonymisering av fødselsnummer i auditloggen (`IdentifierPseudonymizer`).       |
+| `logging`                         | Maskering av fødselsnummer i applikasjonsloggen (`FnrMaskingLogstashEncoder`).                                 |
 | `messages`                        | Forretningsmeldingane som ligg i SBD-en (`dialogmelding`, `dialogmelding_kvittering`).                         |
 | `config`                          | Konfigurasjonsklassar og codec-/Jackson-oppsett.                                                               |
 | `extensions`                      | Kotlin extension-funksjonar for request, response, SBD, sertifikat osv.                                        |
@@ -362,6 +363,7 @@ Felles oppsett ligg i [`application.yml`](nhn-adapter-app/src/main/resources/app
 | `oauth2.helse-id.client-id`, `.private-key`   | `NHN_CLIENT_ID`, `NHN_PRIVATE_KEY`          | HelseID-klienten adapteret brukar mot MSH og Adresseregisteret. Nøkkelen er ein JWK. |
 | `oauth2.helse-id.issuer`, `.audience`         | –                                           | HelseID-miljø.                                                    |
 | `keystore.path`, `.alias`, `.password`, `.type` | `KEYSTORE_VALUE`, `KEYSTORE_ALIAS`, `KEYSTORE_PASSWORD`, `KEYSTORE_TYPE` (standard `JKS`) | Nøkkellager med adapteret sitt virksomheitssertifikat. |
+| `audit.pseudonymization-key`                  | `AUDIT_PSEUDONYMIZATION_KEY`                | HMAC-nøkkel for å pseudonymisere fødselsnummer i auditloggen. Minst 32 teikn, ulik per miljø, og må ikkje endrast. |
 | `security.trusted-issuers`                    | –                                           | Maskinporten-issuer(ar) som vert godtekne.                        |
 | `security.delegation-source`                  | –                                           | Altinn-miljøet delegeringar må kome frå.                          |
 | `certificate.mode`                            | –                                           | `TEST`, `PRODUCTION` eller `SELF_SIGNED`.                         |
@@ -456,6 +458,15 @@ Actuator køyrer på eigen port (`8090`) utan kontekststi:
 
 Auditloggen vert skriven med `idporten-log-audit` og har `auditId` på forma `NHN-ADAPTER-<OPERASJON>`, med kven som
 kalla, på vegner av kven, og om kallet gjekk bra.
+
+Fødselsnummer skal ikkje stå i klartekst i nokon logg:
+
+- Ved oppslag på `fastlege-for:<fnr>` står identifikatoren i auditloggen som `fastlege-for:hmac:<HMAC-SHA256 av fnr>`.
+  Ugyldige identifikatorar vert hasha i heilskap. Oppslag for ein kjend person kan finnast ved å rekne ut hashen med
+  nøkkelen: `printf %s <fnr> | openssl dgst -sha256 -hmac <nøkkel>`.
+- Feilmeldingar i auditloggen og alle verdiar i applikasjonsloggen, også stacktracar, får frittståande tal på 11 siffer
+  bytt ut med `***********`.
+- `NhnErrorFilter` loggar rutemønsteret (t.d. `GET /api/lookup/{identifier}`), ikkje den rå stien.
 
 ## Caser
 
