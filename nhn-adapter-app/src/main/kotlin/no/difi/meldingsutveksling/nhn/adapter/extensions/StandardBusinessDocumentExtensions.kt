@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter.extensions
 
 import no.difi.meldingsutveksling.domain.NhnIdentifier
 import no.difi.meldingsutveksling.domain.sbdh.StandardBusinessDocument
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingMessage
 
@@ -30,4 +31,4 @@ var StandardBusinessDocument.dialogmeldingKvittering: DialogmeldingKvitteringMes
     }
 
 private inline fun <reified T> Any?.castOrThrow(errorMessage: String): T =
-    this as? T ?: throw IllegalArgumentException(errorMessage)
+    this as? T ?: throw ClientInputException(errorMessage)

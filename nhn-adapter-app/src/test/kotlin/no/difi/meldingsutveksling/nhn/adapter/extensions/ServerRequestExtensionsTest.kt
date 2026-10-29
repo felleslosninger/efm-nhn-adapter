@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import java.util.UUID
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import org.springframework.mock.web.reactive.function.server.MockServerRequest
 
 class ServerRequestExtensionsTest :
@@ -19,7 +20,7 @@ class ServerRequestExtensionsTest :
             }
 
             it("rejects a message id that is not a UUID") {
-                shouldThrow<IllegalArgumentException> {
+                shouldThrow<ClientInputException> {
                         MockServerRequest.builder().pathVariable("messageId", "not-a-uuid").build().getMessageId()
                     }
                     .message shouldBe "messageId must be an UUID!"
@@ -33,14 +34,14 @@ class ServerRequestExtensionsTest :
             }
 
             it("rejects a receiver HER-id that is not an integer") {
-                shouldThrow<IllegalArgumentException> {
+                shouldThrow<ClientInputException> {
                         MockServerRequest.builder().queryParam("receiverHerId", "abc").build().getReceiverHerId()
                     }
                     .message shouldBe "receiverHerId must be an integer"
             }
 
             it("rejects a missing receiver HER-id") {
-                shouldThrow<IllegalArgumentException> { MockServerRequest.builder().build().getReceiverHerId() }
+                shouldThrow<ClientInputException> { MockServerRequest.builder().build().getReceiverHerId() }
                     .message shouldBe "receiverHerId cannot be null"
             }
         }

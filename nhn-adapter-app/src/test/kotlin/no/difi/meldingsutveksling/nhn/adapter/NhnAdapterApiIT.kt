@@ -55,6 +55,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.move.common.cert.KeystoreHelper
+import no.difi.move.common.dokumentpakking.JsonWebEncryption
 import no.difi.move.common.dokumentpakking.PartUtils
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
@@ -782,6 +783,33 @@ class NhnAdapterApiIT(
                 sbd.receiverHerId shouldBe KOMMUNE_HER_ID
                 sbd.dialogmeldingKvittering.relatedToMessageId shouldBe originalMessageId.toString()
                 sbd.dialogmeldingKvittering.status shouldBe DialogmeldingKvitteringStatus.OK
+            }
+
+            fun getIncoming(body: String) =
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(body)
+                    .exchange()
+
+            it("returns 400 when the request is not a JWE") {
+                getIncoming("not-a-jwe")
+                    .expectStatus()
+                    .isBadRequest
+                    .expectBody()
+                    .jsonPath("$.details")
+                    .isEqualTo("JWE parsing failed!")
+            }
+
+            it("returns 400 when the JWE does not contain a signed JWS") {
+                getIncoming(JsonWebEncryption.encrypt("not-a-jws", keystoreHelper.x509Certificate))
+                    .expectStatus()
+                    .isBadRequest
+                    .expectBody()
+                    .jsonPath("$.details")
+                    .isEqualTo("Parsing JWT failed!")
             }
         }
 

@@ -60,18 +60,12 @@ class AdresseregisteretServiceTest :
                 shouldThrow<AdresseregisteretApiException> { service.lookupByHerId(HER_ID) }.statusCode shouldBe 500
             }
 
-            it("unwraps technical errors to their cause") {
+            it("keeps network errors wrapped") {
                 every { adresseregisteretClient.lookupHerId(HER_ID) } throws
                     AdresseregisteretException("Technical error", connectionError)
 
-                shouldThrow<ConnectException> { service.lookupByHerId(HER_ID) }.message shouldBe "Connection refused"
-            }
-
-            it("keeps errors without a cause as is") {
-                val error = AdresseregisteretException("No cause", null)
-                every { adresseregisteretClient.lookupHerId(HER_ID) } throws error
-
-                shouldThrow<AdresseregisteretException> { service.lookupByHerId(HER_ID) }.message shouldBe "No cause"
+                shouldThrow<AdresseregisteretException> { service.lookupByHerId(HER_ID) }.message shouldBe
+                    "Technical error"
             }
         }
 
@@ -130,14 +124,14 @@ class AdresseregisteretServiceTest :
                     .faultMessage shouldBe "Other fault"
             }
 
-            it("unwraps technical Fastlegeregisteret errors to their cause") {
+            it("keeps Fastlegeregisteret network errors wrapped") {
                 every { fastlegeregisteretClient.getPatientGP(PASIENT_FNR) } throws
                     FastlegeregisteretException("Technical error", connectionError)
 
-                shouldThrow<ConnectException> {
+                shouldThrow<FastlegeregisteretException> {
                         service.lookupByNhnIdentifier(NhnIdentifier.parse("fastlege-for:$PASIENT_FNR"))
                     }
-                    .message shouldBe "Connection refused"
+                    .message shouldBe "Technical error"
             }
 
             it("keeps Fastlegeregisteret SOAP faults wrapped") {

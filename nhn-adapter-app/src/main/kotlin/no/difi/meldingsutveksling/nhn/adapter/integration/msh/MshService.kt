@@ -2,6 +2,9 @@ package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import java.util.Base64
 import java.util.UUID
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
+import no.difi.meldingsutveksling.nhn.adapter.extensions.toClientUuid
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
@@ -39,15 +42,15 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
 
     suspend fun getBusinessDocument(id: String, clientContext: ClientContext): BusinessDocumentResponse {
         val businessDocument =
-            internalClient.getBusinessDocument(UUID.fromString(id), requestParameters(clientContext))
-        return IncomingBusinessDocumentMapper.toBusinessDocumentResponse(businessDocument.decodeXml())
+            internalClient.getBusinessDocument(id.toClientUuid("id"), requestParameters(clientContext))
+        return fromMshData { IncomingBusinessDocumentMapper.toBusinessDocumentResponse(businessDocument.decodeXml()) }
     }
 
     suspend fun sendMessage(input: SendMessageInput, clientContext: ClientContext): UUID {
         val businessDocument = BusinessDocumentSerializer.serializeNhnMessage(input)
         val encodedBusinessDocument = Base64.getEncoder().encodeToString(businessDocument.toByteArray())
-        require(encodedBusinessDocument.length <= MESSAGE_MAX_BYTES) {
-            "Message exceeds the max size of $MESSAGE_MAX_BYTES bytes"
+        if (encodedBusinessDocument.length > MESSAGE_MAX_BYTES) {
+            throw MessageTooLargeException("Message exceeds the max size of $MESSAGE_MAX_BYTES bytes")
         }
 
         return internalClient.postMessage(
@@ -65,7 +68,7 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
         clientContext: ClientContext,
     ): UUID =
         internalClient.postAppRec(
-            id = UUID.fromString(receipt.relatedToMessageId),
+            id = receipt.relatedToMessageId.toClientUuid("relatedToMessageId"),
             senderHerId = senderHerId,
             request = receipt.toPostAppRecRequest(),
             requestParams = requestParameters(clientContext),

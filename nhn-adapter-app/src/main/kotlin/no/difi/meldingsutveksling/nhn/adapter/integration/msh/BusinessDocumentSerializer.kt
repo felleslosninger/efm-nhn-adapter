@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.xml.datatype.DatatypeFactory
 import kotlin.time.Clock
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.move.common.dokumentpakking.domain.Document as DokumentpakkeDocument
@@ -32,7 +33,6 @@ import no.ks.fiks.hdir.KodeverkVerdi
 import no.ks.fiks.hdir.MeldingensFunksjon
 import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.hdir.TypeDokumentreferanse
-import no.ks.fiks.nhn.edi.VedleggSizeException
 import no.ks.fiks.nhn.edi.XmlContext
 import no.ks.fiks.nhn.msh.Address
 import no.ks.fiks.nhn.msh.CommunicationParty
@@ -60,6 +60,8 @@ object BusinessDocumentSerializer {
                     }
                 )
                 .also { XmlContext.validateXml(it) }
+        } catch (e: MessageTooLargeException) {
+            throw e
         } catch (e: Exception) {
             throw ApplicationReceiptException(
                 FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
@@ -208,7 +210,7 @@ object BusinessDocumentSerializer {
                 value =
                     data.readNBytes(VEDLEGG_MAX_BYTES).also {
                         if (it.size == VEDLEGG_MAX_BYTES && data.read() != -1) {
-                            throw VedleggSizeException(
+                            throw MessageTooLargeException(
                                 "The size of vedlegg exceeds the max size of $VEDLEGG_MAX_BYTES bytes"
                             )
                         }

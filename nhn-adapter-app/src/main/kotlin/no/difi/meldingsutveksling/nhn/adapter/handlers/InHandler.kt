@@ -2,9 +2,12 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import io.swagger.v3.oas.annotations.Parameter
 import java.util.UUID
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
 import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
@@ -49,7 +52,8 @@ class InHandler(
         var messageCount = 0
         auditLogService.log(auditEntry, skipOnSuccess = { messageCount == 0 }) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
-            val inMessages = mshService.getMessagesWithMetadata(receiverHerId, clientContext).map { it.toInMessage() }
+            val messages = mshService.getMessagesWithMetadata(receiverHerId, clientContext)
+            val inMessages = fromMshData { messages.map { it.toInMessage() } }
             messageCount = inMessages.size
             auditEntry.attribute("messageCount", messageCount)
 
@@ -66,7 +70,12 @@ class InHandler(
 
         auditLogService.log(auditEntry) {
             val jwsObject = parcelService.decryptAndVerify(request.toJWEToken())
-            val input = jsonParser.decodeFromString<GetDocumentInput>(jwsObject.payload.toString())
+            val input =
+                try {
+                    jsonParser.decodeFromString<GetDocumentInput>(jwsObject.payload.toString())
+                } catch (e: SerializationException) {
+                    throw ClientInputException("Invalid input: ${e.message}", e)
+                }
             val clientCertificate = parcelService.getSigningCertificate(jwsObject)
             auditEntry.attribute("id", input.id)
 
