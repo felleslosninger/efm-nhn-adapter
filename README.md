@@ -168,8 +168,8 @@ i det biblioteket.
 
 ### Sikkerheit og tilgangskontroll
 
-- Alle kall til `/api/**` krev eit Maskinporten-token med scope `eformidling:dph` eller `move/dph.read`. Tokenet må vere
-  utferda av ein av `security.trusted-issuers`.
+- Alle kall til `/api/**` krev eit Maskinporten-token med scope `eformidling:dph`. Tokenet må vere utferda av ein av
+  `security.trusted-issuers`.
 - `ClientContext` hentar `client_id`, `consumer`, `supplier`, `delegation_source` og `scope` frå tokenet.
 - Før adapteret les eller sender meldingar for ein HER-id, slår `SecurityService` opp HER-id-en i AR og sjekkar at
   `consumer` i tokenet er organisasjonen som eig han (forelderen i AR). Får klienten ikkje tilgang, vert svaret `403`.

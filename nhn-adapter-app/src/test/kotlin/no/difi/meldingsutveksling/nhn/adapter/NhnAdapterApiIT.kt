@@ -5,9 +5,11 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.collections.shouldNotBeIn
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.Called
 import io.mockk.MockKMatcherScope
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -249,13 +251,89 @@ class NhnAdapterApiIT(
                     .isUnauthorized
             }
 
-            it("rejects access tokens without the eformidling:dph scope") {
-                client(scope = "some:other-scope")
-                    .get()
-                    .uri("/api/lookup/her-id:$FASTLEGE_HER_ID")
-                    .exchange()
-                    .expectStatus()
-                    .isForbidden
+            describe("scopes") {
+                beforeEach {
+                    coEvery { mshClient.getStatus(any(), any()) } returns emptyList()
+                    coEvery { mshClient.getMessagesWithMetadata(any(), any()) } returns emptyList()
+                    coEvery { mshClient.markMessageRead(any(), any(), any()) } just Runs
+                    coEvery { mshInternalClient.postAppRec(any(), any(), any(), any()) } returns UUID.randomUUID()
+                }
+
+                val endpoints: Map<String, (WebTestClient) -> WebTestClient.ResponseSpec> =
+                    mapOf(
+                        "GET /api/lookup/{identifier}" to
+                            { c ->
+                                c.get().uri("/api/lookup/her-id:$FASTLEGE_HER_ID").exchange()
+                            },
+                        "GET /api/messages/out/{messageId}/statuses" to
+                            { c ->
+                                c.get()
+                                    .uri("/api/messages/out/${UUID.randomUUID()}/statuses")
+                                    .accept(MediaType.APPLICATION_JSON)
+                                    .exchange()
+                            },
+                        "GET /api/messages/in" to
+                            { c ->
+                                c.get()
+                                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                                    .accept(MediaType.APPLICATION_JSON)
+                                    .exchange()
+                            },
+                        // Not a JWE, so an authorized request gets 400
+                        "POST /api/messages/in" to
+                            { c ->
+                                c.post()
+                                    .uri("/api/messages/in")
+                                    .contentType(APPLICATION_JOSE)
+                                    .accept(MediaType.MULTIPART_MIXED)
+                                    .bodyValue("not-a-jwe")
+                                    .exchange()
+                            },
+                        "POST /api/messages/out" to
+                            { c ->
+                                c.post()
+                                    .uri("/api/messages/out")
+                                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                                    .accept(MediaType.TEXT_PLAIN)
+                                    .body(
+                                        BodyInserters.fromMultipartData(
+                                            outgoingMessage(kvitteringSbd(UUID.randomUUID(), UUID.randomUUID()))
+                                        )
+                                    )
+                                    .exchange()
+                            },
+                        "POST /api/messages/in/{messageId}/read" to
+                            { c ->
+                                c.post()
+                                    .uri("/api/messages/in/${UUID.randomUUID()}/read?receiverHerId=$KOMMUNE_HER_ID")
+                                    .exchange()
+                            },
+                    )
+
+                fun WebTestClient.ResponseSpec.shouldBeAuthorized() {
+                    expectBody().returnResult().status.value() shouldNotBeIn setOf(401, 403)
+                }
+
+                fun WebTestClient.ResponseSpec.shouldBeForbidden() {
+                    expectStatus().isForbidden
+                    verify { listOf(mshClient, mshInternalClient) wasNot Called }
+                }
+
+                endpoints.forEach { (endpoint, request) ->
+                    it("eformidling:dph gives access to $endpoint") {
+                        request(client("eformidling:dph")).shouldBeAuthorized()
+                    }
+
+                    // The read scope used to give access to the whole API, including sending
+                    // messages
+                    it("move/dph.read does not give access to $endpoint") {
+                        request(client("move/dph.read")).shouldBeForbidden()
+                    }
+
+                    it("other scopes do not give access to $endpoint") {
+                        request(client("some:other-scope")).shouldBeForbidden()
+                    }
+                }
             }
         }
 
