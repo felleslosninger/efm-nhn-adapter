@@ -61,9 +61,9 @@ class ParcelService(
         return try {
             verifyJWT.verify(JsonWebEncryption.decrypt(jweToken, privateKey))
         } catch (e: DecryptException) {
-            throw ClientInputException(e.message ?: "JWE decryption failed", e)
+            throw ClientInputException("JWE decryption failed", e)
         } catch (e: SignatureException) {
-            throw ClientInputException(e.message ?: "JWS verification failed", e)
+            throw ClientInputException("JWS verification failed", e)
         }
     }
 

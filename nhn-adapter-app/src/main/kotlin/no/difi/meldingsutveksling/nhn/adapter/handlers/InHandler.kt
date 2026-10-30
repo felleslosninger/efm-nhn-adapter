@@ -74,7 +74,7 @@ class InHandler(
                 try {
                     jsonParser.decodeFromString<GetDocumentInput>(jwsObject.payload.toString())
                 } catch (e: SerializationException) {
-                    throw ClientInputException("Invalid input: ${e.message}", e)
+                    throw ClientInputException("Invalid input", e)
                 }
             val clientCertificate = parcelService.getSigningCertificate(jwsObject)
             auditEntry.attribute("id", input.id)
