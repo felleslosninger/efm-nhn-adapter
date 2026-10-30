@@ -34,6 +34,9 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
     suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): List<MessageWithMetadata> =
         mshClient.getMessagesWithMetadata(receiverHerId, requestParameters(clientContext))
 
+    suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int =
+        mshClient.getMessage(id, requestParameters(clientContext)).senderHerId
+
     suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> =
         mshClient.getStatus(id, requestParameters(clientContext))
 

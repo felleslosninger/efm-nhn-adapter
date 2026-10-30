@@ -57,6 +57,11 @@ class OutHandler(
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
 
         auditLogService.log(auditEntry) {
+            // Do not rely on MSH to limit status lookups to the client's own messages
+            val senderHerId = mshService.getSenderHerId(messageId, clientContext)
+            auditEntry.attribute("senderHerId", senderHerId)
+            securityService.assertAccessToHerId(clientContext, senderHerId)
+
             val statusInfos = mshService.getStatus(messageId, clientContext)
             val statuses = fromMshData { statusInfos.map { it.toMessageStatus() } }
             return ServerResponse.ok().json().bodyValueAndAwait(statuses)
