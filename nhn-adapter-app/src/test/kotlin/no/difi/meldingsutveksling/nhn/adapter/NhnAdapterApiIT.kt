@@ -90,6 +90,7 @@ import org.springframework.core.codec.StringDecoder
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
@@ -252,13 +253,39 @@ class NhnAdapterApiIT(
         }
 
         describe("Security") {
-            it("rejects requests without an access token") {
+            it("rejects requests without an access token with an ApiError") {
                 anonymousClient
                     .get()
                     .uri("/api/lookup/her-id:$FASTLEGE_HER_ID")
                     .exchange()
                     .expectStatus()
                     .isUnauthorized
+                    .expectHeader()
+                    .valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo(401)
+                    .jsonPath("$.details")
+                    .isEqualTo("A valid access token is required")
+                    .jsonPath("$.path")
+                    .isEqualTo("/api/lookup/her-id:$FASTLEGE_HER_ID")
+            }
+
+            it("rejects an invalid access token without the reason from the JWT library") {
+                anonymousClient
+                    .get()
+                    .uri("/api/lookup/her-id:$FASTLEGE_HER_ID")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt")
+                    .exchange()
+                    .expectStatus()
+                    .isUnauthorized
+                    .expectHeader()
+                    .valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer error=\"invalid_token\"")
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo(401)
+                    .jsonPath("$.details")
+                    .isEqualTo("A valid access token is required")
             }
 
             describe("scopes") {
@@ -329,7 +356,15 @@ class NhnAdapterApiIT(
                 }
 
                 fun WebTestClient.ResponseSpec.shouldBeForbidden() {
-                    expectStatus().isForbidden
+                    expectStatus()
+                        .isForbidden
+                        .expectHeader()
+                        .valueEquals(HttpHeaders.WWW_AUTHENTICATE, "Bearer error=\"insufficient_scope\"")
+                        .expectBody()
+                        .jsonPath("$.status")
+                        .isEqualTo(403)
+                        .jsonPath("$.details")
+                        .isEqualTo("Access denied")
                     verify { listOf(mshClient, mshInternalClient) wasNot Called }
                 }
 
@@ -987,7 +1022,7 @@ class NhnAdapterApiIT(
                     .isBadRequest
                     .expectBody()
                     .jsonPath("$.details")
-                    .isEqualTo("JWE parsing failed!")
+                    .isEqualTo("JWE decryption failed")
             }
 
             it("returns 400 when the JWE does not contain a signed JWS") {
@@ -996,7 +1031,7 @@ class NhnAdapterApiIT(
                     .isBadRequest
                     .expectBody()
                     .jsonPath("$.details")
-                    .isEqualTo("Parsing JWT failed!")
+                    .isEqualTo("JWS verification failed")
             }
         }
 

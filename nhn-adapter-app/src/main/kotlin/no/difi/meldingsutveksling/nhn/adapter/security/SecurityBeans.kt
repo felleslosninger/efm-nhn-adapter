@@ -35,10 +35,17 @@ object SecurityBeans {
                     .authenticated()
             }
             .headers { it.frameOptions(Customizer.withDefaults()) }
+            .exceptionHandling {
+                it.authenticationEntryPoint(ApiErrorSecurityHandlers.authenticationEntryPoint)
+                    .accessDeniedHandler(ApiErrorSecurityHandlers.accessDeniedHandler)
+            }
+            // Invalid tokens are handled here, not by exceptionHandling
             .oauth2ResourceServer {
                 it.authenticationManagerResolver(
-                    JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers(config.trustedIssuers)
-                )
+                        JwtIssuerReactiveAuthenticationManagerResolver.fromTrustedIssuers(config.trustedIssuers)
+                    )
+                    .authenticationEntryPoint(ApiErrorSecurityHandlers.authenticationEntryPoint)
+                    .accessDeniedHandler(ApiErrorSecurityHandlers.accessDeniedHandler)
             }
             .build()
 

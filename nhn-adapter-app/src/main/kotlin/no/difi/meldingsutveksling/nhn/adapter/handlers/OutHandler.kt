@@ -108,7 +108,7 @@ class OutHandler(
         return try {
             jsonMapper.readValue(jwsObject.payload.toString(), StandardBusinessDocument::class.java)
         } catch (e: JacksonException) {
-            throw ClientInputException("Invalid forretningsmelding: ${e.originalMessage}", e)
+            throw ClientInputException("Invalid forretningsmelding", e)
         }
     }
 

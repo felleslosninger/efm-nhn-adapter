@@ -16,7 +16,7 @@ spring:
       max-in-memory-size: 50MB
   web:
     error:
-      include-message: always
+      include-message: never
 
 server:
   port: 8080

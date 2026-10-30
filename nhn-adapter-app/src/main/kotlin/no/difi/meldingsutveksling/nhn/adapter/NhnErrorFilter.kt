@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import io.opentelemetry.api.trace.Span
 import java.time.Instant
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
@@ -18,13 +19,15 @@ import org.springframework.web.reactive.function.server.HandlerFilterFunction
 import org.springframework.web.reactive.function.server.RouterFunctions
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.server.ServerWebExchange
 import org.springframework.web.util.pattern.PathPattern
 import reactor.core.publisher.Mono
 
 private val logger = KotlinLogging.logger {}
 
 private const val CLIENT_ERROR = "Client error"
-private const val ACCESS_DENIED = "Access denied"
+internal const val ACCESS_DENIED = "Access denied"
+private const val REJECTED_BY_MSH = "The request was rejected by MSH"
 private const val UNEXPECTED_ERROR_CODE = "E7777"
 private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
@@ -33,7 +36,12 @@ private const val MSH_ERROR_CODE = "E7780"
 /** MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client. */
 private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
 
-/** Translates exceptions thrown by the handlers into [ApiError] responses. */
+/**
+ * Translates exceptions thrown by the handlers into [ApiError] responses.
+ *
+ * Only messages written by the adapter itself reach the client, like the message of a [ClientInputException]. Messages
+ * from libraries and from the services behind the adapter may reveal internals, so they are only logged.
+ */
 fun nhnErrorFilter(): HandlerFilterFunction<ServerResponse, ServerResponse> = HandlerFilterFunction { request, next ->
     next.handle(request).onErrorResume { request.toApiError(it).toServerResponse() }
 }
@@ -47,14 +55,22 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             } else {
                 clientError(error.message ?: CLIENT_ERROR)
             }
-        is ClientInputException -> clientError(error.message ?: CLIENT_ERROR)
+        is ClientInputException -> {
+            logger.warn("Invalid input for ${route()}: ${error.message}", error.cause)
+            clientError(error.message ?: CLIENT_ERROR)
+        }
         is MessageTooLargeException ->
             toApiError(HttpStatus.CONTENT_TOO_LARGE, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
         is AccessDeniedException -> {
             logger.warn("Access denied for ${route()}: ${error.message}")
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
         }
-        is ApplicationReceiptException -> toApiError(HttpStatus.BAD_REQUEST, error.error, error.message)
+        // The message may come from JAXB or the schema validation. The error code says what is
+        // wrong.
+        is ApplicationReceiptException -> {
+            logger.warn("Invalid message for ${route()}: ${error.message}", error.cause)
+            toApiError(HttpStatus.BAD_REQUEST, error.error)
+        }
         is AdresseregisteretException -> {
             logger.error("Technical error occurred against Adresseregisteret for ${route()}", error)
             badGateway(ADRESSEREGISTERET_ERROR_CODE)
@@ -74,20 +90,21 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
                 tryLaterMessage(UNEXPECTED_ERROR_CODE),
+                UNEXPECTED_ERROR_CODE,
             )
         }
     }
 
 /**
- * A client error from MSH is caused by the request (e.g. an unknown message id), so its status and message are passed
- * on. Anything else is a problem between the adapter and MSH and is reported as 502, without MSH's message.
+ * A client error from MSH is caused by the request (e.g. an unknown message id), so its status is passed on. Anything
+ * else is a problem between the adapter and MSH and is reported as 502. MSH's message is only logged.
  */
 private fun ServerRequest.mshError(error: HttpException): ApiError {
     val clientErrorStatus =
         HttpStatus.resolve(error.status)?.takeIf { it.is4xxClientError && it !in MSH_AUTHORIZATION_ERRORS }
     if (clientErrorStatus != null) {
         logger.warn("MSH rejected the request for ${route()}: ${error.message}")
-        return toApiError(clientErrorStatus, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+        return toApiError(clientErrorStatus, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, REJECTED_BY_MSH)
     }
     logger.error("MSH failed for ${route()}: ${error.message}")
     return badGateway(MSH_ERROR_CODE)
@@ -107,15 +124,30 @@ private fun ServerRequest.route(): String = "${method()} ${matchingPattern() ?: 
 private fun ServerRequest.clientError(details: String): ApiError =
     toApiError(HttpStatus.BAD_REQUEST, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, details)
 
-private fun ServerRequest.badGateway(errorCode: String?): ApiError =
-    toApiError(HttpStatus.BAD_GATEWAY, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, tryLaterMessage(errorCode))
+private fun ServerRequest.badGateway(technicalCode: String): ApiError =
+    toApiError(
+        HttpStatus.BAD_GATEWAY,
+        FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
+        tryLaterMessage(technicalCode),
+        technicalCode,
+    )
 
-private fun tryLaterMessage(errorCode: String?) = "Not able to process, try later. ErrorCode: $errorCode"
+/** The code is also in the text, for clients that do not read [ApiError.technicalCode]. */
+private fun tryLaterMessage(technicalCode: String) = "Not able to process, try later. ErrorCode: $technicalCode"
 
 private fun ServerRequest.toApiError(
     status: HttpStatus,
     error: FeilmeldingForApplikasjonskvittering,
     details: String? = null,
+    technicalCode: String? = null,
+): ApiError = exchange().toApiError(status, error, details, technicalCode)
+
+/** Also used for the errors from Spring Security, which reject the request before it reaches the handlers. */
+internal fun ServerWebExchange.toApiError(
+    status: HttpStatus,
+    error: FeilmeldingForApplikasjonskvittering,
+    details: String? = null,
+    technicalCode: String? = null,
 ): ApiError =
     ApiError(
         timestamp = Instant.now().toString(),
@@ -124,8 +156,13 @@ private fun ServerRequest.toApiError(
         errorCode = error.verdi,
         message = error.navn,
         details = details,
-        path = path(),
-        requestId = exchange().request.id,
+        technicalCode = technicalCode,
+        path = request.path.pathWithinApplication().value(),
+        requestId = request.id,
+        traceId = currentTraceId(),
     )
+
+/** Set by the OpenTelemetry Java agent, which is injected when the adapter is deployed. Without it there is none. */
+private fun currentTraceId(): String? = Span.current().spanContext.takeIf { it.isValid }?.traceId
 
 private fun ApiError.toServerResponse(): Mono<ServerResponse> = ServerResponse.status(status).bodyValue(this)

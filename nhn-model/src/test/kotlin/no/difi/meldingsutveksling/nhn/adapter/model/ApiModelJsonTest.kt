@@ -42,23 +42,37 @@ class ApiModelJsonTest :
                     errorCode = "X99",
                     message = "Annen feil",
                     details = "HER-id not found",
+                    technicalCode = "E7780",
                     path = "/api/lookup/123",
                     requestId = "request-1",
+                    traceId = "4bf92f3577b34da6a3ce929d0e0e4736",
                     timestamp = "2026-10-14T12:00:00Z",
                 )
 
             it("has the expected JSON fields") {
                 fieldNames(KxJson.encode(apiError, ApiError.serializer())) shouldBe
-                    setOf("status", "reason", "errorCode", "message", "details", "path", "requestId", "timestamp")
+                    setOf(
+                        "status",
+                        "reason",
+                        "errorCode",
+                        "message",
+                        "details",
+                        "technicalCode",
+                        "path",
+                        "requestId",
+                        "traceId",
+                        "timestamp",
+                    )
             }
 
-            it("decodes an error without details") {
-                val json = KxJson.encode(apiError.copy(details = null), ApiError.serializer())
+            it("decodes an error without the optional fields") {
+                val withoutOptionals = apiError.copy(details = null, technicalCode = null, traceId = null)
+                val json = KxJson.encode(withoutOptionals, ApiError.serializer())
 
                 KxJson.decode(
-                    JsonObject(Json.parseToJsonElement(json).jsonObject - "details"),
+                    JsonObject(Json.parseToJsonElement(json).jsonObject - "details" - "technicalCode" - "traceId"),
                     ApiError.serializer(),
-                ) shouldBe apiError.copy(details = null)
+                ) shouldBe withoutOptionals
             }
         }
     })
