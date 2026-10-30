@@ -45,7 +45,7 @@
         <springdoc-openapi.version>3.2.0</springdoc-openapi.version>
         <netty.version>4.2.19.Final</netty.version>
         <cxf.version>4.2.4</cxf.version>
-        <jacoco.version>0.8.15</jacoco.version>
+        <jacoco.version>0.8.16</jacoco.version>
 
         <!-- CVE-2026-54399 -->
         <httpcore5.version>5.4.3</httpcore5.version>
