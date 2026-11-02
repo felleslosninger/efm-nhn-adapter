@@ -2,15 +2,19 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import io.swagger.v3.oas.annotations.Parameter
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import no.difi.meldingsutveksling.domain.sbdh.StandardBusinessDocument
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmelding
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmeldingKvittering
@@ -52,6 +56,8 @@ class OutHandler(
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
+    private val largeSendLimiter: LargeSendLimiter,
+    private val maxUploadTime: Duration,
 ) {
     suspend fun getStatus(messageId: UUID, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
@@ -75,33 +81,47 @@ class OutHandler(
         val auditEntry = NHNAdapterAuditIdentifier.SEND_MESSAGE.entry(clientContext)
 
         auditLogService.log(auditEntry) {
-            val multipartData = request.multipartData().awaitSingle()
-            val sbd = readStandardBusinessDocument(multipartData.requirePart(MultipartNames.FORRETNINGSMELDING))
-
-            auditEntry
-                .attribute("type", sbd.type)
-                .attribute("messageId", sbd.messageId)
-                .attribute("conversationId", sbd.conversationId)
-                .attribute("parentId", sbd.parentId)
-                .attribute("senderHerId", sbd.senderHerId)
-                .attribute("receiverHerId", sbd.receiverHerId)
-
-            // Authorize before any further lookups or decryption of the dokumentpakke
-            val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
-
+            // A large request waits for a permit before its parts are read and buffered
+            val requestSize = request.headers().contentLength().orElse(-1)
             val messageReference =
-                when (sbd.type) {
-                    BusinessMessageType.DIALOGMELDING.type ->
-                        sendDialogmelding(sbd, sender, multipartData, clientContext)
-                    BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
-                        sendApplicationReceipt(sbd, auditEntry, clientContext)
-                    else -> throw ClientInputException("Unsupported message type ${sbd.type}")
+                largeSendLimiter.limit(requestSize) { permitHeld ->
+                    val multipartData = readMultipartData(request)
+                    val sbd =
+                        readStandardBusinessDocument(multipartData.requirePart(MultipartNames.FORRETNINGSMELDING))
+
+                    auditEntry
+                        .attribute("type", sbd.type)
+                        .attribute("messageId", sbd.messageId)
+                        .attribute("conversationId", sbd.conversationId)
+                        .attribute("parentId", sbd.parentId)
+                        .attribute("senderHerId", sbd.senderHerId)
+                        .attribute("receiverHerId", sbd.receiverHerId)
+
+                    // Authorize before any further lookups or decryption of the dokumentpakke
+                    val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
+
+                    when (sbd.type) {
+                        BusinessMessageType.DIALOGMELDING.type ->
+                            sendDialogmelding(sbd, sender, multipartData, permitHeld, clientContext)
+                        BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
+                            sendApplicationReceipt(sbd, auditEntry, clientContext)
+                        else -> throw ClientInputException("Unsupported message type ${sbd.type}")
+                    }
                 }
             auditEntry.attribute("messageReference", messageReference)
 
             return ServerResponse.ok().textPlain().bodyValueAndAwait(messageReference.toString())
         }
     }
+
+    /** The parts are stored as they arrive, and are all there when this returns. */
+    private suspend fun readMultipartData(request: ServerRequest): MultiValueMap<String, Part> =
+        try {
+            // Otherwise a stalled upload holds its permit as long as the connection lasts
+            withTimeout(maxUploadTime.toMillis()) { request.multipartData().awaitSingle() }
+        } catch (_: TimeoutCancellationException) {
+            throw UploadTimeoutException("The request was not received within ${maxUploadTime.toSeconds()} seconds")
+        }
 
     private suspend fun readStandardBusinessDocument(forretningsmelding: Part): StandardBusinessDocument {
         // PartUtils.toString blocks until the whole part is read: not allowed on the event loop
@@ -118,6 +138,7 @@ class OutHandler(
         sbd: StandardBusinessDocument,
         sender: CommunicationParty,
         multipartData: MultiValueMap<String, Part>,
+        permitHeld: Boolean,
         clientContext: ClientContext,
     ): UUID {
         val message = sbd.dialogmelding
@@ -125,23 +146,33 @@ class OutHandler(
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
         val receiverParty = adresseregisteretService.lookupByHerId(sbd.receiverHerId)
 
-        return withContext(Dispatchers.IO) {
-            val documents = parcelService.getAttachments(dokumentpakke)
-            val dialogmelding = readDialogmelding(documents, message.hoveddokument)
-            DialogmeldingDefaults.apply(dialogmelding, receiverParty)
+        val received = withContext(Dispatchers.IO) { parcelService.receiveDokumentpakke(dokumentpakke) }
 
-            val input =
-                SendMessageInput(
-                    id = sbd.messageId.toClientUuid("messageId"),
-                    sender = sender.toSender(),
-                    receiver = receiverParty.toReceiver(pasient),
-                    dialogmelding = dialogmelding,
-                    vedlegg = documents.filter { it.filename != message.hoveddokument },
-                    metadataFiler = message.metadataFiler,
-                    conversationRef = sbd.parentId?.let { ConversationRef(it, sbd.conversationId) },
-                )
+        suspend fun send(): UUID =
+            withContext(Dispatchers.IO) {
+                val documents = parcelService.getAttachments(received)
+                val dialogmelding = readDialogmelding(documents, message.hoveddokument)
+                DialogmeldingDefaults.apply(dialogmelding, receiverParty)
 
-            mshService.sendMessage(input, clientContext)
+                val input =
+                    SendMessageInput(
+                        id = sbd.messageId.toClientUuid("messageId"),
+                        sender = sender.toSender(),
+                        receiver = receiverParty.toReceiver(pasient),
+                        dialogmelding = dialogmelding,
+                        vedlegg = documents.filter { it.filename != message.hoveddokument },
+                        metadataFiler = message.metadataFiler,
+                        conversationRef = sbd.parentId?.let { ConversationRef(it, sbd.conversationId) },
+                    )
+
+                mshService.sendMessage(input, clientContext)
+            }
+
+        // The ASiC is compressed, so a small request may still unpack to a large message
+        return if (permitHeld || received.unpackedSize < largeSendLimiter.threshold) {
+            send()
+        } else {
+            largeSendLimiter.withPermit { send() }
         }
     }
 

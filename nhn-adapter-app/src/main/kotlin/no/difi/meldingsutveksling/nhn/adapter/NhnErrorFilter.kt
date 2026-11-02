@@ -1,18 +1,27 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.opentelemetry.api.trace.Span
+import java.io.InterruptedIOException
+import java.net.http.HttpTimeoutException
 import java.time.Instant
 import mu.KotlinLogging
+import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HttpException
+import no.ks.fiks.nhn.msh.MshException
+import org.springframework.core.codec.DecodingException
+import org.springframework.core.io.buffer.DataBufferLimitException
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.reactive.function.server.HandlerFilterFunction
@@ -28,10 +37,13 @@ private val logger = KotlinLogging.logger {}
 private const val CLIENT_ERROR = "Client error"
 internal const val ACCESS_DENIED = "Access denied"
 private const val REJECTED_BY_MSH = "The request was rejected by MSH"
+private const val TOO_LARGE_BODY = "The request body is too large"
+private const val INVALID_BODY = "The request body could not be read"
 private const val UNEXPECTED_ERROR_CODE = "E7777"
 private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
 private const val MSH_ERROR_CODE = "E7780"
+private const val ADAPTER_BUSY_ERROR_CODE = "E7781"
 
 /** MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client. */
 private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
@@ -61,6 +73,10 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
         }
         is MessageTooLargeException ->
             toApiError(HttpStatus.CONTENT_TOO_LARGE, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+        is UploadTimeoutException -> {
+            logger.warn("Upload timed out for ${route()}: ${error.message}")
+            toApiError(HttpStatus.REQUEST_TIMEOUT, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+        }
         is AccessDeniedException -> {
             logger.warn("Access denied for ${route()}: ${error.message}")
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
@@ -71,29 +87,90 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             logger.warn("Invalid message for ${route()}: ${error.message}", error.cause)
             toApiError(HttpStatus.BAD_REQUEST, error.error)
         }
-        is AdresseregisteretException -> {
-            logger.error("Technical error occurred against Adresseregisteret for ${route()}", error)
-            badGateway(ADRESSEREGISTERET_ERROR_CODE)
-        }
-        is FastlegeregisteretException -> {
-            logger.error("Technical error occurred against Fastlegeregisteret for ${route()}", error)
-            badGateway(FASTLEGEREGISTERET_ERROR_CODE)
-        }
+        is AdresseregisteretException -> serviceError("Adresseregisteret", ADRESSEREGISTERET_ERROR_CODE, error)
+        is FastlegeregisteretException -> serviceError("Fastlegeregisteret", FASTLEGEREGISTERET_ERROR_CODE, error)
         is HttpException -> mshError(error)
+        // Network errors and timeouts against MSH or HelseID, which msh-client wraps in an
+        // MshException
+        is MshException -> serviceError("MSH", MSH_ERROR_CODE, error)
         is InvalidMshDataException -> {
             logger.error("Invalid data from MSH for ${route()}", error)
             badGateway(MSH_ERROR_CODE)
         }
-        else -> {
-            logger.error("Unexpected error: ${error.message}", error)
+        is AdapterBusyException -> {
+            logger.warn("Too busy for ${route()}: ${error.message}")
             toApiError(
-                HttpStatus.INTERNAL_SERVER_ERROR,
+                HttpStatus.SERVICE_UNAVAILABLE,
                 FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
-                tryLaterMessage(UNEXPECTED_ERROR_CODE),
-                UNEXPECTED_ERROR_CODE,
+                tryLaterMessage(ADAPTER_BUSY_ERROR_CODE),
+                ADAPTER_BUSY_ERROR_CODE,
             )
         }
+        else -> multipartError(error) ?: unexpectedError(error)
     }
+
+/**
+ * A request body that breaks the limits in `spring.webflux.multipart`, which Spring reports while reading the parts.
+ * Spring's message is only logged.
+ */
+private fun ServerRequest.multipartError(error: Throwable): ApiError? =
+    when {
+        error.hasCause<DataBufferLimitException>() -> {
+            logger.warn("Too large request body for ${route()}: ${error.message}")
+            toApiError(HttpStatus.CONTENT_TOO_LARGE, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, TOO_LARGE_BODY)
+        }
+        error.hasCause<DecodingException>() -> {
+            logger.warn("Invalid request body for ${route()}: ${error.message}", error)
+            clientError(INVALID_BODY)
+        }
+        else -> null
+    }
+
+private fun ServerRequest.unexpectedError(error: Throwable): ApiError {
+    logger.error("Unexpected error: ${error.message}", error)
+    return toApiError(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
+        tryLaterMessage(UNEXPECTED_ERROR_CODE),
+        UNEXPECTED_ERROR_CODE,
+    )
+}
+
+/** A service behind the adapter that did not answer in time is reported as 504, any other failure as 502. */
+private fun ServerRequest.serviceError(service: String, technicalCode: String, error: Throwable): ApiError =
+    if (error.isTimeout()) {
+        logger.error("Timeout against $service for ${route()}", error)
+        toApiError(
+            HttpStatus.GATEWAY_TIMEOUT,
+            FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
+            tryLaterMessage(technicalCode),
+            technicalCode,
+        )
+    } else {
+        logger.error("Technical error occurred against $service for ${route()}", error)
+        badGateway(technicalCode)
+    }
+
+/**
+ * Whether the error is caused by a timeout in one of the HTTP clients. A socket timeout is an
+ * [InterruptedIOException], like Apache HttpClient's connect timeout. The JDK client (used by CXF) and ktor (used by
+ * MSH) have their own types.
+ */
+internal fun Throwable.isTimeout(): Boolean =
+    causes().any {
+        it is InterruptedIOException ||
+            it is HttpTimeoutException ||
+            it is HttpRequestTimeoutException ||
+            it is ConnectTimeoutException
+    }
+
+private inline fun <reified T : Throwable> Throwable.hasCause(): Boolean = causes().any { it is T }
+
+/** This error and its causes. Stops at a cause that refers to itself, or one already seen. */
+private fun Throwable.causes(): Sequence<Throwable> {
+    val seen = mutableSetOf<Throwable>()
+    return generateSequence(this) { it.cause }.takeWhile { seen.add(it) }
+}
 
 /**
  * A client error from MSH is caused by the request (e.g. an unknown message id), so its status is passed on. Anything

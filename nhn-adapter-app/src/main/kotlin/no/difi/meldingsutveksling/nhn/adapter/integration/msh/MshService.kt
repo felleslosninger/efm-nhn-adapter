@@ -24,7 +24,14 @@ import no.nhn.msh.v2.model.GetBusinessDocumentResponse
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
 
-private const val MESSAGE_MAX_BYTES = 50 * 1000 * 1000
+/** The largest business document MSH accepts, Base64 encoded. */
+const val MESSAGE_MAX_BYTES = 50 * 1000 * 1000
+
+/**
+ * The business document holds the documents of a message, the vedlegg Base64 encoded, and is Base64 encoded itself.
+ * Documents adding up to more than 3/4 of [MESSAGE_MAX_BYTES] therefore make a message that MSH will not accept.
+ */
+const val DOCUMENTS_MAX_BYTES = MESSAGE_MAX_BYTES / 4 * 3
 
 private const val CONTENT_TYPE = "application/xml"
 private const val CONTENT_TRANSFER_ENCODING = "base64"
@@ -50,11 +57,12 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
     }
 
     suspend fun sendMessage(input: SendMessageInput, clientContext: ClientContext): UUID {
-        val businessDocument = BusinessDocumentSerializer.serializeNhnMessage(input)
-        val encodedBusinessDocument = Base64.getEncoder().encodeToString(businessDocument.toByteArray())
-        if (encodedBusinessDocument.length > MESSAGE_MAX_BYTES) {
+        // Checked before encoding, so that a message that is too large is not copied once more
+        val businessDocument = BusinessDocumentSerializer.serializeNhnMessage(input).toByteArray()
+        if (base64Length(businessDocument.size) > MESSAGE_MAX_BYTES) {
             throw MessageTooLargeException("Message exceeds the max size of $MESSAGE_MAX_BYTES bytes")
         }
+        val encodedBusinessDocument = Base64.getEncoder().encodeToString(businessDocument)
 
         return internalClient.postMessage(
             PostMessageRequest()
@@ -90,6 +98,9 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
         }
     }
 }
+
+/** The length of [size] bytes Base64 encoded, with padding. */
+internal fun base64Length(size: Int): Long = (size + 2L) / 3 * 4
 
 private fun GetBusinessDocumentResponse.decodeXml(): String {
     require(contentTransferEncoding == CONTENT_TRANSFER_ENCODING) {

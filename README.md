@@ -224,11 +224,33 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 |--------------------------------------------------------------------------|----------------|
 | `HerIdNotFoundException` på oppslag                                      | 404            |
 | `HerIdNotFoundException` elles, `IllegalArgumentException`, `DialogmeldingNotFoundException`, `ApplicationReceiptException` | 400 |
+| `ClientInputException`, til dømes fleire filer i dokumentpakken enn `limits.max-dokumentpakke-files` | 400 |
 | `AccessDeniedException`                                                  | 403            |
+| `MessageTooLargeException`: førespurnaden, dei utpakka filene i dokumentpakken eller meldinga til MSH er for stor | 413 |
+| Fleirdelt kropp over grensene i `spring.webflux.multipart`               | 413            |
+| Førespurnaden er ikkje motteken innan `limits.max-upload-time`           | 408            |
 | Feil frå AR (`E7778`) eller FLR (`E7779`)                                | 502            |
 | 4xx frå MSH, unnateke 401 og 403                                         | same status og melding som MSH gav |
-| Anna feil frå MSH (`E7780`), til dømes 401, 403 og 5xx                   | 502            |
+| Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 5xx og nettverksfeil | 502 |
+| Timeout mot AR (`E7778`), FLR (`E7779`) eller MSH og HelseID (`E7780`)   | 504            |
+| For mange store sendingar samstundes (`E7781`)                           | 503            |
 | Alt anna (`E7777`)                                                       | 500            |
+
+### Timeout og grenser
+
+Kvar klient mot NHN har eigne timeoutar i `application.yml`: `nhn.services.{ar,flr,msh}.timeout` og
+`oauth2.helse-id.timeout`. `connect` er ventetida for å opne ein tilkopling og `read` den lengste ventetida på data.
+MSH har i tillegg `request`, som avgrensar heile kallet, òg sendinga av ei stor melding.
+
+`limits` avgrensar kva ein klient kan sende:
+
+- `max-request-size`: førespurnader med større `Content-Length` vert avviste før kroppen vert lesen.
+- `max-dokumentpakke-files`: kor mange filer dokumentpakken kan ha. Filene kan til saman vere 3/4 av grensa til MSH på
+  50 MB utpakka, sidan meldinga til MSH er Base64-koda. Storleiken vert målt, òg for `META-INF`, før filene vert lesne.
+- `large-send-threshold`, `max-concurrent-large-sends` og `large-send-max-wait`: kor mange store sendingar som kan
+  byggjast samstundes, og kor lenge ei sending ventar på tur før ho får `503`. Ei sending er stor når førespurnaden
+  eller den utpakka dokumentpakken er over terskelen.
+- `max-upload-time`: kor lang tid klienten har på å sende heile førespurnaden før han får `408`.
 
 ## Kom i gang
 

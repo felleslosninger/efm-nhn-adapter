@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.media.SchemaProperty
 import io.swagger.v3.oas.annotations.parameters.RequestBody
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import no.difi.meldingsutveksling.nhn.adapter.config.LimitsConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
@@ -292,11 +293,14 @@ class RoutesConfiguration {
         inHandler: InHandler,
         outHandler: OutHandler,
         lookupHandler: LookupHandler,
+        limits: LimitsConfig,
     ): RouterFunction<ServerResponse> =
         coRouter {
                 inHandler(inHandler)
                 outHandler(outHandler)
                 lookupHandler(lookupHandler)
             }
+            .filter(requestSizeFilter(limits.maxRequestSize))
+            // Added last, so that it also handles the errors from the filters above
             .filter(nhnErrorFilter())
 }

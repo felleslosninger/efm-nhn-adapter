@@ -8,7 +8,9 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.clearMocks
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -17,19 +19,30 @@ import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
+import no.difi.move.common.dokumentpakking.domain.Document
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
+import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.MshInternalClient
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
+import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
+import no.ks.fiks.nhn.msh.OrganizationId
+import no.ks.fiks.nhn.msh.Patient
+import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RequestParameters
+import no.ks.fiks.nhn.msh.Sender
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.nhn.msh.v2.model.AppRecStatus
 import no.nhn.msh.v2.model.GetBusinessDocumentResponse
 import no.nhn.msh.v2.model.PostAppRecRequest
+import no.nhn.msh.v2.model.PostMessageRequest
+import org.springframework.core.io.ByteArrayResource
 
 private const val CONSUMER_ORG_NUMBER = "123456789"
 private const val SUPPLIER_ORG_NUMBER = "987654321"
@@ -189,4 +202,76 @@ class MshServiceTest :
                 }
             }
         }
+
+        describe("sendMessage") {
+            fun organization(herId: Int, name: String) =
+                OrganizationCommunicationParty(
+                    ids = listOf(OrganizationId(herId.toString(), OrganizationIdType.HER_ID)),
+                    address = null,
+                    name = name,
+                )
+
+            fun vedlegg(name: String, size: Int) =
+                Document.builder()
+                    .filename(name)
+                    .resource(ByteArrayResource(ByteArray(size)))
+                    .mimeType("application/pdf")
+                    .build()
+
+            fun input(vedlegg: List<Document>) =
+                SendMessageInput(
+                    id = UUID.randomUUID(),
+                    sender = Sender(organization(2000001, "Legekontoret"), organization(2000003, "Resepsjonen")),
+                    receiver =
+                        Receiver(
+                            organization(1000001, "Test kommune"),
+                            organization(1000002, "Helse og omsorg"),
+                            Patient("16822449879", "Kari", null, "Nordmann"),
+                        ),
+                    dialogmelding = DialogmeldingDeserializer.deserializeDialogmelding(DIALOGMELDING),
+                    vedlegg = vedlegg,
+                    metadataFiler = null,
+                    conversationRef = null,
+                )
+
+            it("sends the business document Base64 encoded") {
+                val request = slot<PostMessageRequest>()
+                val mshMessageId = UUID.randomUUID()
+                coEvery { internalClient.postMessage(capture(request), any()) } returns mshMessageId
+
+                mshService.sendMessage(input(listOf(vedlegg("vedlegg.pdf", 10))), clientContext()) shouldBe
+                    mshMessageId
+
+                request.captured.contentTransferEncoding shouldBe "base64"
+                String(Base64.getDecoder().decode(request.captured.businessDocument)) shouldContain "MsgHead"
+            }
+
+            it("rejects attachments that are each within the limits, but too large together once encoded") {
+                clearMocks(internalClient)
+                // Within DOCUMENTS_MAX_BYTES, but Base64 encoded in the MsgHead and around it
+                val vedlegg = listOf(vedlegg("a.pdf", 15_000_000), vedlegg("b.pdf", 15_000_000))
+
+                shouldThrow<MessageTooLargeException> { mshService.sendMessage(input(vedlegg), clientContext()) }
+                    .message shouldBe "Message exceeds the max size of $MESSAGE_MAX_BYTES bytes"
+
+                coVerify(exactly = 0) { internalClient.postMessage(any(), any()) }
+            }
+        }
+
+        describe("base64Length") {
+            it("rounds up to whole blocks of four characters, padding included") {
+                base64Length(0) shouldBe 0
+                base64Length(1) shouldBe 4
+                base64Length(3) shouldBe 4
+                base64Length(4) shouldBe 8
+            }
+
+            it("allows exactly MESSAGE_MAX_BYTES encoded") {
+                base64Length(MESSAGE_MAX_BYTES / 4 * 3) shouldBe MESSAGE_MAX_BYTES.toLong()
+                base64Length(MESSAGE_MAX_BYTES / 4 * 3 + 1) shouldBe MESSAGE_MAX_BYTES + 4L
+            }
+        }
     })
+
+private val DIALOGMELDING: String =
+    MshServiceTest::class.java.getResource("/dialogmelding/dialogmelding.xml")!!.readText()
