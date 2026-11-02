@@ -228,6 +228,7 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | `AccessDeniedException`                                                  | 403            |
 | `MessageTooLargeException`: førespurnaden, dei utpakka filene i dokumentpakken eller meldinga til MSH er for stor | 413 |
 | Fleirdelt kropp over grensene i `spring.webflux.multipart`               | 413            |
+| Førespurnaden er ikkje motteken innan `limits.max-upload-time`           | 408            |
 | Feil frå AR (`E7778`) eller FLR (`E7779`)                                | 502            |
 | 4xx frå MSH, unnateke 401 og 403                                         | same status og melding som MSH gav |
 | Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 5xx og nettverksfeil | 502 |
@@ -245,9 +246,11 @@ MSH har i tillegg `request`, som avgrensar heile kallet, òg sendinga av ei stor
 
 - `max-request-size`: førespurnader med større `Content-Length` vert avviste før kroppen vert lesen.
 - `max-dokumentpakke-files`: kor mange filer dokumentpakken kan ha. Filene kan til saman vere 3/4 av grensa til MSH på
-  50 MB utpakka, sidan meldinga til MSH er Base64-koda.
+  50 MB utpakka, sidan meldinga til MSH er Base64-koda. Storleiken vert målt, òg for `META-INF`, før filene vert lesne.
 - `large-send-threshold`, `max-concurrent-large-sends` og `large-send-max-wait`: kor mange store sendingar som kan
-  byggjast samstundes, og kor lenge ei sending ventar på tur før ho får `503`.
+  byggjast samstundes, og kor lenge ei sending ventar på tur før ho får `503`. Ei sending er stor når førespurnaden
+  eller den utpakka dokumentpakken er over terskelen.
+- `max-upload-time`: kor lang tid klienten har på å sende heile førespurnaden før han får `408`.
 
 ## Kom i gang
 

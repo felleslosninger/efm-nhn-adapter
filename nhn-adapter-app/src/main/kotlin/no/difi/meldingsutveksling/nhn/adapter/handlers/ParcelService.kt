@@ -6,6 +6,7 @@ import com.nimbusds.jose.util.X509CertChainUtils
 import java.io.InputStream
 import java.security.cert.X509Certificate
 import java.text.ParseException
+import java.util.zip.ZipInputStream
 import no.difi.asic.SignatureMethod
 import no.difi.commons.asic.jaxb.asic.AsicManifest
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
@@ -87,21 +88,25 @@ class ParcelService(
         }
 
     /**
-     * Stores the encrypted dokumentpakke and returns the ASiC in it. The ASiC is decrypted each time it is read, so it
-     * can be unpacked more than once.
+     * Stores the encrypted dokumentpakke and checks the size of the ASiC in it unpacked. Throws
+     * [MessageTooLargeException] if it is larger than allowed.
      */
-    fun receiveDokumentpakke(dokumentpakke: Part): Resource {
+    fun receiveDokumentpakke(dokumentpakke: Part): Dokumentpakke {
         val encryptedAsic = newTempResource()
         ResourceUtils.copy(dokumentpakke.content(), encryptedAsic)
 
-        return decryptCMSDocument.decrypt(
-            DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
-        )
+        // Decrypted each time it is read
+        val asic =
+            decryptCMSDocument.decrypt(
+                DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
+            )
+        return Dokumentpakke(asic, unpackedSize(asic, maxDokumentpakkeBytes))
     }
 
-    /** Unpacks the files of the [asic]. Throws [MessageTooLargeException] if they add up to more than [maxBytes]. */
-    fun getAttachments(asic: Resource, maxBytes: Long = maxDokumentpakkeBytes): List<Document> =
-        LimitedAsicListener(maxDokumentpakkeFiles, maxBytes).also { asicParser.parse(asic, it) }.documents()
+    fun getAttachments(dokumentpakke: Dokumentpakke): List<Document> =
+        LimitedAsicListener(maxDokumentpakkeFiles, maxDokumentpakkeBytes)
+            .also { asicParser.parse(dokumentpakke.asic, it) }
+            .documents()
 
     fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<AsicEAttachable>): Resource =
         newTempResource().also {
@@ -125,6 +130,34 @@ class ParcelService(
         const val TEMP_FILE_PREFIX = "dph-"
         const val ENCRYPTED_ASIC_SUFFIX = ".asic.cms"
     }
+}
+
+/** A decrypted dokumentpakke, with the size of all its files unpacked. */
+class Dokumentpakke(val asic: Resource, val unpackedSize: Long)
+
+/**
+ * Unpacks every entry of the [asic], META-INF included, without keeping it, and returns their total size. Throws
+ * [MessageTooLargeException] as soon as it exceeds [maxBytes]. [AsicParser] holds each META-INF entry in memory, up to
+ * 1 GiB, before any file reaches its listener.
+ */
+internal fun unpackedSize(asic: Resource, maxBytes: Long): Long {
+    var total = 0L
+    val buffer = ByteArray(8192)
+    ZipInputStream(asic.inputStream).use { zip ->
+        while (zip.nextEntry != null) {
+            while (true) {
+                val read = zip.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > maxBytes) {
+                    throw MessageTooLargeException(
+                        "The files in the dokumentpakke exceed the max size of $maxBytes bytes"
+                    )
+                }
+            }
+        }
+    }
+    return total
 }
 
 /**

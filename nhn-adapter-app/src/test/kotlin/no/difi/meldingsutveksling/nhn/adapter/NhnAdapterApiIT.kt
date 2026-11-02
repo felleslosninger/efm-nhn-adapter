@@ -25,6 +25,10 @@ import io.mockk.verify
 import java.time.OffsetDateTime
 import java.util.Base64
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import no.difi.meldingsutveksling.domain.sbdh.BusinessScope
 import no.difi.meldingsutveksling.domain.sbdh.DocumentIdentification
 import no.difi.meldingsutveksling.domain.sbdh.Scope
@@ -38,6 +42,7 @@ import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toReceiver
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toSender
+import no.difi.meldingsutveksling.nhn.adapter.handlers.LargeSendLimiter
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.Attachment
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer
@@ -90,8 +95,10 @@ import org.springframework.core.ResolvableType
 import org.springframework.core.codec.StringDecoder
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
+import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
@@ -99,7 +106,9 @@ import org.springframework.http.codec.DecoderHttpMessageReader
 import org.springframework.http.codec.ServerCodecConfigurer
 import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
 import org.springframework.http.codec.multipart.DefaultPartHttpMessageReader
+import org.springframework.http.codec.multipart.MultipartHttpMessageWriter
 import org.springframework.http.codec.multipart.Part
+import org.springframework.mock.http.client.reactive.MockClientHttpRequest
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt
@@ -108,9 +117,11 @@ import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.test.web.reactive.server.expectBody
 import org.springframework.util.MimeType
+import org.springframework.util.MultiValueMap
 import org.springframework.util.unit.DataSize
 import org.springframework.web.reactive.function.BodyInserters
 import reactor.core.publisher.Flux
+import reactor.core.publisher.Mono
 import tools.jackson.databind.json.JsonMapper
 
 private const val KOMMUNE_PARENT_HER_ID = 1000001
@@ -164,6 +175,7 @@ class NhnAdapterApiIT(
     @MockkBean private val mshClient: Client,
     @MockkBean private val mshInternalClient: MshInternalClient,
     private val parcelService: ParcelService,
+    private val largeSendLimiter: LargeSendLimiter,
     private val keystoreHelper: KeystoreHelper,
     private val jsonMapper: JsonMapper,
     private val applicationContext: ApplicationContext,
@@ -238,6 +250,55 @@ class NhnAdapterApiIT(
                 .accept(MediaType.TEXT_PLAIN)
                 .body(BodyInserters.fromMultipartData(outgoingMessage(sbd, dokumentpakke)))
                 .exchange()
+
+        /** As [sendOutgoing], but encoded up front, so that the request has a Content-Length. */
+        fun sendOutgoingWithContentLength(sbd: StandardBusinessDocument, dokumentpakke: Resource) =
+            MockClientHttpRequest(HttpMethod.POST, "/").let { encoded ->
+                MultipartHttpMessageWriter()
+                    .write(
+                        Mono.just(outgoingMessage(sbd, dokumentpakke)),
+                        ResolvableType.forClass(MultiValueMap::class.java),
+                        MediaType.MULTIPART_FORM_DATA,
+                        encoded,
+                        emptyMap(),
+                    )
+                    .block()
+                val body =
+                    DataBufferUtils.join(encoded.body)
+                        .map { buffer -> ByteArray(buffer.readableByteCount()).also { buffer.read(it) } }
+                        .block()!!
+                client()
+                    .post()
+                    .uri("/api/messages/out")
+                    .contentType(encoded.headers.contentType!!)
+                    .contentLength(body.size.toLong())
+                    .accept(MediaType.TEXT_PLAIN)
+                    .bodyValue(body)
+                    .exchange()
+            }
+
+        /** Runs [block] while other sends hold all the permits of [largeSendLimiter]. */
+        suspend fun <T> withAllPermitsHeld(block: () -> T): T = coroutineScope {
+            val release = CompletableDeferred<Unit>()
+            // limits.max-concurrent-large-sends
+            val holders =
+                (1..4).map {
+                    val started = CompletableDeferred<Unit>()
+                    launch {
+                        largeSendLimiter.withPermit {
+                            started.complete(Unit)
+                            release.await()
+                        }
+                    }
+                    started
+                }
+            holders.awaitAll()
+            try {
+                block()
+            } finally {
+                release.complete(Unit)
+            }
+        }
 
         beforeEach {
             every { adresseregisteretClient.lookupHerId(any()) } returns null
@@ -729,12 +790,9 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
             }
 
-            it("sends a small request that unpacks to more than limits.large-send-threshold") {
-                // The request is small, so the dokumentpakke is unpacked again once it turns out
-                // large
-                val mshMessageId = UUID.randomUUID()
-                coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns mshMessageId
-                val vedlegg =
+            describe("with a Content-Length below limits.large-send-threshold") {
+                // Zeros compress well, so the request is small but unpacks to more
+                val largeVedlegg =
                     listOf(
                         Attachment(
                             "vedlegg.txt",
@@ -743,11 +801,61 @@ class NhnAdapterApiIT(
                         )
                     )
 
-                sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke(vedlegg = vedlegg))
+                it("sends a dokumentpakke that unpacks to more than the threshold") {
+                    val mshMessageId = UUID.randomUUID()
+                    coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns mshMessageId
+
+                    sendOutgoingWithContentLength(
+                            dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()),
+                            dokumentpakke(vedlegg = largeVedlegg),
+                        )
+                        .expectStatus()
+                        .isOk
+                        .expectBody<String>()
+                        .isEqualTo(mshMessageId.toString())
+                }
+
+                it("lets a dokumentpakke that unpacks to more than the threshold wait for a permit") {
+                    val dokumentpakke = dokumentpakke(vedlegg = largeVedlegg)
+
+                    withAllPermitsHeld {
+                        sendOutgoingWithContentLength(
+                                dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()),
+                                dokumentpakke,
+                            )
+                            .expectStatus()
+                            .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                    }
+
+                    coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+                }
+
+                it("never holds back a dokumentpakke that unpacks to less than the threshold") {
+                    coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns UUID.randomUUID()
+                    val dokumentpakke = dokumentpakke()
+
+                    withAllPermitsHeld {
+                        sendOutgoingWithContentLength(
+                                dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()),
+                                dokumentpakke,
+                            )
+                            .expectStatus()
+                            .isOk
+                    }
+                }
+            }
+
+            it("returns 408 when the request is not received within limits.max-upload-time") {
+                client()
+                    .post()
+                    .uri("/api/messages/out")
+                    .contentType(MediaType.parseMediaType("multipart/form-data;boundary=stalled"))
+                    .body(Flux.just("--stalled\r\n".toByteArray()).concatWith(Flux.never()), ByteArray::class.java)
+                    .exchange()
                     .expectStatus()
-                    .isOk
-                    .expectBody<String>()
-                    .isEqualTo(mshMessageId.toString())
+                    .isEqualTo(HttpStatus.REQUEST_TIMEOUT)
+
+                coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
             }
 
             it("returns 413 and sends nothing when the dokumentpakke unpacks to more than the max size") {

@@ -87,11 +87,14 @@ limits:
   # MSH accepts at most 50 MB, so a larger request can never be sent. Checked against Content-Length.
   max-request-size: 50MB
   max-dokumentpakke-files: 100
-  # Sends of requests above the threshold are held in memory several times over, and are limited to a few at a time
+  # Sends of requests or unpacked dokumentpakker above the threshold are held in memory several times over, and are
+  # limited to a few at a time
   large-send-threshold: 5MB
   max-concurrent-large-sends: 4
   # Then answered with 503, so the client tries again later
   large-send-max-wait: 30s
+  # Then answered with 408, so that a stalled upload does not keep its permit
+  max-upload-time: 120s
 
 audit:
   # HMAC key for pseudonymizing fødselsnummer in the audit log, at least 32 characters. Keep it stable, so that lookups

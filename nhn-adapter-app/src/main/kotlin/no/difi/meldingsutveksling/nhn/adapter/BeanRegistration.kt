@@ -128,7 +128,9 @@ private fun services() = BeanRegistrarDsl {
 
 private fun handlers() = BeanRegistrarDsl {
     registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
-    registerBean { OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean()) }
+    registerBean {
+        OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean<LimitsConfig>().maxUploadTime)
+    }
     registerBean { LookupHandler(bean(), bean(), bean(), bean()) }
 }
 

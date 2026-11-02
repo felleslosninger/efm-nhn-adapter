@@ -28,7 +28,8 @@ limits:
   max-dokumentpakke-files: 100
   large-send-threshold: 5MB
   max-concurrent-large-sends: 4
-  large-send-max-wait: 30s
+  large-send-max-wait: 1s
+  max-upload-time: 1s
 
 nhn:
   services:

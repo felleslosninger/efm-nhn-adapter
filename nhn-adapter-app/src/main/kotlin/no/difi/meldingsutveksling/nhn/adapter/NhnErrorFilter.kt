@@ -12,6 +12,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
@@ -72,6 +73,10 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
         }
         is MessageTooLargeException ->
             toApiError(HttpStatus.CONTENT_TOO_LARGE, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+        is UploadTimeoutException -> {
+            logger.warn("Upload timed out for ${route()}: ${error.message}")
+            toApiError(HttpStatus.REQUEST_TIMEOUT, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
+        }
         is AccessDeniedException -> {
             logger.warn("Access denied for ${route()}: ${error.message}")
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)

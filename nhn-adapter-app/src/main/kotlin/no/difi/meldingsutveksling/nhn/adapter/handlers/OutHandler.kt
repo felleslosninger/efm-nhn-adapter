@@ -2,16 +2,19 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 
 import io.swagger.v3.oas.annotations.Parameter
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.reactor.awaitSingle
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import no.difi.meldingsutveksling.domain.sbdh.StandardBusinessDocument
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
-import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmelding
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmeldingKvittering
@@ -54,6 +57,7 @@ class OutHandler(
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
     private val largeSendLimiter: LargeSendLimiter,
+    private val maxUploadTime: Duration,
 ) {
     suspend fun getStatus(messageId: UUID, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
@@ -81,7 +85,7 @@ class OutHandler(
             val requestSize = request.headers().contentLength().orElse(-1)
             val messageReference =
                 largeSendLimiter.limit(requestSize) { permitHeld ->
-                    val multipartData = request.multipartData().awaitSingle()
+                    val multipartData = readMultipartData(request)
                     val sbd =
                         readStandardBusinessDocument(multipartData.requirePart(MultipartNames.FORRETNINGSMELDING))
 
@@ -110,6 +114,15 @@ class OutHandler(
         }
     }
 
+    /** The parts are stored as they arrive, and are all there when this returns. */
+    private suspend fun readMultipartData(request: ServerRequest): MultiValueMap<String, Part> =
+        try {
+            // Otherwise a stalled upload holds its permit as long as the connection lasts
+            withTimeout(maxUploadTime.toMillis()) { request.multipartData().awaitSingle() }
+        } catch (_: TimeoutCancellationException) {
+            throw UploadTimeoutException("The request was not received within ${maxUploadTime.toSeconds()} seconds")
+        }
+
     private suspend fun readStandardBusinessDocument(forretningsmelding: Part): StandardBusinessDocument {
         // PartUtils.toString blocks until the whole part is read: not allowed on the event loop
         val jweToken = withContext(Dispatchers.IO) { PartUtils.toString(forretningsmelding) }
@@ -133,8 +146,11 @@ class OutHandler(
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
         val receiverParty = adresseregisteretService.lookupByHerId(sbd.receiverHerId)
 
-        suspend fun send(documents: List<Document>): UUID =
+        val received = withContext(Dispatchers.IO) { parcelService.receiveDokumentpakke(dokumentpakke) }
+
+        suspend fun send(): UUID =
             withContext(Dispatchers.IO) {
+                val documents = parcelService.getAttachments(received)
                 val dialogmelding = readDialogmelding(documents, message.hoveddokument)
                 DialogmeldingDefaults.apply(dialogmelding, receiverParty)
 
@@ -152,20 +168,12 @@ class OutHandler(
                 mshService.sendMessage(input, clientContext)
             }
 
-        val asic = withContext(Dispatchers.IO) { parcelService.receiveDokumentpakke(dokumentpakke) }
-        suspend fun unpackAndSend() = send(withContext(Dispatchers.IO) { parcelService.getAttachments(asic) })
-
-        if (permitHeld) {
-            return unpackAndSend()
+        // The ASiC is compressed, so a small request may still unpack to a large message
+        return if (permitHeld || received.unpackedSize < largeSendLimiter.threshold) {
+            send()
+        } else {
+            largeSendLimiter.withPermit { send() }
         }
-        // A small request may unpack to a large message: unpacked again and sent with a permit
-        val smallDocuments =
-            try {
-                withContext(Dispatchers.IO) { parcelService.getAttachments(asic, largeSendLimiter.threshold - 1) }
-            } catch (_: MessageTooLargeException) {
-                null
-            }
-        return if (smallDocuments != null) send(smallDocuments) else largeSendLimiter.withPermit { unpackAndSend() }
     }
 
     private suspend fun sendApplicationReceipt(

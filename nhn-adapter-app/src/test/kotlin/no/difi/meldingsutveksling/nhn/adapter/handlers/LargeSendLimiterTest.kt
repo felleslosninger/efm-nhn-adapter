@@ -28,6 +28,7 @@ class LargeSendLimiterTest :
                     largeSendThreshold = DataSize.ofBytes(THRESHOLD),
                     maxConcurrentLargeSends = 1,
                     largeSendMaxWait = maxWait,
+                    maxUploadTime = Duration.ofMinutes(2),
                 )
             )
 

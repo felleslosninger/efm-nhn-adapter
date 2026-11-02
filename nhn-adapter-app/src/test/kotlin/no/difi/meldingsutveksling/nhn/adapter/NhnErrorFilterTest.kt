@@ -16,6 +16,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundExcept
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretApiException
@@ -144,6 +145,15 @@ class NhnErrorFilterTest :
                     MessageTooLargeException("Message exceeds the max size"),
                     HttpStatus.CONTENT_TOO_LARGE,
                     "Message exceeds the max size",
+                )
+            }
+
+            it("maps an upload that does not arrive in time to 408") {
+                expectApiError(
+                    OUTGOING_PATH,
+                    UploadTimeoutException("The request was not received within 120 seconds"),
+                    HttpStatus.REQUEST_TIMEOUT,
+                    "The request was not received within 120 seconds",
                 )
             }
 
