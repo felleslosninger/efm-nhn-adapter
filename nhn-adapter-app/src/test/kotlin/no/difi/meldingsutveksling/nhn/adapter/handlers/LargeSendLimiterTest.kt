@@ -95,6 +95,41 @@ class LargeSendLimiterTest :
                 }
             }
 
+            it("tells the send whether it holds a permit") {
+                val limiter = limiter()
+
+                limiter.limit(SMALL) { it } shouldBe false
+                limiter.limit(LARGE) { it } shouldBe true
+            }
+
+            it("lets a send wait for a permit whatever its size") {
+                val limiter = limiter(maxWait = Duration.ofMillis(100))
+                val release = CompletableDeferred<Unit>()
+                coroutineScope {
+                    holdPermit(limiter, release)
+
+                    shouldThrow<AdapterBusyException> { limiter.withPermit { "sent" } }
+                    release.complete(Unit)
+                }
+
+                limiter.withPermit { "sent" } shouldBe "sent"
+            }
+
+            it("releases the permit when the send is cancelled while waiting") {
+                val limiter = limiter()
+                val release = CompletableDeferred<Unit>()
+                coroutineScope {
+                    holdPermit(limiter, release)
+
+                    val waiting = async { limiter.limit(LARGE) { "sent" } }
+                    yield()
+                    waiting.cancel()
+                    release.complete(Unit)
+                }
+
+                limiter.limit(LARGE) { "sent" } shouldBe "sent"
+            }
+
             it("releases the permit when the send fails") {
                 val limiter = limiter(maxWait = Duration.ofMillis(100))
 

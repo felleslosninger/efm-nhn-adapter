@@ -108,6 +108,7 @@ import org.springframework.test.context.ContextConfiguration
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.test.web.reactive.server.expectBody
 import org.springframework.util.MimeType
+import org.springframework.util.unit.DataSize
 import org.springframework.web.reactive.function.BodyInserters
 import reactor.core.publisher.Flux
 import tools.jackson.databind.json.JsonMapper
@@ -728,6 +729,27 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
             }
 
+            it("sends a small request that unpacks to more than limits.large-send-threshold") {
+                // The request is small, so the dokumentpakke is unpacked again once it turns out
+                // large
+                val mshMessageId = UUID.randomUUID()
+                coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns mshMessageId
+                val vedlegg =
+                    listOf(
+                        Attachment(
+                            "vedlegg.txt",
+                            ByteArrayResource(ByteArray(DataSize.ofMegabytes(6).toBytes().toInt())),
+                            MimeType.valueOf("text/plain"),
+                        )
+                    )
+
+                sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke(vedlegg = vedlegg))
+                    .expectStatus()
+                    .isOk
+                    .expectBody<String>()
+                    .isEqualTo(mshMessageId.toString())
+            }
+
             it("returns 413 and sends nothing when the dokumentpakke unpacks to more than the max size") {
                 // Zeros compress well, so the request is small although the file is too large
                 val vedlegg =
@@ -963,9 +985,11 @@ class NhnAdapterApiIT(
 
                 val pdfName = AttachmentNames.vedlegg(0, "application/pdf")
                 val documents =
-                    parcelService.getAttachments(parts.getValue(MultipartNames.DOKUMENTPAKKE)).associateBy {
-                        it.filename
-                    }
+                    parcelService
+                        .getAttachments(
+                            parcelService.receiveDokumentpakke(parts.getValue(MultipartNames.DOKUMENTPAKKE))
+                        )
+                        .associateBy { it.filename }
                 documents.keys shouldContainExactlyInAnyOrder setOf(AttachmentNames.DIALOGMELDING, pdfName)
                 documents.getValue(pdfName).resource.contentAsByteArray shouldBe testPdf
 

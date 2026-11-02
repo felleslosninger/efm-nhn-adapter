@@ -11,6 +11,7 @@ import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmelding
 import no.difi.meldingsutveksling.nhn.adapter.extensions.dialogmeldingKvittering
@@ -76,29 +77,32 @@ class OutHandler(
         val auditEntry = NHNAdapterAuditIdentifier.SEND_MESSAGE.entry(clientContext)
 
         auditLogService.log(auditEntry) {
-            val multipartData = request.multipartData().awaitSingle()
-            val sbd = readStandardBusinessDocument(multipartData.requirePart(MultipartNames.FORRETNINGSMELDING))
-
-            auditEntry
-                .attribute("type", sbd.type)
-                .attribute("messageId", sbd.messageId)
-                .attribute("conversationId", sbd.conversationId)
-                .attribute("parentId", sbd.parentId)
-                .attribute("senderHerId", sbd.senderHerId)
-                .attribute("receiverHerId", sbd.receiverHerId)
-
-            // Authorize before any further lookups or decryption of the dokumentpakke
-            val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
-
+            // A large request waits for a permit before its parts are read and buffered
+            val requestSize = request.headers().contentLength().orElse(-1)
             val messageReference =
-                when (sbd.type) {
-                    BusinessMessageType.DIALOGMELDING.type -> {
-                        val requestSize = request.headers().contentLength().orElse(-1)
-                        sendDialogmelding(sbd, sender, multipartData, requestSize, clientContext)
+                largeSendLimiter.limit(requestSize) { permitHeld ->
+                    val multipartData = request.multipartData().awaitSingle()
+                    val sbd =
+                        readStandardBusinessDocument(multipartData.requirePart(MultipartNames.FORRETNINGSMELDING))
+
+                    auditEntry
+                        .attribute("type", sbd.type)
+                        .attribute("messageId", sbd.messageId)
+                        .attribute("conversationId", sbd.conversationId)
+                        .attribute("parentId", sbd.parentId)
+                        .attribute("senderHerId", sbd.senderHerId)
+                        .attribute("receiverHerId", sbd.receiverHerId)
+
+                    // Authorize before any further lookups or decryption of the dokumentpakke
+                    val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
+
+                    when (sbd.type) {
+                        BusinessMessageType.DIALOGMELDING.type ->
+                            sendDialogmelding(sbd, sender, multipartData, permitHeld, clientContext)
+                        BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
+                            sendApplicationReceipt(sbd, auditEntry, clientContext)
+                        else -> throw ClientInputException("Unsupported message type ${sbd.type}")
                     }
-                    BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
-                        sendApplicationReceipt(sbd, auditEntry, clientContext)
-                    else -> throw ClientInputException("Unsupported message type ${sbd.type}")
                 }
             auditEntry.attribute("messageReference", messageReference)
 
@@ -121,7 +125,7 @@ class OutHandler(
         sbd: StandardBusinessDocument,
         sender: CommunicationParty,
         multipartData: MultiValueMap<String, Part>,
-        requestSize: Long,
+        permitHeld: Boolean,
         clientContext: ClientContext,
     ): UUID {
         val message = sbd.dialogmelding
@@ -129,9 +133,8 @@ class OutHandler(
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
         val receiverParty = adresseregisteretService.lookupByHerId(sbd.receiverHerId)
 
-        return largeSendLimiter.limit(requestSize) {
+        suspend fun send(documents: List<Document>): UUID =
             withContext(Dispatchers.IO) {
-                val documents = parcelService.getAttachments(dokumentpakke)
                 val dialogmelding = readDialogmelding(documents, message.hoveddokument)
                 DialogmeldingDefaults.apply(dialogmelding, receiverParty)
 
@@ -148,7 +151,21 @@ class OutHandler(
 
                 mshService.sendMessage(input, clientContext)
             }
+
+        val asic = withContext(Dispatchers.IO) { parcelService.receiveDokumentpakke(dokumentpakke) }
+        suspend fun unpackAndSend() = send(withContext(Dispatchers.IO) { parcelService.getAttachments(asic) })
+
+        if (permitHeld) {
+            return unpackAndSend()
         }
+        // A small request may unpack to a large message: unpacked again and sent with a permit
+        val smallDocuments =
+            try {
+                withContext(Dispatchers.IO) { parcelService.getAttachments(asic, largeSendLimiter.threshold - 1) }
+            } catch (_: MessageTooLargeException) {
+                null
+            }
+        return if (smallDocuments != null) send(smallDocuments) else largeSendLimiter.withPermit { unpackAndSend() }
     }
 
     private suspend fun sendApplicationReceipt(

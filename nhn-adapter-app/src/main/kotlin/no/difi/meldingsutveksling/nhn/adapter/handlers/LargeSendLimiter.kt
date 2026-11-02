@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.handlers
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeout
@@ -15,15 +16,18 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 class LargeSendLimiter(private val limits: LimitsConfig) {
     private val permits = Semaphore(limits.maxConcurrentLargeSends)
 
+    /** Messages of this size or larger are large. */
+    val threshold: Long = limits.largeSendThreshold.toBytes()
+
     /**
-     * Runs [send] at once for a request smaller than the threshold, and otherwise when a permit is free. The size of a
-     * chunked request is unknown (`-1`) and counts as large. Throws [AdapterBusyException] if no permit is free in
-     * time.
+     * Runs [send] at once for a request smaller than the [threshold], and otherwise when a permit is free. The size of
+     * a chunked request is unknown (`-1`) and counts as large. [send] is told whether it holds a permit.
      */
-    suspend fun <T> limit(requestSize: Long, send: suspend () -> T): T {
-        if (requestSize in 0 ..< limits.largeSendThreshold.toBytes()) {
-            return send()
-        }
+    suspend fun <T> limit(requestSize: Long, send: suspend (permitHeld: Boolean) -> T): T =
+        if (requestSize in 0 ..< threshold) send(false) else withPermit { send(true) }
+
+    /** Runs [send] when a permit is free. Throws [AdapterBusyException] if no permit is free in time. */
+    suspend fun <T> withPermit(send: suspend () -> T): T {
         acquirePermit()
         try {
             return send()
@@ -33,8 +37,7 @@ class LargeSendLimiter(private val limits: LimitsConfig) {
     }
 
     private suspend fun acquirePermit() {
-        // The timeout may expire right after the permit was acquired. The permit is then kept and
-        // must be released.
+        // The timeout may expire, or the caller be cancelled, right after the permit was acquired
         var acquired = false
         try {
             withTimeout(limits.largeSendMaxWait.toMillis()) {
@@ -42,9 +45,15 @@ class LargeSendLimiter(private val limits: LimitsConfig) {
                 acquired = true
             }
         } catch (_: TimeoutCancellationException) {
+            // A permit acquired in time is kept, and released after the send
             if (!acquired) {
                 throw AdapterBusyException("Too many large messages are being sent, try later")
             }
+        } catch (e: CancellationException) {
+            if (acquired) {
+                permits.release()
+            }
+            throw e
         }
     }
 }

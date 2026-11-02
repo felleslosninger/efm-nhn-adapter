@@ -86,19 +86,22 @@ class ParcelService(
             throw ClientInputException("Could not parse certificate in JWS header!", e)
         }
 
-    fun getAttachments(dokumentpakke: Part): List<Document> {
+    /**
+     * Stores the encrypted dokumentpakke and returns the ASiC in it. The ASiC is decrypted each time it is read, so it
+     * can be unpacked more than once.
+     */
+    fun receiveDokumentpakke(dokumentpakke: Part): Resource {
         val encryptedAsic = newTempResource()
         ResourceUtils.copy(dokumentpakke.content(), encryptedAsic)
 
-        val asic =
-            decryptCMSDocument.decrypt(
-                DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
-            )
-
-        return LimitedAsicListener(maxDokumentpakkeFiles, maxDokumentpakkeBytes)
-            .also { asicParser.parse(asic, it) }
-            .documents()
+        return decryptCMSDocument.decrypt(
+            DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
+        )
     }
+
+    /** Unpacks the files of the [asic]. Throws [MessageTooLargeException] if they add up to more than [maxBytes]. */
+    fun getAttachments(asic: Resource, maxBytes: Long = maxDokumentpakkeBytes): List<Document> =
+        LimitedAsicListener(maxDokumentpakkeFiles, maxBytes).also { asicParser.parse(asic, it) }.documents()
 
     fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<AsicEAttachable>): Resource =
         newTempResource().also {
