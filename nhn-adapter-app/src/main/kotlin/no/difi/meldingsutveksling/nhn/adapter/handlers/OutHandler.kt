@@ -103,8 +103,10 @@ class OutHandler(
         }
     }
 
-    private fun readStandardBusinessDocument(forretningsmelding: Part): StandardBusinessDocument {
-        val jwsObject = parcelService.decryptAndVerify(PartUtils.toString(forretningsmelding))
+    private suspend fun readStandardBusinessDocument(forretningsmelding: Part): StandardBusinessDocument {
+        // PartUtils.toString blocks until the whole part is read: not allowed on the event loop
+        val jweToken = withContext(Dispatchers.IO) { PartUtils.toString(forretningsmelding) }
+        val jwsObject = parcelService.decryptAndVerify(jweToken)
         return try {
             jsonMapper.readValue(jwsObject.payload.toString(), StandardBusinessDocument::class.java)
         } catch (e: JacksonException) {
