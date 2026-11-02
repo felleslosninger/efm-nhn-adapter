@@ -14,15 +14,18 @@ import com.github.tomakehurst.wiremock.client.WireMock.put
 import com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
-import com.github.tomakehurst.wiremock.stubbing.Scenario
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import java.time.Duration
 import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
+import no.difi.meldingsutveksling.nhn.adapter.config.MshTimeoutConfig
+import no.difi.meldingsutveksling.nhn.adapter.config.TimeoutConfig
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
+import no.difi.meldingsutveksling.nhn.adapter.integration.stubHelseIdSts
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.ks.fiks.helseid.Environment
 import no.ks.fiks.nhn.msh.AppRecStatus
@@ -48,74 +51,13 @@ class MshClientIT :
         lateinit var mshInternalClient: MshInternalClient
         lateinit var mshService: MshService
 
-        fun setupHelseIdStsStubs() {
-            wireMockServer.stubFor(
-                get(urlEqualTo("/.well-known/openid-configuration"))
-                    .willReturn(
-                        aResponse()
-                            .withStatus(200)
-                            .withHeader("Content-Type", "application/json")
-                            .withBody(
-                                """
-                                {
-                                    "issuer": "${wireMockServer.baseUrl()}",
-                                    "token_endpoint": "${wireMockServer.baseUrl()}/connect/token",
-                                    "jwks_uri": "${wireMockServer.baseUrl()}/.well-known/openid-configuration/jwks",
-                                    "response_types_supported": ["code", "token", "id_token"],
-                                    "subject_types_supported": ["public"],
-                                    "id_token_signing_alg_values_supported": ["RS256"]
-                                }
-                                """
-                                    .trimIndent()
-                            )
-                    )
-            )
-
-            wireMockServer.stubFor(
-                post(urlEqualTo("/connect/token"))
-                    .inScenario("DPoP Token")
-                    .whenScenarioStateIs(Scenario.STARTED)
-                    .willReturn(
-                        aResponse()
-                            .withStatus(400)
-                            .withHeader("Content-Type", "application/json")
-                            .withHeader("DPoP-Nonce", "test-dpop-nonce")
-                            .withBody("""{"error": "use_dpop_nonce", "error_description": "Use DPoP nonce"}""")
-                    )
-                    .willSetStateTo("NONCE_ISSUED")
-            )
-
-            wireMockServer.stubFor(
-                post(urlEqualTo("/connect/token"))
-                    .inScenario("DPoP Token")
-                    .whenScenarioStateIs("NONCE_ISSUED")
-                    .willReturn(
-                        aResponse()
-                            .withStatus(200)
-                            .withHeader("Content-Type", "application/json")
-                            .withBody(
-                                """
-                                {
-                                    "access_token": "test-access-token-123",
-                                    "expires_in": 3600,
-                                    "token_type": "DPoP",
-                                    "scope": "nhn:msh"
-                                }
-                                """
-                                    .trimIndent()
-                            )
-                    )
-                    .willSetStateTo(Scenario.STARTED)
-            )
-        }
-
         beforeSpec { wireMockServer.start() }
 
         afterSpec { wireMockServer.stop() }
 
         beforeEach {
             wireMockServer.resetAll()
-            setupHelseIdStsStubs()
+            wireMockServer.stubHelseIdSts()
 
             val helseIdConfig =
                 HelseIdConfiguration(
@@ -124,8 +66,16 @@ class MshClientIT :
                     rsaJwk,
                 )
 
-            mshClient = IntegrationBeans.mshClient(helseIdConfig, wireMockServer.baseUrl())
-            mshInternalClient = IntegrationBeans.mshInternalClient(helseIdConfig, wireMockServer.baseUrl())
+            val timeout = TimeoutConfig(Duration.ofSeconds(5), Duration.ofSeconds(5))
+            val helseIdClient = IntegrationBeans.helseIdClient(helseIdConfig, timeout)
+            mshInternalClient =
+                IntegrationBeans.mshInternalClient(
+                    helseIdConfig,
+                    helseIdClient,
+                    wireMockServer.baseUrl(),
+                    MshTimeoutConfig(timeout.connect, timeout.read, Duration.ofSeconds(10)),
+                )
+            mshClient = IntegrationBeans.mshClient(mshInternalClient)
             mshService = IntegrationBeans.mshService(mshClient, mshInternalClient)
         }
 

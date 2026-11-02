@@ -13,15 +13,18 @@ import no.difi.meldingsutveksling.nhn.adapter.config.AuditConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.CertificateConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.KeystoreConfig
+import no.difi.meldingsutveksling.nhn.adapter.config.LimitsConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.NhnConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.SecurityConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.TempFileConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.LargeSendLimiter
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper
@@ -48,6 +51,9 @@ private object PropertyPrefixes {
     const val KEYSTORE = "keystore"
     const val CERTIFICATE = "certificate"
     const val AUDIT = "audit"
+    const val LIMITS = "limits"
+    const val NHN_SERVICE_AR_TIMEOUT = "nhn.services.ar.timeout"
+    const val NHN_SERVICE_MSH_TIMEOUT = "nhn.services.msh.timeout"
 }
 
 private const val SERVICES_AR_URL = "nhn.services.ar.url"
@@ -63,6 +69,7 @@ private fun properties() = BeanRegistrarDsl {
     registerBean<KeystoreConfig> { env.bindRequired(PropertyPrefixes.KEYSTORE) }
     registerBean<CertificateConfig> { env.bindRequired(PropertyPrefixes.CERTIFICATE) }
     registerBean<AuditConfig> { env.bindRequired(PropertyPrefixes.AUDIT) }
+    registerBean<LimitsConfig> { env.bindRequired(PropertyPrefixes.LIMITS) }
 
     registerBean { ApplicationResourceLoader.get() }
     registerBean { keystoreProperties(bean(), bean()) }
@@ -74,11 +81,26 @@ private fun security() = BeanRegistrarDsl {
 }
 
 private fun integrations() = BeanRegistrarDsl {
-    registerBean { IntegrationBeans.arClient(bean(), env.getRequiredProperty(SERVICES_AR_URL)) }
+    registerBean { IntegrationBeans.helseIdClient(bean(), bean<HelseId>().timeout) }
+    registerBean {
+        IntegrationBeans.arClient(
+            bean(),
+            bean(),
+            env.getRequiredProperty(SERVICES_AR_URL),
+            env.bindRequired(PropertyPrefixes.NHN_SERVICE_AR_TIMEOUT),
+        )
+    }
     registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(BeanNames.FLR_CONFIG)) }
     registerBean { AdresseregisteretService(bean(), bean()) }
-    registerBean { IntegrationBeans.mshClient(bean(), env.getRequiredProperty(SERVICES_MSH_URL)) }
-    registerBean { IntegrationBeans.mshInternalClient(bean(), env.getRequiredProperty(SERVICES_MSH_URL)) }
+    registerBean { IntegrationBeans.mshClient(bean()) }
+    registerBean {
+        IntegrationBeans.mshInternalClient(
+            bean(),
+            bean(),
+            env.getRequiredProperty(SERVICES_MSH_URL),
+            env.bindRequired(PropertyPrefixes.NHN_SERVICE_MSH_TIMEOUT),
+        )
+    }
     registerBean { IntegrationBeans.mshService(bean(), bean()) }
 }
 
@@ -89,12 +111,24 @@ private fun services() = BeanRegistrarDsl {
     registerBean { tempFileResourceFactory(bean()) }
     registerBean { SecurityService(bean(), bean()) }
     registerBean { KeystoreHelper(bean()) }
-    registerBean { ParcelService(bean(), bean(), bean(), bean(), bean(), bean()) }
+    registerBean {
+        ParcelService(
+            bean(),
+            bean(),
+            bean(),
+            bean(),
+            bean(),
+            bean(),
+            bean<LimitsConfig>().maxDokumentpakkeFiles,
+            DOCUMENTS_MAX_BYTES.toLong(),
+        )
+    }
+    registerBean { LargeSendLimiter(bean()) }
 }
 
 private fun handlers() = BeanRegistrarDsl {
     registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
-    registerBean { OutHandler(bean(), bean(), bean(), bean(), bean(), bean()) }
+    registerBean { OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean()) }
     registerBean { LookupHandler(bean(), bean(), bean(), bean()) }
 }
 

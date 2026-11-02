@@ -3,10 +3,13 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import com.nimbusds.jose.JWSAlgorithm
 import com.nimbusds.jose.JWSObject
 import com.nimbusds.jose.util.X509CertChainUtils
+import java.io.InputStream
 import java.security.cert.X509Certificate
 import java.text.ParseException
 import no.difi.asic.SignatureMethod
+import no.difi.commons.asic.jaxb.asic.AsicManifest
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.AsicParser
 import no.difi.move.common.dokumentpakking.CmsAlgorithm
@@ -23,10 +26,16 @@ import no.difi.move.common.io.InMemoryWithTempFileFallbackResource
 import no.difi.move.common.io.InMemoryWithTempFileFallbackResourceFactory
 import no.difi.move.common.io.ResourceUtils
 import org.bouncycastle.cms.CMSAlgorithm
+import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.http.codec.multipart.Part
 
-/** Signs, encrypts, decrypts and verifies the forretningsmelding (JOSE) and dokumentpakke (CMS encrypted ASiC-E). */
+/**
+ * Signs, encrypts, decrypts and verifies the forretningsmelding (JOSE) and dokumentpakke (CMS encrypted ASiC-E).
+ *
+ * A dokumentpakke from a client may have at most [maxDokumentpakkeFiles] files, adding up to at most
+ * [maxDokumentpakkeBytes] unpacked.
+ */
 class ParcelService(
     private val verifyJWT: VerifyJWT,
     private val asicParser: AsicParser,
@@ -34,6 +43,8 @@ class ParcelService(
     private val decryptCMSDocument: DecryptCMSDocument,
     private val createCmsEncryptedAsice: CreateCMSEncryptedAsice,
     private val resourceFactory: InMemoryWithTempFileFallbackResourceFactory,
+    private val maxDokumentpakkeFiles: Int,
+    private val maxDokumentpakkeBytes: Long,
 ) {
     fun signAndEncrypt(payload: String, certificate: X509Certificate): String {
         val signed =
@@ -84,7 +95,9 @@ class ParcelService(
                 DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
             )
 
-        return asicParser.parse(asic)
+        return LimitedAsicListener(maxDokumentpakkeFiles, maxDokumentpakkeBytes)
+            .also { asicParser.parse(asic, it) }
+            .documents()
     }
 
     fun createAndEncryptAsic(certificate: X509Certificate, attachments: List<AsicEAttachable>): Resource =
@@ -109,4 +122,42 @@ class ParcelService(
         const val TEMP_FILE_PREFIX = "dph-"
         const val ENCRYPTED_ASIC_SUFFIX = ".asic.cms"
     }
+}
+
+/**
+ * Reads the files of an ASiC into memory, as [AsicParser.parse] does, but stops as soon as there are more than
+ * [maxFiles] files or they add up to more than [maxBytes]. A small, compressed ASiC can otherwise unpack to more than
+ * the adapter's memory.
+ */
+internal class LimitedAsicListener(private val maxFiles: Int, private val maxBytes: Long) : AsicParser.Listener {
+    private val files = mutableListOf<Pair<String, ByteArray>>()
+    private var totalBytes = 0L
+    private var mimeTypes = emptyMap<String, String>()
+
+    override fun onFile(filename: String, inputStream: InputStream) {
+        if (files.size == maxFiles) {
+            throw ClientInputException("The dokumentpakke has more than $maxFiles files")
+        }
+        // One byte more than allowed tells that the file is too large, without reading all of it
+        val remainingBytes = maxBytes - totalBytes
+        val content = inputStream.readNBytes((remainingBytes + 1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        if (content.size > remainingBytes) {
+            throw MessageTooLargeException("The files in the dokumentpakke exceed the max size of $maxBytes bytes")
+        }
+        totalBytes += content.size
+        files += filename to content
+    }
+
+    override fun onManifest(asicManifest: AsicManifest) {
+        mimeTypes = asicManifest.file.associate { it.name to it.mimetype }
+    }
+
+    fun documents(): List<Document> =
+        files.map { (filename, content) ->
+            Document.builder()
+                .filename(filename)
+                .resource(ByteArrayResource(content))
+                .mimeType(mimeTypes[filename])
+                .build()
+        }
 }

@@ -52,6 +52,7 @@ class OutHandler(
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
+    private val largeSendLimiter: LargeSendLimiter,
 ) {
     suspend fun getStatus(messageId: UUID, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
@@ -91,8 +92,10 @@ class OutHandler(
 
             val messageReference =
                 when (sbd.type) {
-                    BusinessMessageType.DIALOGMELDING.type ->
-                        sendDialogmelding(sbd, sender, multipartData, clientContext)
+                    BusinessMessageType.DIALOGMELDING.type -> {
+                        val requestSize = request.headers().contentLength().orElse(-1)
+                        sendDialogmelding(sbd, sender, multipartData, requestSize, clientContext)
+                    }
                     BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
                         sendApplicationReceipt(sbd, auditEntry, clientContext)
                     else -> throw ClientInputException("Unsupported message type ${sbd.type}")
@@ -116,6 +119,7 @@ class OutHandler(
         sbd: StandardBusinessDocument,
         sender: CommunicationParty,
         multipartData: MultiValueMap<String, Part>,
+        requestSize: Long,
         clientContext: ClientContext,
     ): UUID {
         val message = sbd.dialogmelding
@@ -123,23 +127,25 @@ class OutHandler(
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
         val receiverParty = adresseregisteretService.lookupByHerId(sbd.receiverHerId)
 
-        return withContext(Dispatchers.IO) {
-            val documents = parcelService.getAttachments(dokumentpakke)
-            val dialogmelding = readDialogmelding(documents, message.hoveddokument)
-            DialogmeldingDefaults.apply(dialogmelding, receiverParty)
+        return largeSendLimiter.limit(requestSize) {
+            withContext(Dispatchers.IO) {
+                val documents = parcelService.getAttachments(dokumentpakke)
+                val dialogmelding = readDialogmelding(documents, message.hoveddokument)
+                DialogmeldingDefaults.apply(dialogmelding, receiverParty)
 
-            val input =
-                SendMessageInput(
-                    id = sbd.messageId.toClientUuid("messageId"),
-                    sender = sender.toSender(),
-                    receiver = receiverParty.toReceiver(pasient),
-                    dialogmelding = dialogmelding,
-                    vedlegg = documents.filter { it.filename != message.hoveddokument },
-                    metadataFiler = message.metadataFiler,
-                    conversationRef = sbd.parentId?.let { ConversationRef(it, sbd.conversationId) },
-                )
+                val input =
+                    SendMessageInput(
+                        id = sbd.messageId.toClientUuid("messageId"),
+                        sender = sender.toSender(),
+                        receiver = receiverParty.toReceiver(pasient),
+                        dialogmelding = dialogmelding,
+                        vedlegg = documents.filter { it.filename != message.hoveddokument },
+                        metadataFiler = message.metadataFiler,
+                        conversationRef = sbd.parentId?.let { ConversationRef(it, sbd.conversationId) },
+                    )
 
-            mshService.sendMessage(input, clientContext)
+                mshService.sendMessage(input, clientContext)
+            }
         }
     }
 

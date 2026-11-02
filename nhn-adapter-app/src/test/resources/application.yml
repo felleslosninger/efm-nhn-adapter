@@ -23,19 +23,39 @@ certificate:
 audit:
   pseudonymization-key: "test-pseudonymization-key-of-at-least-32-characters"
 
+limits:
+  max-request-size: 50MB
+  max-dokumentpakke-files: 100
+  large-send-threshold: 5MB
+  max-concurrent-large-sends: 4
+  large-send-max-wait: 30s
+
 nhn:
   services:
     ar:
       url: "${external.base-url}/ar"
+      timeout:
+        connect: 1s
+        read: 1s
     flr:
       url: "${external.base-url}/v2/flr"
       username: dummyUser
       password: dummyPass
+      timeout:
+        connect: 1s
+        read: 1s
     msh:
       url: "${external.base-url}"
+      timeout:
+        connect: 1s
+        read: 1s
+        request: 1s
 oauth2:
   helse-id:
     # The private key is generated for each test run by IntegrationTestEnvironment
     client-id: "nhn-adapter-test"
     issuer: "${external.base-url}"
     audience: "${external.base-url}"
+    timeout:
+      connect: 1s
+      read: 1s

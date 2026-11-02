@@ -10,7 +10,11 @@ spring:
   webflux:
     base-path: /nhn-adapter
     multipart:
-      max-in-memory-size: 50MB
+      # A larger part is buffered on disk, like the dokumentpakke later on (temp.threshold)
+      max-in-memory-size: 10MB
+      # Limits a chunked request, which has no Content-Length for limits.max-request-size to check
+      max-disk-usage-per-part: 50MB
+      max-parts: 10
   http:
     codecs:
       max-in-memory-size: 50MB
@@ -51,16 +55,43 @@ digdir:
     prometheus:
       counter: true
 
+# A timeout against NHN is reported as 504. "read" is the longest wait for data on an open connection.
 nhn:
   services:
+    ar:
+      timeout:
+        connect: 5s
+        read: 15s
     flr:
       username: ${NHN_SERVICES_USERNAME}
       password: ${NHN_SERVICES_PASSWORD}
+      timeout:
+        connect: 5s
+        read: 15s
+    msh:
+      timeout:
+        connect: 5s
+        read: 30s
+        # A whole call, sending a message of up to 50 MB included
+        request: 120s
 
 oauth2:
   helse-id:
     client-id: ${NHN_CLIENT_ID}
     private-key: ${NHN_PRIVATE_KEY}
+    timeout:
+      connect: 5s
+      read: 15s
+
+limits:
+  # MSH accepts at most 50 MB, so a larger request can never be sent. Checked against Content-Length.
+  max-request-size: 50MB
+  max-dokumentpakke-files: 100
+  # Sends of requests above the threshold are held in memory several times over, and are limited to a few at a time
+  large-send-threshold: 5MB
+  max-concurrent-large-sends: 4
+  # Then answered with 503, so the client tries again later
+  large-send-max-wait: 30s
 
 audit:
   # HMAC key for pseudonymizing fødselsnummer in the audit log, at least 32 characters. Keep it stable, so that lookups

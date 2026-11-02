@@ -47,6 +47,7 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDe
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getReceiver
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getSender
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentSerializer
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
 import no.difi.meldingsutveksling.nhn.adapter.logging.FnrMaskingLogstashEncoder
 import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
@@ -194,7 +195,11 @@ class NhnAdapterApiIT(
         fun signAndEncrypt(payload: String): String =
             parcelService.signAndEncrypt(payload, keystoreHelper.x509Certificate)
 
-        fun dokumentpakke(hoveddokument: ByteArray = dialogmeldingXml): Resource =
+        fun dokumentpakke(
+            hoveddokument: ByteArray = dialogmeldingXml,
+            vedlegg: List<Attachment> =
+                listOf(Attachment(PDF_FILENAME, ByteArrayResource(testPdf), MimeType.valueOf("application/pdf"))),
+        ): Resource =
             parcelService
                 .createAndEncryptAsic(
                     keystoreHelper.x509Certificate,
@@ -203,9 +208,8 @@ class NhnAdapterApiIT(
                             DIALOGMELDING_FILENAME,
                             ByteArrayResource(hoveddokument),
                             MimeType.valueOf("application/xml"),
-                        ),
-                        Attachment(PDF_FILENAME, ByteArrayResource(testPdf), MimeType.valueOf("application/pdf")),
-                    ),
+                        )
+                    ) + vedlegg,
                 )
                 .let { ByteArrayResource(it.contentAsByteArray) }
 
@@ -699,6 +703,48 @@ class NhnAdapterApiIT(
                     )
                     .expectStatus()
                     .isBadRequest
+
+                coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("returns 400 and sends nothing when the dokumentpakke has too many files") {
+                // limits.max-dokumentpakke-files is 100, and the hoveddokument is one of the files
+                val vedlegg =
+                    (1..100).map {
+                        Attachment(
+                            "vedlegg-$it.txt",
+                            ByteArrayResource(byteArrayOf(1)),
+                            MimeType.valueOf("text/plain"),
+                        )
+                    }
+
+                sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke(vedlegg = vedlegg))
+                    .expectStatus()
+                    .isBadRequest
+                    .expectBody()
+                    .jsonPath("$.details")
+                    .isEqualTo("The dokumentpakke has more than 100 files")
+
+                coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("returns 413 and sends nothing when the dokumentpakke unpacks to more than the max size") {
+                // Zeros compress well, so the request is small although the file is too large
+                val vedlegg =
+                    listOf(
+                        Attachment(
+                            "vedlegg.txt",
+                            ByteArrayResource(ByteArray(DOCUMENTS_MAX_BYTES)),
+                            MimeType.valueOf("text/plain"),
+                        )
+                    )
+
+                sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke(vedlegg = vedlegg))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
+                    .expectBody()
+                    .jsonPath("$.details")
+                    .isEqualTo("The files in the dokumentpakke exceed the max size of $DOCUMENTS_MAX_BYTES bytes")
 
                 coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
             }

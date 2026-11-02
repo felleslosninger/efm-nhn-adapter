@@ -1,11 +1,16 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
 import io.kotest.core.spec.style.DescribeSpec
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.SpanContext
 import io.opentelemetry.api.trace.TraceFlags
 import io.opentelemetry.api.trace.TraceState
 import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.http.HttpTimeoutException
+import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
@@ -19,7 +24,10 @@ import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HttpClientException
 import no.ks.fiks.nhn.msh.HttpException
 import no.ks.fiks.nhn.msh.HttpServerException
+import no.ks.fiks.nhn.msh.MshException
 import org.hamcrest.Matchers.matchesPattern
+import org.springframework.core.codec.DecodingException
+import org.springframework.core.io.buffer.DataBufferLimitException
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.test.web.reactive.server.WebTestClient
@@ -212,6 +220,81 @@ class NhnErrorFilterTest :
                     FastlegeregisteretException("Technical error", ConnectException("Connection refused")),
                     HttpStatus.BAD_GATEWAY,
                     "E7779",
+                )
+            }
+
+            it("maps an Adresseregisteret timeout to 504") {
+                expectTechnicalError(
+                    LOOKUP_PATH,
+                    AdresseregisteretException(
+                        "Unknown error",
+                        RuntimeException(SocketTimeoutException("Read timed out")),
+                    ),
+                    HttpStatus.GATEWAY_TIMEOUT,
+                    "E7778",
+                )
+            }
+
+            it("maps a Fastlegeregisteret timeout to 504") {
+                expectTechnicalError(
+                    LOOKUP_PATH,
+                    FastlegeregisteretException("Unknown error", HttpTimeoutException("request timed out")),
+                    HttpStatus.GATEWAY_TIMEOUT,
+                    "E7779",
+                )
+            }
+
+            it("maps an MSH timeout to 504") {
+                expectTechnicalError(
+                    OUTGOING_PATH,
+                    MshException("Unknown error from MSH API", HttpRequestTimeoutException("http://msh", 1000)),
+                    HttpStatus.GATEWAY_TIMEOUT,
+                    "E7780",
+                )
+            }
+
+            it("maps an MSH connect timeout to 504") {
+                expectTechnicalError(
+                    OUTGOING_PATH,
+                    MshException("Unknown error from MSH API", ConnectTimeoutException("Connect timeout", null)),
+                    HttpStatus.GATEWAY_TIMEOUT,
+                    "E7780",
+                )
+            }
+
+            it("maps other MSH errors without a status to 502") {
+                expectTechnicalError(
+                    OUTGOING_PATH,
+                    MshException("Unknown error from MSH API", ConnectException("Connection refused")),
+                    HttpStatus.BAD_GATEWAY,
+                    "E7780",
+                )
+            }
+
+            it("maps a busy adapter to 503") {
+                expectTechnicalError(
+                    OUTGOING_PATH,
+                    AdapterBusyException("Too many large messages"),
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "E7781",
+                )
+            }
+
+            it("maps a request body above the multipart limits to 413, without Spring's message") {
+                expectApiError(
+                    OUTGOING_PATH,
+                    DataBufferLimitException("Part exceeded the disk usage limit of 52428800 bytes"),
+                    HttpStatus.CONTENT_TOO_LARGE,
+                    "The request body is too large",
+                )
+            }
+
+            it("maps an unreadable request body to 400, without Spring's message") {
+                expectApiError(
+                    OUTGOING_PATH,
+                    DecodingException("Too many parts (11/10 allowed)"),
+                    HttpStatus.BAD_REQUEST,
+                    "The request body could not be read",
                 )
             }
 
