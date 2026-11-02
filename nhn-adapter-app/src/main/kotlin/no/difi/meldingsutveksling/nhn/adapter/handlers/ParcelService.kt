@@ -88,8 +88,8 @@ class ParcelService(
         }
 
     /**
-     * Stores the encrypted dokumentpakke and checks the size of the ASiC in it unpacked. Throws
-     * [MessageTooLargeException] if it is larger than allowed.
+     * Stores the encrypted dokumentpakke and checks the number of files in the ASiC and their size unpacked, before
+     * anything is kept in memory.
      */
     fun receiveDokumentpakke(dokumentpakke: Part): Dokumentpakke {
         val encryptedAsic = newTempResource()
@@ -100,7 +100,7 @@ class ParcelService(
             decryptCMSDocument.decrypt(
                 DecryptCMSDocument.Input.builder().resource(encryptedAsic).keystoreHelper(keystoreHelper).build()
             )
-        return Dokumentpakke(asic, unpackedSize(asic, maxDokumentpakkeBytes))
+        return Dokumentpakke(asic, unpackedSize(asic, maxDokumentpakkeFiles, maxDokumentpakkeBytes))
     }
 
     fun getAttachments(dokumentpakke: Dokumentpakke): List<Document> =
@@ -137,14 +137,20 @@ class Dokumentpakke(val asic: Resource, val unpackedSize: Long)
 
 /**
  * Unpacks every entry of the [asic], META-INF included, without keeping it, and returns their total size. Throws
- * [MessageTooLargeException] as soon as it exceeds [maxBytes]. [AsicParser] holds each META-INF entry in memory, up to
- * 1 GiB, before any file reaches its listener.
+ * [MessageTooLargeException] as soon as it exceeds [maxBytes], and [ClientInputException] at the first file more than
+ * [maxFiles]. [AsicParser] holds each META-INF entry in memory, up to 1 GiB, before any file reaches its listener.
  */
-internal fun unpackedSize(asic: Resource, maxBytes: Long): Long {
+internal fun unpackedSize(asic: Resource, maxFiles: Int, maxBytes: Long): Long {
     var total = 0L
+    var files = 0
     val buffer = ByteArray(8192)
     ZipInputStream(asic.inputStream).use { zip ->
-        while (zip.nextEntry != null) {
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            // Counted as the ASiC reader passes files to its listener
+            if (entry.name != "mimetype" && !entry.name.startsWith("META-INF/") && ++files > maxFiles) {
+                throw ClientInputException("The dokumentpakke has more than $maxFiles files")
+            }
             while (true) {
                 val read = zip.read(buffer)
                 if (read < 0) break

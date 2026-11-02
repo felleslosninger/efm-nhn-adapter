@@ -100,7 +100,7 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
 }
 
 /** The length of [size] bytes Base64 encoded, with padding. */
-private fun base64Length(size: Int): Long = (size + 2L) / 3 * 4
+internal fun base64Length(size: Int): Long = (size + 2L) / 3 * 4
 
 private fun GetBusinessDocumentResponse.decodeXml(): String {
     require(contentTransferEncoding == CONTENT_TRANSFER_ENCODING) {
