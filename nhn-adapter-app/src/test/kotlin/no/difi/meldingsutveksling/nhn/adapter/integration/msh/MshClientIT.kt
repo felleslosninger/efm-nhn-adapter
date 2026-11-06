@@ -39,9 +39,7 @@ import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
-import org.junit.jupiter.api.parallel.Isolated
 
-@Isolated
 class MshClientIT :
     DescribeSpec({
         val wireMockServer = WireMockServer(wireMockConfig().dynamicPort())

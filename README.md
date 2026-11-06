@@ -398,10 +398,13 @@ Applikasjonen køyrer på port `8080` og actuator på port `8090` (lokalt `8082`
 | Type              | Namn       | Køyrt av   | Beskriving                                                                                     |
 |-------------------|------------|------------|------------------------------------------------------------------------------------------------|
 | Einingstestar     | `*Test.kt` | Surefire   | Testar av einskildklassar med MockK.                                                           |
-| Integrasjonstestar| `*IT.kt`   | Failsafe   | `NhnAdapterApiIT` startar heile Spring-konteksten og testar alle endepunkta gjennom `WebTestClient`. `MshClientIT` testar MSH-klienten mot WireMock. |
+| Integrasjonstestar| `*IT.kt`   | Failsafe   | `NhnAdapterApiIT` startar heile Spring-konteksten og testar alle endepunkta gjennom `WebTestClient`. `MshClientIT` testar MSH-klienten mot WireMock, og `TimeoutIT` testar tidsavbrota mot WireMock. |
 
-Testane er skrivne med [Kotest](https://kotest.io/) (`DescribeSpec`) og køyrer parallelt per klasse
-(`junit-platform.properties`). Spring-integrasjonen er slått på i `io.kotest.provided.ProjectConfig`.
+Testane er skrivne med [Kotest](https://kotest.io/) (`DescribeSpec`). Konfigurasjonen ligg i
+`io.kotest.provided.ProjectConfig` i kvar modul. Der er òg Spring-integrasjonen slått på i `nhn-adapter-app`.
+Einingstestane køyrer fleire specs samtidig, éin tråd per spec og maks éin spec per prosessorkjerne. Surefire slår
+dette på med systemeigenskapen `nhn.test.parallel`. Slå det av med `./mvnw test -Dnhn.test.parallel=false`.
+Integrasjonstestane køyrer éin om gongen. Testane inne i ein spec køyrer alltid éin om gongen.
 
 I `NhnAdapterApiIT` er alle eksterne klientar (AR, FLR og MSH) mocka med `@MockkBean`, og testen genererer eit
 sjølvsignert nøkkellager og ein HelseID-nøkkel ved oppstart (`IntegrationTestEnvironment`), så ingen ekte nøklar ligg i

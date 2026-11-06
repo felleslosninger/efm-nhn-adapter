@@ -23,7 +23,6 @@ import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
 import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import no.ks.fiks.nhn.msh.MshException
-import org.junit.jupiter.api.parallel.Isolated
 
 /** How long the stubbed services wait before they answer, well beyond the timeouts in the tests. */
 private const val SLOW_ANSWER_MILLIS = 5_000
@@ -39,7 +38,6 @@ private suspend inline fun <reified T : Throwable> shouldTimeOut(call: suspend (
 }
 
 /** Each client gives up after its timeout, with an error that the error filter reports as 504. */
-@Isolated
 class TimeoutIT :
     DescribeSpec({
         val wireMockServer = WireMockServer(wireMockConfig().dynamicPort())
