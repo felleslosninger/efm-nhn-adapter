@@ -46,6 +46,7 @@
         <netty.version>4.2.19.Final</netty.version>
         <cxf.version>4.2.4</cxf.version>
         <jacoco.version>0.8.16</jacoco.version>
+        <nhn.test.parallel>true</nhn.test.parallel>
 
         <!-- CVE-2026-54399 -->
         <httpcore5.version>5.4.3</httpcore5.version>
@@ -330,6 +331,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Unit tests run several specs at the same time, see io.kotest.provided.ProjectConfig.
+                         Turn it off with -Dnhn.test.parallel=false. Integration tests (failsafe) run one at a time. -->
+                    <systemPropertyVariables>
+                        <nhn.test.parallel>${nhn.test.parallel}</nhn.test.parallel>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
