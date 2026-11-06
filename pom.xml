@@ -43,7 +43,7 @@
         <idporten-audit-log.version>4.0.6</idporten-audit-log.version>
         <efm-common.version>3.2.2</efm-common.version>
         <springdoc-openapi.version>3.2.0</springdoc-openapi.version>
-        <netty.version>4.2.19.Final</netty.version>
+        <netty.version>4.2.20.Final</netty.version>
         <cxf.version>4.2.4</cxf.version>
         <jacoco.version>0.8.16</jacoco.version>
 
