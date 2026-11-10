@@ -167,7 +167,7 @@ internal fun Throwable.isTimeout(): Boolean =
 private inline fun <reified T : Throwable> Throwable.hasCause(): Boolean = causes().any { it is T }
 
 /** This error and its causes. Stops at a cause that refers to itself, or one already seen. */
-private fun Throwable.causes(): Sequence<Throwable> {
+internal fun Throwable.causes(): Sequence<Throwable> {
     val seen = mutableSetOf<Throwable>()
     return generateSequence(this) { it.cause }.takeWhile { seen.add(it) }
 }
