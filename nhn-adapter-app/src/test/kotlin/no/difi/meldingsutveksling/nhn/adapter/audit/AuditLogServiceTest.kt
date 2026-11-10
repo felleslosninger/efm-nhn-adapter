@@ -6,9 +6,12 @@ import io.kotest.matchers.shouldBe
 import io.mockk.clearMocks
 import io.mockk.mockk
 import io.mockk.verify
+import java.io.IOException
+import java.net.ConnectException
 import kotlin.coroutines.cancellation.CancellationException
 import no.idporten.logging.audit.AuditEntry
 import no.idporten.logging.audit.AuditLogger
+import no.ks.fiks.nhn.msh.MshException
 
 class AuditLogServiceTest :
     DescribeSpec({
@@ -63,6 +66,42 @@ class AuditLogServiceTest :
 
                 verifyLogged()
                 logged.single().getAttribute("exception") shouldBe "Ukjent pasient ***********"
+            }
+
+            it("includes the causes in the exception message") {
+                val error =
+                    MshException(
+                        "Unknown error from MSH API",
+                        IOException("Request failed", ConnectException("Connection refused")),
+                    )
+                shouldThrow<MshException> { auditLogService.log(newEntry()) { throw error } }
+
+                verifyLogged()
+                logged.single().getAttribute("exception") shouldBe
+                    "Unknown error from MSH API; caused by IOException: Request failed; " +
+                        "caused by ConnectException: Connection refused"
+            }
+
+            it("masks fødselsnummer in the causes") {
+                shouldThrow<IllegalStateException> {
+                    auditLogService.log(newEntry()) {
+                        throw IllegalStateException("Lookup failed", IOException("Ukjent pasient 16822449879"))
+                    }
+                }
+
+                verifyLogged()
+                logged.single().getAttribute("exception") shouldBe
+                    "Lookup failed; caused by IOException: Ukjent pasient ***********"
+            }
+
+            it("describes exceptions without a message by their class name") {
+                shouldThrow<IllegalStateException> {
+                    auditLogService.log(newEntry()) { throw IllegalStateException(null, NullPointerException()) }
+                }
+
+                verifyLogged()
+                logged.single().getAttribute("exception") shouldBe
+                    "IllegalStateException; caused by NullPointerException"
             }
 
             it("logs an Error as a failure") {
