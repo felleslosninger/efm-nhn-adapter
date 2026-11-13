@@ -3,15 +3,21 @@ package no.difi.meldingsutveksling.nhn.adapter.audit
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
 import io.mockk.clearMocks
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException
 import java.net.ConnectException
 import kotlin.coroutines.cancellation.CancellationException
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.idporten.logging.audit.AuditEntry
 import no.idporten.logging.audit.AuditLogger
 import no.ks.fiks.nhn.msh.MshException
+import tools.jackson.core.JacksonException
+import tools.jackson.databind.json.JsonMapper
 
 class AuditLogServiceTest :
     DescribeSpec({
@@ -92,6 +98,48 @@ class AuditLogServiceTest :
                 verifyLogged()
                 logged.single().getAttribute("exception") shouldBe
                     "Lookup failed; caused by IOException: Ukjent pasient ***********"
+            }
+
+            it("leaves out the message of a cause of a ClientInputException, which may quote the client's input") {
+                val jacksonError =
+                    shouldThrow<JacksonException> {
+                        JsonMapper.builder().build().readValue("\"010190-12345\"", Int::class.java)
+                    }
+                jacksonError.message shouldContain "010190-12345"
+
+                shouldThrow<ClientInputException> {
+                    auditLogService.log(newEntry()) {
+                        throw ClientInputException("Invalid forretningsmelding", jacksonError)
+                    }
+                }
+
+                verifyLogged()
+                val exception = logged.single().getAttribute("exception") as String
+                exception shouldStartWith "Invalid forretningsmelding; caused by "
+                exception shouldNotContain "010190"
+                exception shouldNotContain "12345"
+            }
+
+            it("leaves out the messages below a ClientInputException further down the chain") {
+                shouldThrow<IllegalStateException> {
+                    auditLogService.log(newEntry()) {
+                        throw IllegalStateException(
+                            "Lookup failed",
+                            ClientInputException(
+                                "Invalid identifier",
+                                IllegalArgumentException(
+                                    "Invalid NHN identifier: fastlege-for:010190-12345",
+                                    NumberFormatException("For input string: \"010190-12345\""),
+                                ),
+                            ),
+                        )
+                    }
+                }
+
+                verifyLogged()
+                logged.single().getAttribute("exception") shouldBe
+                    "Lookup failed; caused by ClientInputException: Invalid identifier; " +
+                        "caused by IllegalArgumentException; caused by NumberFormatException"
             }
 
             it("describes exceptions without a message by their class name") {

@@ -590,15 +590,24 @@ class NhnAdapterApiIT(
                     applicationLogLines().forEach { it shouldNotContain PASIENT_FNR }
                 }
 
-                // May be mistyped fødselsnummer, and the parse errors contain them
-                listOf("fastlege-for:${PASIENT_FNR.dropLast(1)}0", "her-id:$PASIENT_FNR").forEach { identifier ->
-                    it("does not log the invalid identifier $identifier") {
-                        lookup(identifier).expectStatus().isBadRequest
+                // May be mistyped fødselsnummer, and the parse errors contain them.
+                // maskFnr misses them with a hyphen, a space, or a digit too few or too many.
+                listOf(
+                        "fastlege-for:${PASIENT_FNR.dropLast(1)}0",
+                        "her-id:$PASIENT_FNR",
+                        "fastlege-for:${PASIENT_FNR.take(6)}-${PASIENT_FNR.drop(6)}",
+                        "fastlege-for:${PASIENT_FNR.take(6)} ${PASIENT_FNR.drop(6)}",
+                        "fastlege-for:${PASIENT_FNR.dropLast(1)}",
+                        "fastlege-for:${PASIENT_FNR}0",
+                    )
+                    .forEach { identifier ->
+                        it("does not log the invalid identifier $identifier") {
+                            lookup(identifier).expectStatus().isBadRequest
 
-                        auditEntry() shouldNotContain identifier.substringAfter(':')
-                        applicationLogLines().forEach { it shouldNotContain identifier.substringAfter(':') }
+                            auditEntry() shouldNotContain identifier.substringAfter(':')
+                            applicationLogLines().forEach { it shouldNotContain identifier.substringAfter(':') }
+                        }
                     }
-                }
             }
         }
 

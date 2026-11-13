@@ -13,6 +13,8 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
+import no.difi.meldingsutveksling.nhn.adapter.logging.hasDataInCauses
+import no.difi.meldingsutveksling.nhn.adapter.logging.loggableMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
@@ -67,8 +69,9 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             } else {
                 clientError(error.message ?: CLIENT_ERROR)
             }
+        // Without the stack trace: the message of the cause may quote the client's input
         is ClientInputException -> {
-            logger.warn("Invalid input for ${route()}: ${error.message}", error.cause)
+            logger.warn("Invalid input for ${route()}: ${error.loggableMessage()}")
             clientError(error.message ?: CLIENT_ERROR)
         }
         is MessageTooLargeException ->
@@ -81,10 +84,11 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
             logger.warn("Access denied for ${route()}: ${error.message}")
             toApiError(HttpStatus.FORBIDDEN, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, ACCESS_DENIED)
         }
-        // The message may come from JAXB or the schema validation. The error code says what is
-        // wrong.
+        // The error code says what is wrong. Without the stack trace: the message of the cause,
+        // from
+        // JAXB or the schema validation, may quote the message.
         is ApplicationReceiptException -> {
-            logger.warn("Invalid message for ${route()}: ${error.message}", error.cause)
+            logger.warn("Invalid message for ${route()}: ${error.loggableMessage()}")
             toApiError(HttpStatus.BAD_REQUEST, error.error)
         }
         is AdresseregisteretException -> serviceError("Adresseregisteret", ADRESSEREGISTERET_ERROR_CODE, error)
@@ -94,7 +98,12 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
         // MshException
         is MshException -> serviceError("MSH", MSH_ERROR_CODE, error)
         is InvalidMshDataException -> {
-            logger.error("Invalid data from MSH for ${route()}", error)
+            // The stack trace helps find a bug in the mapping, unless it would quote the message
+            if (error.hasDataInCauses()) {
+                logger.error("Invalid data from MSH for ${route()}: ${error.loggableMessage()}")
+            } else {
+                logger.error("Invalid data from MSH for ${route()}", error)
+            }
             badGateway(MSH_ERROR_CODE)
         }
         is AdapterBusyException -> {

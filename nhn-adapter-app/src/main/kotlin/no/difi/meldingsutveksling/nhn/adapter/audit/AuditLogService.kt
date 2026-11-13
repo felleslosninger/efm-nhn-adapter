@@ -1,8 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter.audit
 
 import kotlin.coroutines.cancellation.CancellationException
-import no.difi.meldingsutveksling.nhn.adapter.causes
-import no.difi.meldingsutveksling.nhn.adapter.logging.maskFnr
+import no.difi.meldingsutveksling.nhn.adapter.logging.loggableMessage
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.idporten.logging.audit.AuditEntry
 import no.idporten.logging.audit.AuditLogger
@@ -20,9 +19,9 @@ class AuditLogService(val auditLogger: AuditLogger) {
      * a `withTimeout` expired or the application is shutting down. It is logged as a failure with [CANCELLED_MESSAGE],
      * since the coroutine's own message ("MonoCoroutine was cancelled") says nothing about what happened.
      *
-     * The exception message includes its causes (see [auditMessage]), since e.g. msh-client only says "Unknown error
-     * from MSH API" and leaves what happened to the cause. Fødselsnummer are masked, as messages from e.g.
-     * Fastlegeregisteret may contain them.
+     * The exception message includes its causes (see [loggableMessage]), since e.g. msh-client only says "Unknown
+     * error from MSH API" and leaves what happened to the cause. Fødselsnummer are masked, as messages from e.g.
+     * Fastlegeregisteret may contain them, and so is input from the client.
      */
     inline fun <T> log(
         builder: AuditEntry.AuditEntryBuilder,
@@ -36,7 +35,7 @@ class AuditLogService(val auditLogger: AuditLogger) {
             // Throwable, so that an Error (e.g. NotImplementedError) is not logged as a success
             succeeded = false
             builder.attribute("success", false)
-            builder.attribute("exception", if (e is CancellationException) CANCELLED_MESSAGE else e.auditMessage())
+            builder.attribute("exception", if (e is CancellationException) CANCELLED_MESSAGE else e.loggableMessage())
             throw e
         } finally {
             if (!succeeded || !skipOnSuccess()) {
@@ -46,17 +45,6 @@ class AuditLogService(val auditLogger: AuditLogger) {
         }
     }
 }
-
-/**
- * The message of this exception followed by its causes, e.g. `Unknown error from MSH API; caused by ConnectException:
- * Connection refused`, with fødselsnummer masked. An exception without a message is described by its class name.
- */
-fun Throwable.auditMessage(): String {
-    val causes = causes().drop(1).map { "caused by ${it.describe()}" }
-    return (sequenceOf(message ?: javaClass.simpleName) + causes).joinToString("; ").maskFnr()
-}
-
-private fun Throwable.describe(): String = message?.let { "${javaClass.simpleName}: $it" } ?: javaClass.simpleName
 
 fun AuditEntry.AuditEntryBuilder.clientContext(clientContext: ClientContext): AuditEntry.AuditEntryBuilder =
     clientOnbehalfofOrgno(clientContext.onBehalfOfOrgNumber)

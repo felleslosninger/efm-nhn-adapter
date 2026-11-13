@@ -17,7 +17,13 @@ object DialogmeldingDeserializer {
             XmlContext.validateObject(dialogmelding)
             return dialogmelding
         } catch (e: Exception) {
-            throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.UGYLDIG_XML, e.message, e)
+            // Not e.message: messages from JAXB and the schema validation may quote values from the
+            // dialogmelding, e.g. the patient's fødselsnummer. The cause has them.
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                "The Dialogmelding is not valid",
+                e,
+            )
         }
     }
 }

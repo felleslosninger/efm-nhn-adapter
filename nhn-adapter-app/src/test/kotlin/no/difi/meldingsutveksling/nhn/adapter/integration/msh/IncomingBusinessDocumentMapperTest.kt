@@ -10,6 +10,7 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.every
 import io.mockk.mockk
@@ -24,6 +25,7 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDe
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getDialogmelding
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getReceiver
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentDeserializer.getSender
+import no.difi.meldingsutveksling.nhn.adapter.logging.loggableMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
 import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
@@ -239,6 +241,18 @@ class IncomingBusinessDocumentMapperTest :
 
                 shouldThrow<ApplicationReceiptException> { BusinessDocumentDeserializer.deserializeMsgHead(xml) }
                     .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("does not quote the invalid value in the message, only in the cause") {
+                val value = "010190-12345"
+                val xml = msgHeadXml.replace(Regex("(<([a-zA-Z0-9]+:)?GenDate>)[^<]*"), "$1$value")
+
+                val error =
+                    shouldThrow<ApplicationReceiptException> { BusinessDocumentDeserializer.deserializeMsgHead(xml) }
+
+                error.cause?.message shouldContain value
+                error.message shouldBe "The MsgHead is not valid"
+                error.loggableMessage() shouldNotContain value
             }
 
             it("rejects another root element") {
