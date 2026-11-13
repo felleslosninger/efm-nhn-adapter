@@ -29,6 +29,28 @@
         <dependency>
             <groupId>no.ks.fiks</groupId>
             <artifactId>msh-client</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>no.ks.fiks</groupId>
+                    <artifactId>fastlegeregisteret-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>no.ks.fiks</groupId>
+                    <artifactId>adresseregisteret-rest-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>no.ks.fiks</groupId>
+                    <artifactId>msh-api-v2</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>no.ks.fiks</groupId>
+                    <artifactId>helseid-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.ktor</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
