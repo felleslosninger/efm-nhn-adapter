@@ -24,6 +24,7 @@ import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.config.MshTimeoutConfig
 import no.difi.meldingsutveksling.nhn.adapter.config.TimeoutConfig
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.stubHelseIdSts
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
@@ -449,6 +450,36 @@ class MshClientIT :
                     override val delegationSource: String? = "altinn"
                     override val scopes: Set<String> = setOf("test-scope")
                 }
+
+            it("getSenderHerId via MshService should read the sender when other metadata is missing") {
+                val messageId = UUID.randomUUID()
+                wireMockServer.stubFor(
+                    get(urlEqualTo("/Messages/$messageId"))
+                        .willReturn(
+                            aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("""{"id": "$messageId", "receiverHerId": 12345, "senderHerId": 98765}""")
+                        )
+                )
+
+                mshService.getSenderHerId(messageId, singleTenantContext) shouldBe 98765
+            }
+
+            it("getSenderHerId via MshService should report a message without a sender as invalid data") {
+                val messageId = UUID.randomUUID()
+                wireMockServer.stubFor(
+                    get(urlEqualTo("/Messages/$messageId"))
+                        .willReturn(
+                            aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("""{"id": "$messageId", "receiverHerId": 12345}""")
+                        )
+                )
+
+                shouldThrow<InvalidMshDataException> { mshService.getSenderHerId(messageId, singleTenantContext) }
+            }
 
             it("getMessagesWithMetadata via MshService should use single-tenant context and retrieve messages") {
                 val messageId = UUID.randomUUID()
