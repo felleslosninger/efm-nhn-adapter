@@ -2,6 +2,7 @@ package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import java.util.Base64
 import java.util.UUID
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toClientUuid
@@ -41,8 +42,14 @@ class MshService(private val mshClient: Client, private val internalClient: MshI
     suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): List<MessageWithMetadata> =
         mshClient.getMessagesWithMetadata(receiverHerId, requestParameters(clientContext))
 
-    suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int =
-        mshClient.getMessage(id, requestParameters(clientContext)).senderHerId
+    /**
+     * Reads the sender from the message metadata in MSH. [Client.getMessage] requires every metadata field, so the
+     * internal client is used: only a missing sender makes the metadata unusable here.
+     */
+    suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int {
+        val message = internalClient.getMessage(id, requestParameters(clientContext))
+        return message.senderHerId ?: throw InvalidMshDataException("Invalid data from MSH: Message $id has no sender")
+    }
 
     suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> =
         mshClient.getStatus(id, requestParameters(clientContext))

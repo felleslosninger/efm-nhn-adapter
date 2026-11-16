@@ -40,6 +40,7 @@ import no.ks.fiks.nhn.msh.Sender
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.nhn.msh.v2.model.AppRecStatus
 import no.nhn.msh.v2.model.GetBusinessDocumentResponse
+import no.nhn.msh.v2.model.Message as NhnMessage
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
 import org.springframework.core.io.ByteArrayResource
@@ -85,6 +86,25 @@ class MshServiceTest :
                 // The consumer is the customer (parent) organization the supplier acts on behalf of
                 tenant.parentOrganization shouldBe CONSUMER_ORG_NUMBER
                 tenant.childOrganization.shouldBeNull()
+            }
+        }
+
+        describe("getSenderHerId") {
+            val messageId = UUID.randomUUID()
+
+            it("returns the sender when MSH leaves out metadata it does not need") {
+                coEvery { internalClient.getMessage(messageId, any()) } returns
+                    NhnMessage().id(messageId).senderHerId(SENDER_HER_ID)
+
+                mshService.getSenderHerId(messageId, clientContext()) shouldBe SENDER_HER_ID
+            }
+
+            it("reports a message without a sender as invalid data from MSH") {
+                coEvery { internalClient.getMessage(messageId, any()) } returns
+                    NhnMessage().id(messageId).receiverHerId(SENDER_HER_ID)
+
+                shouldThrow<InvalidMshDataException> { mshService.getSenderHerId(messageId, clientContext()) }
+                    .message shouldContain "has no sender"
             }
         }
 

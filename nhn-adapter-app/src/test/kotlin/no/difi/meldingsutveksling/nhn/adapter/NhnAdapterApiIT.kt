@@ -86,6 +86,7 @@ import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.StatusInfo
 import no.nhn.msh.v2.model.GetBusinessDocumentResponse
+import no.nhn.msh.v2.model.Message as NhnMessage
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
 import org.slf4j.LoggerFactory
@@ -356,7 +357,7 @@ class NhnAdapterApiIT(
 
             describe("scopes") {
                 beforeEach {
-                    coEvery { mshClient.getMessage(any(), any()) } answers
+                    coEvery { mshInternalClient.getMessage(any(), any()) } answers
                         {
                             outgoingMessageMetadata(firstArg(), KOMMUNE_HER_ID, FASTLEGE_HER_ID)
                         }
@@ -914,7 +915,7 @@ class NhnAdapterApiIT(
         describe("GET /api/messages/out/{messageId}/statuses") {
             it("returns the delivery and application receipt status from MSH") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshClient.getMessage(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
                     outgoingMessageMetadata(messageId, KOMMUNE_HER_ID, FASTLEGE_HER_ID)
                 coEvery { mshClient.getStatus(messageId, consumerTenant()) } returns
                     listOf(StatusInfo(FASTLEGE_HER_ID, DeliveryState.ACKNOWLEDGED, AppRecStatus.OK))
@@ -939,7 +940,7 @@ class NhnAdapterApiIT(
 
             it("returns 403 and no status when the sender belongs to another organization") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshClient.getMessage(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
                     outgoingMessageMetadata(messageId, FASTLEGE_HER_ID, KOMMUNE_HER_ID)
 
                 client()
@@ -949,6 +950,46 @@ class NhnAdapterApiIT(
                     .exchange()
                     .expectStatus()
                     .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getStatus(any(), any()) }
+            }
+
+            it("returns the status when MSH leaves out metadata the access check does not need") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
+                    outgoingMessageMetadata(messageId, KOMMUNE_HER_ID, FASTLEGE_HER_ID)
+                        .businessDocumentId(null)
+                        .isAppRec(null)
+                coEvery { mshClient.getStatus(messageId, consumerTenant()) } returns
+                    listOf(StatusInfo(FASTLEGE_HER_ID, DeliveryState.ACKNOWLEDGED, AppRecStatus.OK))
+
+                client()
+                    .get()
+                    .uri("/api/messages/out/$messageId/statuses")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$[0].transportStatus")
+                    .isEqualTo("ACKNOWLEDGED")
+            }
+
+            it("returns 502 and no status when MSH leaves out the sender") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
+                    outgoingMessageMetadata(messageId, null, FASTLEGE_HER_ID)
+
+                client()
+                    .get()
+                    .uri("/api/messages/out/$messageId/statuses")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
 
                 coVerify(exactly = 0) { mshClient.getStatus(any(), any()) }
             }
@@ -1248,16 +1289,15 @@ private fun MockKMatcherScope.consumerTenant() =
     }
 
 /** MSH metadata for a dialogmelding sent from [senderHerId] to [receiverHerId]. */
-private fun outgoingMessageMetadata(messageId: UUID, senderHerId: Int, receiverHerId: Int) =
-    MessageWithMetadata(
-        messageId,
-        "application/xml",
-        receiverHerId,
-        senderHerId,
-        UUID.randomUUID().toString(),
-        OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
-        false,
-    )
+private fun outgoingMessageMetadata(messageId: UUID, senderHerId: Int?, receiverHerId: Int) =
+    NhnMessage()
+        .id(messageId)
+        .contentType("application/xml")
+        .receiverHerId(receiverHerId)
+        .senderHerId(senderHerId)
+        .businessDocumentId(UUID.randomUUID().toString())
+        .businessDocumentGenDate(OffsetDateTime.parse("2026-08-21T08:00:00+02:00"))
+        .isAppRec(false)
 
 private fun dialogmeldingSbd(messageId: UUID, conversationId: UUID, parentId: UUID? = null) =
     sbd(BusinessMessageType.DIALOGMELDING, messageId, conversationId, parentId).apply {
