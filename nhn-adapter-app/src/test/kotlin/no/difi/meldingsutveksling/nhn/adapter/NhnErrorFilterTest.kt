@@ -1,6 +1,12 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.opentelemetry.api.trace.Span
@@ -27,6 +33,7 @@ import no.ks.fiks.nhn.msh.HttpException
 import no.ks.fiks.nhn.msh.HttpServerException
 import no.ks.fiks.nhn.msh.MshException
 import org.hamcrest.Matchers.matchesPattern
+import org.slf4j.LoggerFactory
 import org.springframework.core.codec.DecodingException
 import org.springframework.core.io.buffer.DataBufferLimitException
 import org.springframework.http.HttpStatus
@@ -35,6 +42,7 @@ import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.web.reactive.function.server.HandlerFilterFunction
 import org.springframework.web.reactive.function.server.RouterFunctions
 import org.springframework.web.reactive.function.server.ServerResponse
+import org.xml.sax.SAXParseException
 import reactor.core.publisher.Mono
 
 private const val LOOKUP_PATH = "/api/lookup/123"
@@ -336,6 +344,67 @@ class NhnErrorFilterTest :
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "E7777",
                 )
+            }
+
+            describe("logging") {
+                val rootLogger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as Logger
+                val events = ListAppender<ILoggingEvent>()
+                val value = "010190-12345"
+                val validationError = SAXParseException("cvc-datatype-valid.1.2.1: '$value' is not valid", null)
+
+                beforeEach {
+                    events.list.clear()
+                    events.start()
+                    rootLogger.addAppender(events)
+                }
+
+                afterEach { rootLogger.detachAppender(events) }
+
+                // Other specs may log at the same time
+                fun filterEvents() =
+                    events.list.filter {
+                        it.loggerName.startsWith("no.difi.meldingsutveksling.nhn.adapter.NhnErrorFilter")
+                    }
+
+                /** The messages and stack traces logged, the way the application log writes them. */
+                fun logged(): String =
+                    filterEvents().joinToString("\n") { event ->
+                        event.formattedMessage +
+                            generateSequence(event.throwableProxy) { it.cause }.joinToString { it.message.orEmpty() }
+                    }
+
+                listOf(
+                        ClientInputException("Invalid input", IllegalArgumentException("Invalid SSN='$value'")),
+                        ApplicationReceiptException(
+                            FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                            "The Dialogmelding is not valid",
+                            validationError,
+                        ),
+                        InvalidMshDataException(
+                            "Invalid data from MSH: The MsgHead is not valid",
+                            ApplicationReceiptException(
+                                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                                "The MsgHead is not valid",
+                                validationError,
+                            ),
+                        ),
+                    )
+                    .forEach { thrown ->
+                        it("does not log the message of the cause of ${thrown.javaClass.simpleName}") {
+                            error = thrown
+                            client.get().uri(OUTGOING_PATH).exchange()
+
+                            logged() shouldContain thrown.message!!
+                            logged() shouldNotContain value
+                        }
+                    }
+
+                it("logs the stack trace of other invalid data from MSH") {
+                    error = InvalidMshDataException("Invalid data from MSH", IllegalStateException("No MsgInfo"))
+                    client.get().uri(OUTGOING_PATH).exchange()
+
+                    filterEvents().single().throwableProxy.cause.message shouldBe "No MsgInfo"
+                }
             }
 
             it("includes the trace id of the current span") {

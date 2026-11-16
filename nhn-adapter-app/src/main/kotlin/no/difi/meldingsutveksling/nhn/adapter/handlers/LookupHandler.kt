@@ -36,7 +36,8 @@ class LookupHandler(
                 try {
                     NhnIdentifier.parse(identifier)
                 } catch (e: IllegalArgumentException) {
-                    // Audit logged, so without the identifier or e.message (which has it)
+                    // Without the identifier, which e.message has. The logs leave out e.message
+                    // (see loggableMessage)
                     throw ClientInputException(INVALID_IDENTIFIER_MESSAGE, e)
                 }
             val communicationParty = adresseregisteretService.lookupByNhnIdentifier(nhnIdentifier)

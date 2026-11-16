@@ -55,7 +55,13 @@ object BusinessDocumentDeserializer {
         try {
             XmlContext.validateXml(xml)
         } catch (e: Exception) {
-            throw ApplicationReceiptException(FeilmeldingForApplikasjonskvittering.UGYLDIG_XML, e.message, e)
+            // Not e.message: messages from the schema validation may quote values from the message,
+            // e.g. the patient's fødselsnummer. The cause has them.
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                "The MsgHead is not valid",
+                e,
+            )
         }
 
         val msgHead =

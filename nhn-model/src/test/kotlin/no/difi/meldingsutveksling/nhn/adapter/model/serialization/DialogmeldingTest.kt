@@ -77,6 +77,23 @@ class DialogmeldingTest :
                     .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
             }
 
+            it("leaves the message of the schema validation, which may quote the dialogmelding, to the cause") {
+                val error =
+                    shouldThrow<ApplicationReceiptException> {
+                        DialogmeldingDeserializer.deserializeDialogmelding(
+                            """
+                            <Dialogmelding xmlns="http://www.kith.no/xmlstds/dialog/2013-01-23">
+                              <Notat><Tema>Test tema</Tema></Notat>
+                            </Dialogmelding>
+                            """
+                        )
+                    }
+
+                error.message shouldBe "The Dialogmelding is not valid"
+                generateSequence(error.cause) { it.cause }.mapNotNull { it.message }.joinToString() shouldContain
+                    "TemaKodet"
+            }
+
             it("rejects malformed XML") {
                 shouldThrow<ApplicationReceiptException> {
                         DialogmeldingDeserializer.deserializeDialogmelding("<Dialog")
