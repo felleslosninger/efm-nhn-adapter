@@ -62,13 +62,13 @@ class ClientContextTest :
             }
 
             it("getConsumer should return Iso6523 from consumer claim") {
-                every { jwt.getClaimAsMap(Claims.CONSUMER) } returns mapOf("ID" to "0192:123")
-                jwt.getConsumer() shouldBe Iso6523.parse("0192:123")
+                every { jwt.getClaimAsMap(Claims.CONSUMER) } returns mapOf("ID" to "0192:123456789")
+                jwt.getConsumer() shouldBe Iso6523.parse("0192:123456789")
             }
 
             it("getSupplier should return Iso6523 from supplier claim or null") {
-                every { jwt.getClaimAsMap(Claims.SUPPLIER) } returns mapOf("ID" to "0192:456")
-                jwt.getSupplier() shouldBe Iso6523.parse("0192:456")
+                every { jwt.getClaimAsMap(Claims.SUPPLIER) } returns mapOf("ID" to "0192:987654321")
+                jwt.getSupplier() shouldBe Iso6523.parse("0192:987654321")
 
                 every { jwt.getClaimAsMap(Claims.SUPPLIER) } returns null
                 jwt.getSupplier() shouldBe null
