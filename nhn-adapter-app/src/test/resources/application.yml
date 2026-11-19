@@ -3,6 +3,13 @@
 external:
   base-url: "http://external.invalid"
 
+# The limits are small, so that the tests of large chunked requests send little data and finish well within
+# limits.max-upload-time. A part above max-in-memory-size is stored on disk, as in production.
+spring:
+  webflux:
+    multipart:
+      max-in-memory-size: 256KB
+
 digdir:
   audit:
     application-name: nhn-adapter-test
@@ -24,7 +31,8 @@ audit:
   pseudonymization-key: "test-pseudonymization-key-of-at-least-32-characters"
 
 limits:
-  max-request-size: 50MB
+  # 50MB in production, see the comment on spring.webflux.multipart
+  max-request-size: 2MB
   max-dokumentpakke-files: 100
   large-send-threshold: 5MB
   max-concurrent-large-sends: 4

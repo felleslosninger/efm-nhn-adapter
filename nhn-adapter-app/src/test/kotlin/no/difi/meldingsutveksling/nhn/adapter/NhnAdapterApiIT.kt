@@ -5,10 +5,12 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.ninjasquad.springmockk.MockkBean
 import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldNotBeIn
+import io.kotest.matchers.longs.shouldBeLessThanOrEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -22,9 +24,12 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.OffsetDateTime
 import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -868,6 +873,71 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
             }
 
+            it("returns 413 and sends nothing when a chunked request exceeds limits.max-request-size") {
+                // Without a Content-Length, and with each part below the max size
+                val maxRequestSize = DataSize.ofMegabytes(2) // limits.max-request-size in the test configuration
+                val boundary = "chunked"
+                val chunk = DataSize.ofKilobytes(256).toBytes().toInt()
+                fun part(name: String, chunks: Int): Flux<ByteArray> =
+                    Flux.just(
+                            ("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"; filename=\"$name\"\r\n" +
+                                    "Content-Type: application/octet-stream\r\n\r\n")
+                                .toByteArray()
+                        )
+                        .concatWith(Flux.range(0, chunks).map { ByteArray(chunk) })
+                        .concatWith(Flux.just("\r\n".toByteArray()))
+                val sent = AtomicLong()
+                val body =
+                    part(MultipartNames.FORRETNINGSMELDING, 6)
+                        .concatWith(part(MultipartNames.DOKUMENTPAKKE, 6))
+                        .concatWith(Flux.just("--$boundary--\r\n".toByteArray()))
+                        .doOnNext { sent.addAndGet(it.size.toLong()) }
+
+                client()
+                    .post()
+                    .uri("/api/messages/out")
+                    .contentType(MediaType.parseMediaType("multipart/form-data;boundary=$boundary"))
+                    .body(body, ByteArray::class.java)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
+                    .expectBody()
+                    .jsonPath("$.details")
+                    .isEqualTo("The request exceeds the max size of ${maxRequestSize.toBytes()} bytes")
+
+                // The max size, and the chunk that passed it
+                sent.get() shouldBeLessThanOrEqual maxRequestSize.toBytes() + chunk
+                coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("deletes the temporary files of a chunked request when it is done") {
+                coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns UUID.randomUUID()
+                // Above spring.webflux.multipart.max-in-memory-size in the test configuration, so
+                // that
+                // the part is stored on disk, and below limits.max-request-size
+                val body =
+                    MultipartBodyBuilder()
+                        .apply {
+                            outgoingMessage(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke())
+                                .forEach { (name, parts) -> parts.forEach { part(name, it) } }
+                            part("padding", ByteArrayResource(ByteArray(DataSize.ofMegabytes(1).toBytes().toInt())))
+                                .filename("padding.bin")
+                        }
+                        .build()
+                val filesBefore = multipartTempFiles()
+
+                client()
+                    .post()
+                    .uri("/api/messages/out")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(BodyInserters.fromMultipartData(body))
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                (multipartTempFiles() - filesBefore).shouldBeEmpty()
+            }
+
             it("returns 413 and sends nothing when the dokumentpakke unpacks to more than the max size") {
                 // Zeros compress well, so the request is small although the file is too large
                 val vedlegg =
@@ -1366,3 +1436,13 @@ private fun readMultipart(contentType: MediaType, body: ByteArray): Map<String, 
 
 private fun readResource(path: String): ByteArray =
     NhnAdapterApiIT::class.java.getResourceAsStream(path)!!.use { it.readAllBytes() }
+
+/** The files in Spring's temporary directories for multipart parts, which are named spring-multipart-<random>. */
+private fun multipartTempFiles(): Set<Path> =
+    Files.list(Path.of(System.getProperty("java.io.tmpdir"))).use { entries ->
+        entries
+            .filter { it.fileName.toString().startsWith("spring-multipart-") && Files.isDirectory(it) }
+            .toList()
+            .flatMap { directory -> Files.list(directory).use { it.toList() } }
+            .toSet()
+    }

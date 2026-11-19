@@ -124,6 +124,8 @@ private fun services() = BeanRegistrarDsl {
         )
     }
     registerBean { LargeSendLimiter(bean()) }
+    // Picked up by Spring's WebHttpHandlerBuilder, which wraps the server's HttpHandler with it
+    registerBean { RequestBodyLimit(bean<LimitsConfig>().maxRequestSize) }
 }
 
 private fun handlers() = BeanRegistrarDsl {
