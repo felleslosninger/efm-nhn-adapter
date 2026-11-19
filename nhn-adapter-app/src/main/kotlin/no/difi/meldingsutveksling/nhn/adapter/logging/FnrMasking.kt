@@ -12,8 +12,38 @@ private val FNR = Regex("""(?<!\d)\d{11}(?!\d)""")
 
 private const val FNR_MASK = "***********"
 
+/**
+ * The value of a `fastlege-for:` identifier in a URL, up to the next `/`, `?` or `#`. The colon may still be
+ * percent-encoded, if it was encoded twice.
+ */
+private val FASTLEGE_FOR_VALUE = Regex("""(fastlege-for(?::|%3A))[^/?#]*""", RegexOption.IGNORE_CASE)
+
+private val PERCENT_ESCAPES = Regex("""(%[0-9A-Fa-f]{2})+""")
+
 /** Masks anything that looks like a fødselsnummer, e.g. in error messages from Fastlegeregisteret. */
 fun String.maskFnr(): String = FNR.replace(this, FNR_MASK)
+
+/**
+ * Masks the fødselsnummer in a raw URL path or query, e.g. `/nhn-adapter/api/lookup/fastlege-for:***********`. The
+ * whole value of a `fastlege-for:` identifier is masked, also when it is written with a hyphen or has a digit too
+ * many, which [maskFnr] alone would let through.
+ *
+ * The URL is percent-decoded first, so that an encoded fødselsnummer or identifier is found too, e.g.
+ * `fastlege-for%3A<fnr>` or `%20<fnr>`, where [maskFnr] would take `20` for digits of the number. A URL with something
+ * to mask is returned decoded, any other URL as it is.
+ */
+fun String.maskFnrInUrl(): String {
+    val decoded = percentDecoded()
+    val masked = FASTLEGE_FOR_VALUE.replace(decoded) { "${it.groupValues[1]}$FNR_MASK" }.maskFnr()
+    return if (masked == decoded) this else masked
+}
+
+/** Decodes the valid percent-escapes as UTF-8, and leaves an invalid one, e.g. a `%` at the end, as it is. */
+private fun String.percentDecoded(): String =
+    PERCENT_ESCAPES.replace(this) { escapes ->
+        val bytes = escapes.value.chunked(3).map { it.substring(1).toInt(16).toByte() }.toByteArray()
+        bytes.decodeToString()
+    }
 
 /**
  * [LogstashEncoder] that masks anything that looks like a fødselsnummer in every value it writes, the message and

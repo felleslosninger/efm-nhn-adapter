@@ -27,6 +27,58 @@ class FnrMaskingTest :
             }
         }
 
+        describe("maskFnrInUrl") {
+            it("masks the fødselsnummer in a lookup path") {
+                "/nhn-adapter/api/lookup/fastlege-for:$FNR".maskFnrInUrl() shouldBe
+                    "/nhn-adapter/api/lookup/fastlege-for:***********"
+            }
+
+            it("masks the whole value of a fastlege-for identifier, also when it is not eleven digits") {
+                listOf(
+                        "${FNR.take(6)}-${FNR.drop(6)}",
+                        "${FNR.take(6)}%20${FNR.drop(6)}",
+                        "${FNR}0",
+                        FNR.dropLast(1),
+                        "abc",
+                        "",
+                        "$FNR%",
+                    )
+                    .forEach { value ->
+                        "/nhn-adapter/api/lookup/fastlege-for:$value".maskFnrInUrl() shouldBe
+                            "/nhn-adapter/api/lookup/fastlege-for:***********"
+                    }
+            }
+
+            it("masks a fastlege-for identifier that is percent-encoded or in another case, and decodes it") {
+                "/api/lookup/fastlege-for%3a$FNR".maskFnrInUrl() shouldBe "/api/lookup/fastlege-for:***********"
+                "/api/lookup/fastlege-for%253A$FNR".maskFnrInUrl() shouldBe "/api/lookup/fastlege-for%3A***********"
+                "/api/lookup/fastlege%2Dfor:${FNR.dropLast(1)}%3${FNR.last()}".maskFnrInUrl() shouldBe
+                    "/api/lookup/fastlege-for:***********"
+                "/api/lookup/FASTLEGE-FOR:$FNR".maskFnrInUrl() shouldBe "/api/lookup/FASTLEGE-FOR:***********"
+            }
+
+            it("masks a fødselsnummer after a percent-escape that ends in a digit") {
+                "q=%20$FNR".maskFnrInUrl() shouldBe "q= ***********"
+                "q=%22$FNR%22".maskFnrInUrl() shouldBe "q=\"***********\""
+            }
+
+            it("stops at the end of the path segment") {
+                "/api/lookup/fastlege-for:$FNR/x?y=1".maskFnrInUrl() shouldBe
+                    "/api/lookup/fastlege-for:***********/x?y=1"
+            }
+
+            it("masks a fødselsnummer elsewhere in the URL") {
+                "/api/messages/out/$FNR/statuses".maskFnrInUrl() shouldBe "/api/messages/out/***********/statuses"
+                "fnr=$FNR&x=1".maskFnrInUrl() shouldBe "fnr=***********&x=1"
+            }
+
+            it("leaves a URL without a fødselsnummer as it is, also when it is percent-encoded") {
+                listOf("/nhn-adapter/api/lookup/her-id:8143143", "/api/lookup/her-id%3A8143143", "/a%2Fb%").forEach {
+                    it.maskFnrInUrl() shouldBe it
+                }
+            }
+        }
+
         describe("FnrMaskingLogstashEncoder") {
             val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
             val encoder =

@@ -70,7 +70,7 @@ Alle pakkane ligg under `no.difi.meldingsutveksling.nhn.adapter`.
 | `integration.IntegrationBeans`    | Opprettar klientane frå KS Fiks-biblioteka (AR, FLR, MSH, HelseID).                                            |
 | `security`                        | Spring Security-oppsett, `ClientContext` (claims frå Maskinporten-tokenet) og tilgangskontroll (`SecurityService`). |
 | `audit`                           | Auditlogging av API-kall og pseudonymisering av fødselsnummer i auditloggen (`IdentifierPseudonymizer`).       |
-| `logging`                         | Maskering av fødselsnummer i applikasjonsloggen (`FnrMaskingLogstashEncoder`).                                 |
+| `logging`                         | Maskering av fødselsnummer i applikasjonsloggen (`FnrMaskingLogstashEncoder`) og i spora til OpenTelemetry (`SpanUrlMasking`). |
 | `messages`                        | Forretningsmeldingane som ligg i SBD-en (`dialogmelding`, `dialogmelding_kvittering`).                         |
 | `config`                          | Konfigurasjonsklassar og codec-/Jackson-oppsett.                                                               |
 | `extensions`                      | Kotlin extension-funksjonar for request, response, SBD, sertifikat osv.                                        |
@@ -493,6 +493,46 @@ Fødselsnummer skal ikkje stå i klartekst i nokon logg:
 - Feilmeldingar i auditloggen og alle verdiar i applikasjonsloggen, også stacktracar, får frittståande tal på 11 siffer
   bytt ut med `***********`.
 - `NhnErrorFilter` loggar rutemønsteret (t.d. `GET /api/lookup/{identifier}`), ikkje den rå stien.
+- I spora til OpenTelemetry er fødselsnummeret i URL-en maskert, sjå under.
+
+### OpenTelemetry
+
+OpenTelemetry-operatoren injiserer Java-agenten (`autoinstrumentation-java:2.15.0`) i adapteret i alle miljø
+(`instrumentation.opentelemetry.io/inject-java` i `eformidling-cd`). Adapteret brukar han berre til `traceId` i
+feilsvara. Kva agenten sender, er styrt av `Instrumentation`-ressursen i namespacet i `eformidling-cd`. Slik er
+oppsettet per 2026-11-19:
+
+| Miljø  | Spor (`OTEL_TRACES_EXPORTER`) | Loggar (`OTEL_LOGS_EXPORTER`) | Metrikkar (`OTEL_METRICS_EXPORTER`) |
+|--------|-------------------------------|-------------------------------|-------------------------------------|
+| `dev`  | `otlp`, til Tempo             | `none`                        | `none`                              |
+| `test` | `otlp`, til Tempo             | `none`                        | `none`                              |
+| `prod` | `none`                        | `none`                        | `none`                              |
+
+Eit spor frå adapteret har eit server-span per førespurnad og eit klient-span per kall ut (AR, FLR, HelseID, MSH og
+nøklane til Maskinporten). Spannamnet er rutemønsteret, t.d. `GET /api/lookup/{identifier}`. Server-spanet har
+`http.request.method`, `http.route`, `http.response.status_code`, `url.path`, `url.scheme`, `server.address`,
+`server.port`, `client.address`, `network.peer.address`, `network.peer.port`, `network.protocol.version` og
+`user_agent.original`. Klient-spanet har `url.full`, metode og status. Agenten tek ikkje med innhald, og ingen andre
+headerar. Fødselsnummeret til FLR ligg i SOAP-innhaldet, ikkje i URL-en.
+
+Fødselsnummer i spor og loggar til OpenTelemetry:
+
+- Agenten set `url.path` til den rå stien, t.d. `/nhn-adapter/api/lookup/fastlege-for:<fnr>`. `SpanUrlMasking` skriv
+  over `url.path` og `url.query` på server-spanet. URL-en vert prosent-dekoda, og heile verdien etter `fastlege-for:`
+  og frittståande tal på 11 siffer vert bytte ut med `***********`. `SpanUrlMasking` ligg i Reactor Netty og ser kvar
+  førespurnad før Spring, så det gjeld òg førespurnader utanfor `/nhn-adapter`, med ein URL som Spring ikkje kan
+  tolke, som Spring Security avviser eller som ikkje treff nokon rute.
+- Agenten hentar loggmeldingane frå logback før `FnrMaskingLogstashEncoder` maskerer dei. Med ein loggeksportør ville
+  `exception.message` og `exception.stacktrace` gått umaskerte til backenden. `OTEL_LOGS_EXPORTER` må difor vere
+  `none` for adapteret, eller så må `OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false` vere sett.
+- Klienten har sitt eige spor av kallet, med heile URL-en i `url.full`. Fødselsnummeret der må klienten maskere sjølv.
+
+Dette er stadfesta ved å køyre adapteret lokalt med agent 2.15.0 og `logging`-eksportøren. I Tempo skal denne
+TraceQL-spørjinga ikkje gi treff (ho fangar òg andre tal på 11 siffer, så eit treff må sjekkast):
+
+```
+{ resource.service.name = "efm-nhn-adapter" && (span.url.path =~ ".*[0-9]{11}.*" || span.url.query =~ ".*[0-9]{11}.*") }
+```
 
 ## Caser
 
