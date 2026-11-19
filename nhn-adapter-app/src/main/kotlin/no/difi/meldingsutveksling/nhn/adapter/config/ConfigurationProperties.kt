@@ -40,7 +40,16 @@ data class LimitsConfig(
 
 data class SecurityConfig(val trustedIssuers: List<String>, val delegationSource: String)
 
-data class TempFileConfig(val threshold: Int, val initialBufferSize: Int, val directory: File?)
+/**
+ * [threshold], [initialBufferSize] and [directory] are for the dokumentpakke while it is handled. A multipart part on
+ * disk older than [multipartMaxAge] is deleted by [no.difi.meldingsutveksling.nhn.adapter.MultipartTempFileSweeper].
+ */
+data class TempFileConfig(
+    val threshold: Int,
+    val initialBufferSize: Int,
+    val directory: File?,
+    val multipartMaxAge: Duration,
+)
 
 data class CertificateConfig(val mode: String)
 

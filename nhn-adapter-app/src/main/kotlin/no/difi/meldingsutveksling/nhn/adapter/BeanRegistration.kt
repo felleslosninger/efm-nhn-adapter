@@ -6,6 +6,7 @@ import io.swagger.v3.oas.models.info.Info
 import io.swagger.v3.oas.models.security.SecurityRequirement
 import io.swagger.v3.oas.models.security.SecurityScheme
 import io.swagger.v3.oas.models.servers.Server
+import java.nio.file.Path
 import no.difi.certvalidator.BusinessCertificateValidatorFactory
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.IdentifierPseudonymizer
@@ -58,6 +59,7 @@ private object PropertyPrefixes {
 
 private const val SERVICES_AR_URL = "nhn.services.ar.url"
 private const val SERVICES_MSH_URL = "nhn.services.msh.url"
+private const val MULTIPART_FILE_STORAGE_DIRECTORY = "spring.webflux.multipart.file-storage-directory"
 
 private const val OPENAPI_SECURITY_SCHEME = "maskinporten"
 
@@ -126,6 +128,12 @@ private fun services() = BeanRegistrarDsl {
     registerBean { LargeSendLimiter(bean()) }
     // Picked up by Spring's WebHttpHandlerBuilder, which wraps the server's HttpHandler with it
     registerBean { RequestBodyLimit(bean<LimitsConfig>().maxRequestSize) }
+    registerBean {
+        MultipartTempFileSweeper(
+            Path.of(env.getRequiredProperty(MULTIPART_FILE_STORAGE_DIRECTORY)),
+            bean<TempFileConfig>().multipartMaxAge,
+        )
+    }
 }
 
 private fun handlers() = BeanRegistrarDsl {

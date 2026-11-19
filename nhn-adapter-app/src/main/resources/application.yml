@@ -15,6 +15,8 @@ spring:
       # The whole request is limited by limits.max-request-size, also when it is chunked
       max-disk-usage-per-part: 50MB
       max-parts: 10
+      # Swept for files left behind by MultipartTempFileSweeper, see temp.multipart-max-age
+      file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart
   http:
     codecs:
       max-in-memory-size: 50MB
@@ -116,6 +118,9 @@ logging:
 temp:
   threshold: 10000000
   initial-buffer-size: 100000
+  # A multipart part on disk older than this was left behind by a failed request, and is deleted. Far above the time a
+  # request keeps its parts: limits.max-upload-time, limits.large-send-max-wait and the timeouts against NHN.
+  multipart-max-age: 1h
 
 springdoc:
   api-docs:

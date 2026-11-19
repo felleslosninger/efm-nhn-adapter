@@ -183,6 +183,7 @@ class NhnAdapterApiIT(
     @MockkBean private val mshInternalClient: MshInternalClient,
     private val parcelService: ParcelService,
     private val largeSendLimiter: LargeSendLimiter,
+    private val multipartTempFileSweeper: MultipartTempFileSweeper,
     private val keystoreHelper: KeystoreHelper,
     private val jsonMapper: JsonMapper,
     private val applicationContext: ApplicationContext,
@@ -214,6 +215,10 @@ class NhnAdapterApiIT(
 
         fun signAndEncrypt(payload: String): String =
             parcelService.signAndEncrypt(payload, keystoreHelper.x509Certificate)
+
+        /** The files in spring.webflux.multipart.file-storage-directory, where Spring stores multipart parts. */
+        fun multipartTempFiles(): Set<Path> =
+            Files.list(multipartTempFileSweeper.directory).use { files -> files.toList().toSet() }
 
         fun dokumentpakke(
             hoveddokument: ByteArray = dialogmeldingXml,
@@ -940,7 +945,14 @@ class NhnAdapterApiIT(
             }
 
             it("deletes the temporary files of a chunked request when it is done") {
-                coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns UUID.randomUUID()
+                // The files on disk while the message is sent, which shows that they are stored
+                // where MultipartTempFileSweeper looks
+                var filesWhileSending = emptySet<Path>()
+                coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } answers
+                    {
+                        filesWhileSending = multipartTempFiles()
+                        UUID.randomUUID()
+                    }
                 // Above spring.webflux.multipart.max-in-memory-size in the test configuration, so
                 // that
                 // the part is stored on disk, and below limits.max-request-size
@@ -964,6 +976,7 @@ class NhnAdapterApiIT(
                     .expectStatus()
                     .isOk
 
+                (filesWhileSending - filesBefore).shouldNotBeEmpty()
                 (multipartTempFiles() - filesBefore).shouldBeEmpty()
             }
 
@@ -1465,13 +1478,3 @@ private fun readMultipart(contentType: MediaType, body: ByteArray): Map<String, 
 
 private fun readResource(path: String): ByteArray =
     NhnAdapterApiIT::class.java.getResourceAsStream(path)!!.use { it.readAllBytes() }
-
-/** The files in Spring's temporary directories for multipart parts, which are named spring-multipart-<random>. */
-private fun multipartTempFiles(): Set<Path> =
-    Files.list(Path.of(System.getProperty("java.io.tmpdir"))).use { entries ->
-        entries
-            .filter { it.fileName.toString().startsWith("spring-multipart-") && Files.isDirectory(it) }
-            .toList()
-            .flatMap { directory -> Files.list(directory).use { it.toList() } }
-            .toSet()
-    }

@@ -9,6 +9,7 @@ spring:
   webflux:
     multipart:
       max-in-memory-size: 256KB
+      file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart-test
 
 digdir:
   audit:
@@ -23,6 +24,7 @@ security:
 temp:
   threshold: 10000000
   initial-buffer-size: 100000
+  multipart-max-age: 1h
 
 certificate:
   mode: SELF_SIGNED
