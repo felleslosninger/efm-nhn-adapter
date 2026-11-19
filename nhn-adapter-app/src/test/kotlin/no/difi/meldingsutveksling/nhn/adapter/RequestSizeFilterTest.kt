@@ -6,9 +6,10 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.longs.shouldBeLessThanOrEqual
-import io.kotest.matchers.shouldBe
 import java.util.concurrent.atomic.AtomicLong
+import no.difi.meldingsutveksling.nhn.adapter.errors.RequestTooLargeException
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DataBufferUtils
@@ -34,6 +35,9 @@ private const val BOUNDARY = "chunked-boundary"
 
 class RequestSizeFilterTest :
     DescribeSpec({
+        // As main() does at startup
+        beforeSpec { logDroppedRequestTooLargeErrorsAtDebug() }
+
         // Filtered as in RoutesConfiguration. The builder's filter() would apply the filters in the
         // opposite order. The handler reads the whole body, as OutHandler does, and answers with
         // the size of each multipart part. RequestBodyLimit wraps the server, as in the
@@ -117,7 +121,8 @@ class RequestSizeFilterTest :
         }
 
         describe("dropped errors") {
-            // Where Reactor logs a dropped error by default
+            // Where Reactor logs a dropped error by default. Other specs run at the same time, and
+            // may log here too.
             val operatorsLog = LoggerFactory.getLogger(Operators::class.java) as Logger
             val events = ListAppender<ILoggingEvent>()
 
@@ -129,7 +134,10 @@ class RequestSizeFilterTest :
 
             afterEach { operatorsLog.detachAppender(events) }
 
-            fun errors() = events.list.filter { it.level == Level.ERROR }
+            fun errors() =
+                events.list
+                    .filter { it.level == Level.ERROR }
+                    .map { it.throwableProxy.className to it.throwableProxy.message }
 
             it("logs no error for a too large chunked request, which is already answered with 413") {
                 // Spring's multipart parser hands the error from the body on twice, and Reactor
@@ -138,13 +146,19 @@ class RequestSizeFilterTest :
                     .expectStatus()
                     .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
 
-                errors().shouldBeEmpty()
+                errors()
+                    .filter { (className) -> className == RequestTooLargeException::class.java.name }
+                    .shouldBeEmpty()
             }
 
             it("still logs any other dropped error") {
-                Operators.onErrorDropped(IllegalStateException("Dropped"), Context.empty())
+                // Without a stack trace, which would only clutter the build log
+                val dropped =
+                    IllegalStateException("Dropped by RequestSizeFilterTest").apply { stackTrace = emptyArray() }
 
-                errors().map { it.throwableProxy.message } shouldBe listOf("Dropped")
+                Operators.onErrorDropped(dropped, Context.empty())
+
+                errors() shouldContain (IllegalStateException::class.java.name to dropped.message)
             }
         }
     })

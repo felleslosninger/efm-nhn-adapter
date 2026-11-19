@@ -42,7 +42,7 @@ private const val READ_AHEAD = 64 * 1024
  */
 class RequestBodyLimitOverHttpTest :
     DescribeSpec({
-        // The bytes that got past RequestBodyLimit to the exchange
+        // The bytes that RequestBodyLimit took from Netty
         val received = AtomicLong()
 
         val router =
@@ -54,14 +54,11 @@ class RequestBodyLimitOverHttpTest :
                 // Filtered as in RoutesConfiguration
                 .filter(requestSizeFilter(MAX_SIZE))
                 .filter(nhnErrorFilter())
-        val counting = RouterFunctions.toHttpHandler(router).countingBodyInto(received)
-        // As the application's WebHttpHandlerBuilder does with the RequestBodyLimit bean
-        val server =
-            HttpServer.create()
-                .host("localhost")
-                .port(0)
-                .handle(ReactorHttpHandlerAdapter(RequestBodyLimit(MAX_SIZE).apply(counting)))
-                .bindNow()
+        // Wrapped with RequestBodyLimit as the application's WebHttpHandlerBuilder does with the
+        // bean, and counted outside it, where the body comes from Netty
+        val handler =
+            RequestBodyLimit(MAX_SIZE).apply(RouterFunctions.toHttpHandler(router)).countingBodyInto(received)
+        val server = HttpServer.create().host("localhost").port(0).handle(ReactorHttpHandlerAdapter(handler)).bindNow()
         val url = "http://localhost:${server.port()}${ApiPaths.OUTGOING_MESSAGES}"
         val contentType = "multipart/form-data;boundary=$BOUNDARY"
         val tooLargeBody = partHeader + ByteArray(16 * MAX_SIZE.toBytes().toInt())
@@ -127,7 +124,10 @@ private fun chunked(body: ByteArray): Flux<DataBuffer> =
         DefaultDataBufferFactory.sharedInstance.wrap(body.copyOfRange(from, minOf(from + CHUNK, body.size)))
     }
 
-/** Counts the bytes of the request bodies that this handler reads. */
+/**
+ * Counts the bytes of the request bodies that this handler reads. Netty throws away the rest of a body after the
+ * answer, without it being read here.
+ */
 private fun HttpHandler.countingBodyInto(counter: AtomicLong): HttpHandler = HttpHandler { request, response ->
     val counted =
         object : ServerHttpRequestDecorator(request) {

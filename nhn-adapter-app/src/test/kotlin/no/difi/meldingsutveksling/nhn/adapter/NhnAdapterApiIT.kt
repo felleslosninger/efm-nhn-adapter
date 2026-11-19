@@ -30,6 +30,7 @@ import java.time.OffsetDateTime
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.random.Random
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -857,6 +858,34 @@ class NhnAdapterApiIT(
                             .expectStatus()
                             .isOk
                     }
+                }
+            }
+
+            describe("with a Content-Length above limits.large-send-threshold") {
+                it("waits for a permit before the request is read") {
+                    // Random bytes do not compress, so the request is above the threshold of 1MB
+                    // and
+                    // below limits.max-request-size of 2MB
+                    val vedlegg =
+                        listOf(
+                            Attachment(
+                                "vedlegg.bin",
+                                ByteArrayResource(Random(0).nextBytes(DataSize.ofKilobytes(1500).toBytes().toInt())),
+                                MimeType.valueOf("application/octet-stream"),
+                            )
+                        )
+                    val dokumentpakke = dokumentpakke(vedlegg = vedlegg)
+
+                    withAllPermitsHeld {
+                        sendOutgoingWithContentLength(
+                                dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()),
+                                dokumentpakke,
+                            )
+                            .expectStatus()
+                            .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                    }
+
+                    coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
                 }
             }
 

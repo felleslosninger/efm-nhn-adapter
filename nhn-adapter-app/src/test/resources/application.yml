@@ -34,7 +34,9 @@ limits:
   # 50MB in production, see the comment on spring.webflux.multipart
   max-request-size: 2MB
   max-dokumentpakke-files: 100
-  large-send-threshold: 5MB
+  # 5MB in production. Below max-request-size, as there, so that a request with a Content-Length can be large enough
+  # to wait for a permit
+  large-send-threshold: 1MB
   max-concurrent-large-sends: 4
   large-send-max-wait: 1s
   max-upload-time: 1s
