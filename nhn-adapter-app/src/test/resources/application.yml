@@ -3,6 +3,14 @@
 external:
   base-url: "http://external.invalid"
 
+# The limits are small, so that the tests of large chunked requests send little data and finish well within
+# limits.max-upload-time. A part above max-in-memory-size is stored on disk, as in production.
+spring:
+  webflux:
+    multipart:
+      max-in-memory-size: 256KB
+      file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart-test
+
 digdir:
   audit:
     application-name: nhn-adapter-test
@@ -16,6 +24,7 @@ security:
 temp:
   threshold: 10000000
   initial-buffer-size: 100000
+  multipart-max-age: 1h
 
 certificate:
   mode: SELF_SIGNED
@@ -24,9 +33,12 @@ audit:
   pseudonymization-key: "test-pseudonymization-key-of-at-least-32-characters"
 
 limits:
-  max-request-size: 50MB
+  # 50MB in production, see the comment on spring.webflux.multipart
+  max-request-size: 2MB
   max-dokumentpakke-files: 100
-  large-send-threshold: 5MB
+  # 5MB in production. Below max-request-size, as there, so that a request with a Content-Length can be large enough
+  # to wait for a permit
+  large-send-threshold: 1MB
   max-concurrent-large-sends: 4
   large-send-max-wait: 1s
   max-upload-time: 1s

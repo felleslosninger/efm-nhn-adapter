@@ -6,5 +6,6 @@ import org.springframework.boot.runApplication
 @SpringBootApplication class Main
 
 fun main(args: Array<String>) {
+    logDroppedRequestTooLargeErrorsAtDebug()
     runApplication<Main>(*args)
 }

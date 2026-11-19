@@ -23,11 +23,11 @@ data class MshTimeoutConfig(val connect: Duration, val read: Duration, val reque
 /**
  * Limits on what a client may send, so that a few requests cannot use up the adapter's memory.
  *
- * [maxRequestSize] is checked against `Content-Length` before the body is read. [maxDokumentpakkeFiles] limits the
- * number of files in a decrypted dokumentpakke. A send with a request or unpacked dokumentpakke above
- * [largeSendThreshold] is held in memory several times over while the message to MSH is built, so at most
- * [maxConcurrentLargeSends] of them run at a time, and one waits at most [largeSendMaxWait] for its turn. A client has
- * [maxUploadTime] to send the whole request.
+ * [maxRequestSize] is checked against `Content-Length` before the body is read, or, for a chunked request, against the
+ * bytes received while it is read. [maxDokumentpakkeFiles] limits the number of files in a decrypted dokumentpakke. A
+ * send with a request or unpacked dokumentpakke above [largeSendThreshold] is held in memory several times over while
+ * the message to MSH is built, so at most [maxConcurrentLargeSends] of them run at a time, and one waits at most
+ * [largeSendMaxWait] for its turn. A client has [maxUploadTime] to send the whole request.
  */
 data class LimitsConfig(
     val maxRequestSize: DataSize,
@@ -40,7 +40,16 @@ data class LimitsConfig(
 
 data class SecurityConfig(val trustedIssuers: List<String>, val delegationSource: String)
 
-data class TempFileConfig(val threshold: Int, val initialBufferSize: Int, val directory: File?)
+/**
+ * [threshold], [initialBufferSize] and [directory] are for the dokumentpakke while it is handled. A multipart part on
+ * disk older than [multipartMaxAge] is deleted by [no.difi.meldingsutveksling.nhn.adapter.MultipartTempFileSweeper].
+ */
+data class TempFileConfig(
+    val threshold: Int,
+    val initialBufferSize: Int,
+    val directory: File?,
+    val multipartMaxAge: Duration,
+)
 
 data class CertificateConfig(val mode: String)
 

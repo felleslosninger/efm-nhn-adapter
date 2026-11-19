@@ -12,9 +12,11 @@ spring:
     multipart:
       # A larger part is buffered on disk, like the dokumentpakke later on (temp.threshold)
       max-in-memory-size: 10MB
-      # Limits a chunked request, which has no Content-Length for limits.max-request-size to check
+      # The whole request is limited by limits.max-request-size, also when it is chunked
       max-disk-usage-per-part: 50MB
       max-parts: 10
+      # Swept for files left behind by MultipartTempFileSweeper, see temp.multipart-max-age
+      file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart
   http:
     codecs:
       max-in-memory-size: 50MB
@@ -84,7 +86,8 @@ oauth2:
       read: 15s
 
 limits:
-  # MSH accepts at most 50 MB, so a larger request can never be sent. Checked against Content-Length.
+  # MSH accepts at most 50 MB, so a larger request can never be sent. Checked against Content-Length, or, for a chunked
+  # request, against the bytes received.
   max-request-size: 50MB
   max-dokumentpakke-files: 100
   # Sends of requests or unpacked dokumentpakker above the threshold are held in memory several times over, and are
@@ -115,6 +118,9 @@ logging:
 temp:
   threshold: 10000000
   initial-buffer-size: 100000
+  # A multipart part on disk older than this was left behind by a failed request, and is deleted. Far above the time a
+  # request keeps its parts: limits.max-upload-time, limits.large-send-max-wait and the timeouts against NHN.
+  multipart-max-age: 1h
 
 springdoc:
   api-docs:

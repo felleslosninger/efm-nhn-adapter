@@ -5,10 +5,12 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.ninjasquad.springmockk.MockkBean
 import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldNotBeIn
+import io.kotest.matchers.longs.shouldBeLessThanOrEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -22,9 +24,13 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.OffsetDateTime
 import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.random.Random
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -177,6 +183,7 @@ class NhnAdapterApiIT(
     @MockkBean private val mshInternalClient: MshInternalClient,
     private val parcelService: ParcelService,
     private val largeSendLimiter: LargeSendLimiter,
+    private val multipartTempFileSweeper: MultipartTempFileSweeper,
     private val keystoreHelper: KeystoreHelper,
     private val jsonMapper: JsonMapper,
     private val applicationContext: ApplicationContext,
@@ -208,6 +215,10 @@ class NhnAdapterApiIT(
 
         fun signAndEncrypt(payload: String): String =
             parcelService.signAndEncrypt(payload, keystoreHelper.x509Certificate)
+
+        /** The files in spring.webflux.multipart.file-storage-directory, where Spring stores multipart parts. */
+        fun multipartTempFiles(): Set<Path> =
+            Files.list(multipartTempFileSweeper.directory).use { files -> files.toList().toSet() }
 
         fun dokumentpakke(
             hoveddokument: ByteArray = dialogmeldingXml,
@@ -855,6 +866,34 @@ class NhnAdapterApiIT(
                 }
             }
 
+            describe("with a Content-Length above limits.large-send-threshold") {
+                it("waits for a permit before the request is read") {
+                    // Random bytes do not compress, so the request is above the threshold of 1MB
+                    // and
+                    // below limits.max-request-size of 2MB
+                    val vedlegg =
+                        listOf(
+                            Attachment(
+                                "vedlegg.bin",
+                                ByteArrayResource(Random(0).nextBytes(DataSize.ofKilobytes(1500).toBytes().toInt())),
+                                MimeType.valueOf("application/octet-stream"),
+                            )
+                        )
+                    val dokumentpakke = dokumentpakke(vedlegg = vedlegg)
+
+                    withAllPermitsHeld {
+                        sendOutgoingWithContentLength(
+                                dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()),
+                                dokumentpakke,
+                            )
+                            .expectStatus()
+                            .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+                    }
+
+                    coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+                }
+            }
+
             it("returns 408 when the request is not received within limits.max-upload-time") {
                 client()
                     .post()
@@ -866,6 +905,79 @@ class NhnAdapterApiIT(
                     .isEqualTo(HttpStatus.REQUEST_TIMEOUT)
 
                 coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("returns 413 and sends nothing when a chunked request exceeds limits.max-request-size") {
+                // Without a Content-Length, and with each part below the max size
+                val maxRequestSize = DataSize.ofMegabytes(2) // limits.max-request-size in the test configuration
+                val boundary = "chunked"
+                val chunk = DataSize.ofKilobytes(256).toBytes().toInt()
+                fun part(name: String, chunks: Int): Flux<ByteArray> =
+                    Flux.just(
+                            ("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"; filename=\"$name\"\r\n" +
+                                    "Content-Type: application/octet-stream\r\n\r\n")
+                                .toByteArray()
+                        )
+                        .concatWith(Flux.range(0, chunks).map { ByteArray(chunk) })
+                        .concatWith(Flux.just("\r\n".toByteArray()))
+                val sent = AtomicLong()
+                val body =
+                    part(MultipartNames.FORRETNINGSMELDING, 6)
+                        .concatWith(part(MultipartNames.DOKUMENTPAKKE, 6))
+                        .concatWith(Flux.just("--$boundary--\r\n".toByteArray()))
+                        .doOnNext { sent.addAndGet(it.size.toLong()) }
+
+                client()
+                    .post()
+                    .uri("/api/messages/out")
+                    .contentType(MediaType.parseMediaType("multipart/form-data;boundary=$boundary"))
+                    .body(body, ByteArray::class.java)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
+                    .expectBody()
+                    .jsonPath("$.details")
+                    .isEqualTo("The request exceeds the max size of ${maxRequestSize.toBytes()} bytes")
+
+                // The max size, and the chunk that passed it
+                sent.get() shouldBeLessThanOrEqual maxRequestSize.toBytes() + chunk
+                coVerify(exactly = 0) { mshInternalClient.postMessage(any(), any()) }
+            }
+
+            it("deletes the temporary files of a chunked request when it is done") {
+                // The files on disk while the message is sent, which shows that they are stored
+                // where MultipartTempFileSweeper looks
+                var filesWhileSending = emptySet<Path>()
+                coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } answers
+                    {
+                        filesWhileSending = multipartTempFiles()
+                        UUID.randomUUID()
+                    }
+                // Above spring.webflux.multipart.max-in-memory-size in the test configuration, so
+                // that
+                // the part is stored on disk, and below limits.max-request-size
+                val body =
+                    MultipartBodyBuilder()
+                        .apply {
+                            outgoingMessage(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke())
+                                .forEach { (name, parts) -> parts.forEach { part(name, it) } }
+                            part("padding", ByteArrayResource(ByteArray(DataSize.ofMegabytes(1).toBytes().toInt())))
+                                .filename("padding.bin")
+                        }
+                        .build()
+                val filesBefore = multipartTempFiles()
+
+                client()
+                    .post()
+                    .uri("/api/messages/out")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(BodyInserters.fromMultipartData(body))
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                (filesWhileSending - filesBefore).shouldNotBeEmpty()
+                (multipartTempFiles() - filesBefore).shouldBeEmpty()
             }
 
             it("returns 413 and sends nothing when the dokumentpakke unpacks to more than the max size") {
