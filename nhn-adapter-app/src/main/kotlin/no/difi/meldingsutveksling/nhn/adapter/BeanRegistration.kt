@@ -26,6 +26,7 @@ import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
+import no.difi.meldingsutveksling.nhn.adapter.logging.SpanUrlMasking
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper
@@ -128,6 +129,8 @@ private fun services() = BeanRegistrarDsl {
     registerBean { LargeSendLimiter(bean()) }
     // Picked up by Spring's WebHttpHandlerBuilder, which wraps the server's HttpHandler with it
     registerBean { RequestBodyLimit(bean<LimitsConfig>().maxRequestSize) }
+    // Applied to the Netty server by Spring Boot: masks the fødselsnummer in traces
+    registerBean { SpanUrlMasking() }
     registerBean {
         MultipartTempFileSweeper(
             Path.of(env.getRequiredProperty(MULTIPART_FILE_STORAGE_DIRECTORY)),

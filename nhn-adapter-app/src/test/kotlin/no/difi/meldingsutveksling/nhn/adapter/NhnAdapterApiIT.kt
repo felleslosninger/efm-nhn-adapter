@@ -61,6 +61,7 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentSe
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.SendMessageInput
 import no.difi.meldingsutveksling.nhn.adapter.logging.FnrMaskingLogstashEncoder
+import no.difi.meldingsutveksling.nhn.adapter.logging.SpanUrlMasking
 import no.difi.meldingsutveksling.nhn.adapter.messages.AttachmentMetadata
 import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
@@ -96,6 +97,7 @@ import no.nhn.msh.v2.model.Message as NhnMessage
 import no.nhn.msh.v2.model.PostAppRecRequest
 import no.nhn.msh.v2.model.PostMessageRequest
 import org.slf4j.LoggerFactory
+import org.springframework.boot.reactor.netty.NettyServerCustomizer
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.core.ResolvableType
@@ -573,6 +575,17 @@ class NhnAdapterApiIT(
                     }
 
                 fun lookup(identifier: String) = client().get().uri("/api/lookup/$identifier").exchange()
+
+                // The trace is only there with the OpenTelemetry Java agent, see
+                // SpanUrlMaskingTest. Spring Boot
+                // applies every NettyServerCustomizer bean to the server.
+                it("registers SpanUrlMasking as a customizer of the Netty server") {
+                    applicationContext
+                        .getBeansOfType(NettyServerCustomizer::class.java)
+                        .values
+                        .filterIsInstance<SpanUrlMasking>()
+                        .shouldNotBeEmpty()
+                }
 
                 it("pseudonymizes the fødselsnummer in the audit log") {
                     every { fastlegeregisteretClient.getPatientGP(PASIENT_FNR) } returns
