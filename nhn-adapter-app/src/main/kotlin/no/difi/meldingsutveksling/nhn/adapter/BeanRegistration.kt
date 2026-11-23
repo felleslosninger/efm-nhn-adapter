@@ -36,6 +36,7 @@ import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.boot.info.BuildProperties
 import org.springframework.boot.io.ApplicationResourceLoader
 import org.springframework.core.env.Environment
 import org.springframework.core.io.ResourceLoader
@@ -95,16 +96,18 @@ private fun integrations() = BeanRegistrarDsl {
     }
     registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(BeanNames.FLR_CONFIG)) }
     registerBean { AdresseregisteretService(bean(), bean()) }
-    registerBean { IntegrationBeans.mshClient(bean()) }
+    registerBean { IntegrationBeans.applicationMetadata(beanProvider<BuildProperties>().ifAvailable?.version) }
+    registerBean { IntegrationBeans.mshClient(bean(), bean()) }
     registerBean {
         IntegrationBeans.mshInternalClient(
+            bean(),
             bean(),
             bean(),
             env.getRequiredProperty(SERVICES_MSH_URL),
             env.bindRequired(PropertyPrefixes.NHN_SERVICE_MSH_TIMEOUT),
         )
     }
-    registerBean { IntegrationBeans.mshService(bean(), bean()) }
+    registerBean { IntegrationBeans.mshService(bean(), bean(), bean()) }
 }
 
 private fun services() = BeanRegistrarDsl {

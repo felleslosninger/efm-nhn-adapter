@@ -8,10 +8,13 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.Runs
 import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import java.util.Base64
@@ -28,9 +31,13 @@ import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.move.common.dokumentpakking.domain.Document
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.OrganizationIdType
+import no.ks.fiks.nhn.msh.ApplicationMetadata
 import no.ks.fiks.nhn.msh.Client
+import no.ks.fiks.nhn.msh.GetStatusResponse
+import no.ks.fiks.nhn.msh.MessageWithMetadata
 import no.ks.fiks.nhn.msh.MshInternalClient
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
+import no.ks.fiks.nhn.msh.NotificationType
 import no.ks.fiks.nhn.msh.OrganizationCommunicationParty
 import no.ks.fiks.nhn.msh.OrganizationId
 import no.ks.fiks.nhn.msh.Patient
@@ -38,11 +45,12 @@ import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.Sender
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
-import no.nhn.msh.v2.model.AppRecStatus
-import no.nhn.msh.v2.model.GetBusinessDocumentResponse
-import no.nhn.msh.v2.model.Message as NhnMessage
-import no.nhn.msh.v2.model.PostAppRecRequest
-import no.nhn.msh.v2.model.PostMessageRequest
+import no.ks.fiks.nhn.msh.UnreadNotification
+import no.nhn.msh.v3.model.AppRecStatus
+import no.nhn.msh.v3.model.GetBusinessDocumentResponse
+import no.nhn.msh.v3.model.GetMessageResponse as NhnMessage
+import no.nhn.msh.v3.model.PostAppRecRequest
+import no.nhn.msh.v3.model.PostMessageRequest
 import org.springframework.core.io.ByteArrayResource
 
 private const val CONSUMER_ORG_NUMBER = "123456789"
@@ -53,7 +61,8 @@ class MshServiceTest :
     DescribeSpec({
         val mshClient = mockk<Client>()
         val internalClient = mockk<MshInternalClient>()
-        val mshService = MshService(mshClient, internalClient)
+        val applicationMetadata = ApplicationMetadata("efm-nhn-adapter", "1.2.3")
+        val mshService = MshService(mshClient, internalClient, applicationMetadata)
 
         fun clientContext(supplier: String? = null) =
             mockk<ClientContext>().also {
@@ -66,7 +75,8 @@ class MshServiceTest :
 
             it("uses a single-tenant HelseID token when the client acts on its own behalf") {
                 val requestParameters = slot<RequestParameters>()
-                coEvery { mshClient.getStatus(messageId, capture(requestParameters)) } returns emptyList()
+                coEvery { mshClient.getStatus(messageId.toString(), capture(requestParameters)) } returns
+                    GetStatusResponse(null)
 
                 mshService.getStatus(messageId, clientContext())
 
@@ -77,7 +87,8 @@ class MshServiceTest :
 
             it("uses a multi-tenant HelseID token for the consumer when the client acts through a supplier") {
                 val requestParameters = slot<RequestParameters>()
-                coEvery { mshClient.getStatus(messageId, capture(requestParameters)) } returns emptyList()
+                coEvery { mshClient.getStatus(messageId.toString(), capture(requestParameters)) } returns
+                    GetStatusResponse(null)
 
                 mshService.getStatus(messageId, clientContext(supplier = SUPPLIER_ORG_NUMBER))
 
@@ -89,19 +100,146 @@ class MshServiceTest :
             }
         }
 
+        fun notification(type: NotificationType, messageId: String?) =
+            UnreadNotification(
+                notificationId = UUID.randomUUID().toString(),
+                relatedMessageId = messageId,
+                type = type,
+                notificationReceiverHerId = SENDER_HER_ID,
+                notificationTriggeredByHerId = null,
+                description = null,
+                createdAt = null,
+            )
+
+        fun metadata(id: String) =
+            MessageWithMetadata(
+                id = id,
+                contentType = "application/xml",
+                receiverHerIds = listOf(SENDER_HER_ID),
+                senderHerId = 2000002,
+                businessDocumentId = UUID.randomUUID().toString(),
+                businessDocumentDate = null,
+                businessDocumentMsgType = "DIALOG_HELSEFAGLIG",
+            )
+
+        describe("getMessagesWithMetadata") {
+            beforeEach { clearMocks(mshClient) }
+
+            it("returns the messages the unread NewMessage notifications refer to, each once") {
+                val first = UUID.randomUUID().toString()
+                val second = UUID.randomUUID().toString()
+                coEvery { mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), any(), any()) } returns
+                    listOf(
+                        notification(NotificationType.NEW_MESSAGE, first),
+                        notification(NotificationType.NEW_MESSAGE, second),
+                        notification(NotificationType.NEW_MESSAGE, first),
+                    )
+                coEvery { mshClient.getMessage(any(), any()) } answers { metadata(firstArg()) }
+
+                mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext()).map { it.id } shouldBe
+                    listOf(first, second)
+
+                coVerify(exactly = 1) {
+                    mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), MAX_NOTIFICATIONS_TO_FETCH, any())
+                }
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("deletes the notifications about sent messages") {
+                val messageId = UUID.randomUUID().toString()
+                val others =
+                    listOf(
+                        notification(NotificationType.MESSAGE_SENT_STATE_UPDATED, UUID.randomUUID().toString()),
+                        notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, UUID.randomUUID().toString()),
+                        notification(NotificationType.MESSAGE_APPREC_INFO_UPDATED, UUID.randomUUID().toString()),
+                        notification(NotificationType.REFUSED_MESSAGE, null),
+                    )
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns
+                    others + notification(NotificationType.NEW_MESSAGE, messageId)
+                coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
+                coEvery { mshClient.getMessage(any(), any()) } answers { metadata(firstArg()) }
+
+                mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext()).map { it.id } shouldBe
+                    listOf(messageId)
+
+                coVerify(exactly = 1) { mshClient.deleteNotifications(others.map { it.notificationId }, any()) }
+            }
+
+            it("returns no messages when there are no unread notifications") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+
+                mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext()) shouldBe emptyList()
+
+                coVerify(exactly = 0) { mshClient.getMessage(any(), any()) }
+            }
+
+            it("reports a NewMessage notification without a message as invalid data from MSH") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns
+                    listOf(notification(NotificationType.NEW_MESSAGE, null))
+
+                shouldThrow<InvalidMshDataException> {
+                        mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext())
+                    }
+                    .message shouldContain "refers to no message"
+            }
+        }
+
+        describe("markMessageRead") {
+            val messageId = UUID.randomUUID()
+
+            beforeEach { clearMocks(mshClient) }
+
+            it("marks the message downloaded before deleting its NewMessage notifications") {
+                val newMessage = notification(NotificationType.NEW_MESSAGE, messageId.toString())
+                coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns
+                    listOf(
+                        newMessage,
+                        notification(NotificationType.NEW_MESSAGE, UUID.randomUUID().toString()),
+                        notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, messageId.toString()),
+                    )
+                coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
+
+                mshService.markMessageRead(messageId, SENDER_HER_ID, clientContext())
+
+                coVerifyOrder {
+                    mshClient.markMessageDownloaded(messageId.toString(), SENDER_HER_ID, any())
+                    mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), MAX_NOTIFICATIONS_TO_FETCH, any())
+                    mshClient.deleteNotifications(listOf(newMessage.notificationId), any())
+                }
+            }
+
+            it("deletes nothing when the notification is already deleted") {
+                coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+
+                mshService.markMessageRead(messageId, SENDER_HER_ID, clientContext())
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+        }
+
+        describe("getStatus") {
+            it("returns no statuses when MSH has none") {
+                coEvery { mshClient.getStatus(any(), any()) } returns GetStatusResponse(null)
+
+                mshService.getStatus(UUID.randomUUID(), clientContext()) shouldBe emptyList()
+            }
+        }
+
         describe("getSenderHerId") {
             val messageId = UUID.randomUUID()
 
             it("returns the sender when MSH leaves out metadata it does not need") {
-                coEvery { internalClient.getMessage(messageId, any()) } returns
-                    NhnMessage().id(messageId).senderHerId(SENDER_HER_ID)
+                coEvery { internalClient.getMessage(messageId.toString(), any()) } returns
+                    NhnMessage().id(messageId.toString()).senderHerId(SENDER_HER_ID)
 
                 mshService.getSenderHerId(messageId, clientContext()) shouldBe SENDER_HER_ID
             }
 
             it("reports a message without a sender as invalid data from MSH") {
-                coEvery { internalClient.getMessage(messageId, any()) } returns
-                    NhnMessage().id(messageId).receiverHerId(SENDER_HER_ID)
+                coEvery { internalClient.getMessage(messageId.toString(), any()) } returns
+                    NhnMessage().id(messageId.toString()).receiverHerIds(setOf(SENDER_HER_ID))
 
                 shouldThrow<InvalidMshDataException> { mshService.getSenderHerId(messageId, clientContext()) }
                     .message shouldContain "has no sender"
@@ -112,7 +250,7 @@ class MshServiceTest :
             val messageId = UUID.randomUUID()
 
             it("rejects an unsupported transfer encoding") {
-                coEvery { internalClient.getBusinessDocument(messageId, any()) } returns
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
                     GetBusinessDocumentResponse()
                         .contentType("application/xml")
                         .contentTransferEncoding("quoted-printable")
@@ -125,7 +263,7 @@ class MshServiceTest :
             }
 
             it("rejects an unsupported content type") {
-                coEvery { internalClient.getBusinessDocument(messageId, any()) } returns
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
                     GetBusinessDocumentResponse()
                         .contentType("application/json")
                         .contentTransferEncoding("base64")
@@ -138,7 +276,7 @@ class MshServiceTest :
             }
 
             it("reports a business document it cannot interpret as invalid data from MSH") {
-                coEvery { internalClient.getBusinessDocument(messageId, any()) } returns
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
                     GetBusinessDocumentResponse()
                         .contentType("application/xml")
                         .contentTransferEncoding("base64")
@@ -158,15 +296,17 @@ class MshServiceTest :
 
         describe("sendApplicationReceipt") {
             val relatedToMessageId = UUID.randomUUID()
-            val appRecId = UUID.randomUUID()
+            val appRecId = UUID.randomUUID().toString()
 
             suspend fun sendReceipt(receipt: DialogmeldingKvitteringMessage): PostAppRecRequest {
                 val request = slot<PostAppRecRequest>()
-                coEvery {
-                    internalClient.postAppRec(relatedToMessageId, SENDER_HER_ID, capture(request), any())
-                } returns appRecId
+                coEvery { internalClient.postAppRec(relatedToMessageId.toString(), capture(request), any()) } returns
+                    appRecId
 
                 mshService.sendApplicationReceipt(SENDER_HER_ID, receipt, clientContext()) shouldBe appRecId
+                request.captured.appRecSenderHerId shouldBe SENDER_HER_ID
+                request.captured.applicationName shouldBe "efm-nhn-adapter"
+                request.captured.applicationVersion shouldBe "1.2.3"
                 return request.captured
             }
 
@@ -256,7 +396,7 @@ class MshServiceTest :
 
             it("sends the business document Base64 encoded") {
                 val request = slot<PostMessageRequest>()
-                val mshMessageId = UUID.randomUUID()
+                val mshMessageId = UUID.randomUUID().toString()
                 coEvery { internalClient.postMessage(capture(request), any()) } returns mshMessageId
 
                 mshService.sendMessage(input(listOf(vedlegg("vedlegg.pdf", 10))), clientContext()) shouldBe
@@ -264,6 +404,20 @@ class MshServiceTest :
 
                 request.captured.contentTransferEncoding shouldBe "base64"
                 String(Base64.getDecoder().decode(request.captured.businessDocument)) shouldContain "MsgHead"
+                // The HER-ids of the children, which the message is addressed to
+                request.captured.senderHerId shouldBe 2000003
+                request.captured.receiverHerIds shouldBe listOf(1000002)
+                request.captured.messageTypeIdentificator shouldBe "DIALOG_HELSEFAGLIG"
+                request.captured.applicationName shouldBe "efm-nhn-adapter"
+                request.captured.applicationVersion shouldBe "1.2.3"
+            }
+
+            it("reports a message MSH gives no id as invalid data from MSH") {
+                coEvery { internalClient.postMessage(any(), any()) } returns null
+
+                shouldThrow<InvalidMshDataException> {
+                    mshService.sendMessage(input(listOf(vedlegg("vedlegg.pdf", 10))), clientContext())
+                }
             }
 
             it("rejects attachments that are each within the limits, but too large together once encoded") {

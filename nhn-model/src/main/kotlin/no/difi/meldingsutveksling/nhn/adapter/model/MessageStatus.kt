@@ -24,7 +24,8 @@ enum class ApplicationReceiptStatus(val value: String) {
 enum class TransportStatus(val value: String) {
     UNCONFIRMED("Unconfirmed"),
     ACKNOWLEDGED("Acknowledged"),
-    REJECTED("Rejected");
+    REJECTED("Rejected"),
+    ABANDONED("Abandoned");
 
     companion object {
         fun fromValue(value: String?): TransportStatus = entries.fromValue(value) { it.value }
@@ -34,8 +35,8 @@ enum class TransportStatus(val value: String) {
 fun StatusInfo.toMessageStatus(): MessageStatus =
     MessageStatus(
         receiverHerId = receiverHerId,
-        transportStatus = TransportStatus.fromValue(deliveryState.name),
-        apprecStatus = appRecStatus?.let { ApplicationReceiptStatus.fromValue(it.name) },
+        transportStatus = TransportStatus.fromValue(deliveryState.value),
+        apprecStatus = apprecInfo?.appRecStatus?.let { ApplicationReceiptStatus.fromValue(it.value) },
     )
 
 /**

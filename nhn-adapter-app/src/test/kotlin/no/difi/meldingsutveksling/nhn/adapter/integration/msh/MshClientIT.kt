@@ -1,6 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import com.github.tomakehurst.wiremock.WireMockServer
+import com.github.tomakehurst.wiremock.client.MappingBuilder
 import com.github.tomakehurst.wiremock.client.WireMock.aResponse
 import com.github.tomakehurst.wiremock.client.WireMock.containing
 import com.github.tomakehurst.wiremock.client.WireMock.equalTo
@@ -13,6 +14,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.put
 import com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
+import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
 import io.kotest.assertions.throwables.shouldThrow
@@ -27,6 +29,9 @@ import no.difi.meldingsutveksling.nhn.adapter.config.TimeoutConfig
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.stubHelseIdSts
+import no.difi.meldingsutveksling.nhn.adapter.model.TransportStatus
+import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.ks.fiks.helseid.Environment
 import no.ks.fiks.nhn.msh.AppRecStatus
@@ -36,15 +41,20 @@ import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MshException
 import no.ks.fiks.nhn.msh.MshInternalClient
+import no.ks.fiks.nhn.msh.NotificationType
 import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
-import no.nhn.msh.v2.model.PostAppRecRequest
-import no.nhn.msh.v2.model.PostMessageRequest
+import no.nhn.msh.v3.model.PostAppRecRequest
+import no.nhn.msh.v3.model.PostMessageRequest
+
+private const val SOURCE_SYSTEM = "efm-nhn-adapter 1.2.3"
+private const val DPOP_PROOF = "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
 
 class MshClientIT :
     DescribeSpec({
         val wireMockServer = WireMockServer(wireMockConfig().dynamicPort())
         val rsaJwk = RSAKeyGenerator(2048).keyID("test-key").generate().toJSONString()
+        val requestParams = RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
 
         lateinit var mshClient: Client
         lateinit var mshInternalClient: MshInternalClient
@@ -67,364 +77,226 @@ class MshClientIT :
 
             val timeout = TimeoutConfig(Duration.ofSeconds(5), Duration.ofSeconds(5))
             val helseIdClient = IntegrationBeans.helseIdClient(helseIdConfig, timeout)
+            val applicationMetadata = IntegrationBeans.applicationMetadata("1.2.3")
             mshInternalClient =
                 IntegrationBeans.mshInternalClient(
                     helseIdConfig,
                     helseIdClient,
+                    applicationMetadata,
                     wireMockServer.baseUrl(),
                     MshTimeoutConfig(timeout.connect, timeout.read, Duration.ofSeconds(10)),
                 )
-            mshClient = IntegrationBeans.mshClient(mshInternalClient)
-            mshService = IntegrationBeans.mshService(mshClient, mshInternalClient)
+            mshClient = IntegrationBeans.mshClient(mshInternalClient, applicationMetadata)
+            mshService = IntegrationBeans.mshService(mshClient, mshInternalClient, applicationMetadata)
         }
 
+        fun stubJson(mapping: MappingBuilder, body: String, status: Int = 200) {
+            wireMockServer.stubFor(
+                mapping.willReturn(
+                    aResponse().withStatus(status).withHeader("Content-Type", "application/json").withBody(body)
+                )
+            )
+        }
+
+        fun stubUnreadNotifications(vararg notifications: Pair<String, UUID?>) {
+            val items =
+                notifications.joinToString(",") { (type, messageId) ->
+                    """
+                    {
+                        "notificationId": "${UUID.randomUUID()}",
+                        "relatedMessageId": ${messageId?.let { "\"$it\"" }},
+                        "type": "$type",
+                        "notificationReceiverHerId": 12345,
+                        "createdAt": "2026-08-21T08:00:00+02:00"
+                    }
+                    """
+                }
+            stubJson(
+                get(urlPathEqualTo("/notifications/unread")).withQueryParam("HerIds", equalTo("12345")),
+                """{"unreadNotifications": [$items]}""",
+            )
+        }
+
+        fun messageJson(messageId: UUID, msgType: String = "DIALOG_HELSEFAGLIG") =
+            """
+            {
+                "id": "$messageId",
+                "contentType": "application/xml",
+                "receiverHerIds": [12345, 23456],
+                "senderHerId": 98765,
+                "businessDocumentId": "doc-uuid-1",
+                "businessDocumentGenDate": "2026-08-21T08:00:00+02:00",
+                "businessDocumentMsgType": "$msgType"
+            }
+            """
+                .trimIndent()
+
         describe("MshClient HTTP requests") {
-            it("getMessagesWithMetadata should send GET /Messages with query params and DPoP authorization headers") {
+            it("getUnreadNotifications should send GET /notifications/unread with API v3 and DPoP headers") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages?receiverHerIds=12345&includeMetadata=true"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    [
-                                        {
-                                            "id": "$messageId",
-                                            "contentType": "application/xml",
-                                            "receiverHerId": 12345,
-                                            "senderHerId": 98765,
-                                            "businessDocumentId": "doc-uuid-1",
-                                            "businessDocumentGenDate": "2026-08-21T08:00:00+02:00",
-                                            "isAppRec": false
-                                        }
-                                    ]
-                                    """
-                                        .trimIndent()
-                                )
-                        )
-                )
+                stubUnreadNotifications("NewMessage" to messageId, "MessageDeliveryStateUpdated" to null)
 
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshClient.getMessagesWithMetadata(12345, requestParams)
+                val result = mshClient.getUnreadNotifications(listOf(12345), 1000, requestParams)
 
-                result shouldHaveSize 1
-                result[0].id shouldBe messageId
-                result[0].contentType shouldBe "application/xml"
-                result[0].receiverHerId shouldBe 12345
-                result[0].senderHerId shouldBe 98765
-                result[0].businessDocumentId shouldBe "doc-uuid-1"
-                result[0].isAppRec shouldBe false
+                result shouldHaveSize 2
+                result[0].type shouldBe NotificationType.NEW_MESSAGE
+                result[0].relatedMessageId shouldBe messageId.toString()
+                result[1].type shouldBe NotificationType.MESSAGE_DELIVERY_STATE_UPDATED
 
                 wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages?receiverHerIds=12345&includeMetadata=true"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
+                    getRequestedFor(urlEqualTo("/notifications/unread?HerIds=12345&NotificationsToFetch=1000"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                         .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
-                        .withHeader("DPoP", matching("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"))
+                        .withHeader("DPoP", matching(DPOP_PROOF))
                 )
             }
 
-            it("getMessages should send GET /Messages with includeMetadata=false") {
+            it("getMessage should send GET /messages/{id} and map the v3 metadata") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages?receiverHerIds=12345&includeMetadata=false"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    [
-                                        {
-                                            "id": "$messageId",
-                                            "receiverHerId": 12345
-                                        }
-                                    ]
-                                    """
-                                        .trimIndent()
-                                )
-                        )
-                )
+                stubJson(get(urlEqualTo("/messages/$messageId")), messageJson(messageId, "APPREC"))
 
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshClient.getMessages(12345, requestParams)
+                val result = mshClient.getMessage(messageId.toString(), requestParams)
 
-                result shouldHaveSize 1
-                result[0].id shouldBe messageId
-                result[0].receiverHerId shouldBe 12345
-
-                wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages?receiverHerIds=12345&includeMetadata=false"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
-                        .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
-                )
-            }
-
-            it("getMessage should send GET /Messages/{id}") {
-                val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    {
-                                        "id": "$messageId",
-                                        "contentType": "application/xml",
-                                        "receiverHerId": 12345,
-                                        "senderHerId": 98765,
-                                        "businessDocumentId": "doc-uuid-1",
-                                        "businessDocumentGenDate": "2026-08-21T08:00:00+02:00",
-                                        "isAppRec": false
-                                    }
-                                    """
-                                        .trimIndent()
-                                )
-                        )
-                )
-
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshClient.getMessage(messageId, requestParams)
-
-                result.id shouldBe messageId
-                result.receiverHerId shouldBe 12345
+                result.id shouldBe messageId.toString()
+                result.receiverHerIds shouldBe listOf(12345, 23456)
                 result.senderHerId shouldBe 98765
+                result.businessDocumentMsgType shouldBe "APPREC"
+                // The JSON contract towards the clients is unchanged
+                with(result.toInMessage(12345)) {
+                    receiverHerId shouldBe 12345
+                    isAppRec shouldBe true
+                }
 
                 wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages/$messageId"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
+                    getRequestedFor(urlEqualTo("/messages/$messageId"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                         .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
                 )
             }
 
-            it("getStatus should send GET /Messages/{id}/status") {
+            it("getStatus should send GET /messages/{id}/status and map an abandoned message") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId/status"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    [
-                                        {
-                                            "receiverHerId": 12345,
-                                            "transportDeliveryState": "Unconfirmed",
-                                            "appRecStatus": "Ok"
-                                        }
-                                    ]
-                                    """
-                                        .trimIndent()
-                                )
-                        )
+                stubJson(
+                    get(urlEqualTo("/messages/$messageId/status")),
+                    """
+                    {
+                        "statusList": [
+                            {
+                                "receiverHerId": 12345,
+                                "transportDeliveryState": "Abandoned",
+                                "sent": true,
+                                "apprecInfo": null
+                            },
+                            {
+                                "receiverHerId": 23456,
+                                "transportDeliveryState": "Acknowledged",
+                                "sent": true,
+                                "apprecInfo": {"appRecStatus": "Ok", "appRecId": "${UUID.randomUUID()}"}
+                            }
+                        ]
+                    }
+                    """
+                        .trimIndent(),
                 )
 
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshClient.getStatus(messageId, requestParams)
+                val result = mshClient.getStatus(messageId.toString(), requestParams).statusList!!
 
-                result shouldHaveSize 1
-                result[0].receiverHerId shouldBe 12345
-                result[0].deliveryState shouldBe DeliveryState.UNCONFIRMED
-                result[0].appRecStatus shouldBe AppRecStatus.OK
+                result shouldHaveSize 2
+                result[0].deliveryState shouldBe DeliveryState.ABANDONED
+                result[0].toMessageStatus().transportStatus shouldBe TransportStatus.ABANDONED
+                result[1].apprecInfo?.appRecStatus shouldBe AppRecStatus.OK
 
                 wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages/$messageId/status"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
-                        .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
+                    getRequestedFor(urlEqualTo("/messages/$messageId/status"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                 )
             }
 
-            it("markMessageRead should send PUT /Messages/{id}/read/{receiverHerId}") {
-                val messageId = UUID.randomUUID()
-                val receiverHerId = 12345
-                wireMockServer.stubFor(
-                    put(urlEqualTo("/Messages/$messageId/read/$receiverHerId")).willReturn(aResponse().withStatus(204))
-                )
-
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                mshClient.markMessageRead(messageId, receiverHerId, requestParams)
-
-                wireMockServer.verify(
-                    putRequestedFor(urlEqualTo("/Messages/$messageId/read/$receiverHerId"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
-                        .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
-                )
-            }
-
-            it("getApplicationReceiptsForMessage should send GET /Messages/{id}/apprec") {
-                val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId/apprec"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    [
-                                        {
-                                            "receiverHerId": 12345,
-                                            "appRecStatus": "Ok",
-                                            "appRecErrorList": []
-                                        }
-                                    ]
-                                    """
-                                        .trimIndent()
-                                )
-                        )
-                )
-
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshClient.getApplicationReceiptsForMessage(messageId, requestParams)
-
-                result shouldHaveSize 1
-                result[0].receiverHerId shouldBe 12345
-                result[0].status shouldBe no.ks.fiks.hdir.StatusForMottakAvMelding.OK
-
-                wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages/$messageId/apprec"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
-                        .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
-                )
-            }
-
-            it("postMessage via MshInternalClient should send POST /Messages with payload and return UUID") {
+            it("postMessage via MshInternalClient should send POST /messages with the v3 payload") {
                 val createdId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    post(urlEqualTo("/Messages"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(201)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody("\"$createdId\"")
-                        )
-                )
+                stubJson(post(urlEqualTo("/messages")), """{"id": "$createdId"}""", status = 202)
 
                 val postRequest =
                     PostMessageRequest()
                         .contentType("application/xml")
                         .contentTransferEncoding("base64")
                         .businessDocument("dGVzdC1jb250ZW50")
+                        .senderHerId(12345)
+                        .receiverHerIds(listOf(98765))
+                        .messageTypeIdentificator("DIALOG_HELSEFAGLIG")
+                        .applicationName("efm-nhn-adapter")
+                        .applicationVersion("1.2.3")
 
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshInternalClient.postMessage(postRequest, requestParams)
-
-                result shouldBe createdId
+                mshInternalClient.postMessage(postRequest, requestParams) shouldBe createdId.toString()
 
                 wireMockServer.verify(
-                    postRequestedFor(urlEqualTo("/Messages"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
+                    postRequestedFor(urlEqualTo("/messages"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                         .withHeader("Content-Type", containing("application/json"))
                         .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
-                        .withRequestBody(matchingJsonPath("$.contentType", equalTo("application/xml")))
-                        .withRequestBody(matchingJsonPath("$.contentTransferEncoding", equalTo("base64")))
                         .withRequestBody(matchingJsonPath("$.businessDocument", equalTo("dGVzdC1jb250ZW50")))
+                        .withRequestBody(matchingJsonPath("$.senderHerId", equalTo("12345")))
+                        .withRequestBody(matchingJsonPath("$.receiverHerIds[0]", equalTo("98765")))
+                        .withRequestBody(matchingJsonPath("$.messageTypeIdentificator", equalTo("DIALOG_HELSEFAGLIG")))
                 )
             }
 
-            it("postAppRec via MshInternalClient should send POST /Messages/{id}/apprec/{senderHerId}") {
+            it("postAppRec via MshInternalClient should send POST /messages/{id}/apprec with the sender in the body") {
                 val messageId = UUID.randomUUID()
                 val createdAppRecId = UUID.randomUUID()
-                val senderHerId = 54321
+                stubJson(post(urlEqualTo("/messages/$messageId/apprec")), """{"id": "$createdAppRecId"}""", 202)
 
-                wireMockServer.stubFor(
-                    post(urlEqualTo("/Messages/$messageId/apprec/$senderHerId"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(201)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody("\"$createdAppRecId\"")
-                        )
-                )
+                val appRecRequest =
+                    PostAppRecRequest().appRecSenderHerId(54321).appRecStatus(no.nhn.msh.v3.model.AppRecStatus.OK)
 
-                val appRecRequest = PostAppRecRequest().appRecStatus(no.nhn.msh.v2.model.AppRecStatus.OK)
-
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshInternalClient.postAppRec(messageId, senderHerId, appRecRequest, requestParams)
-
-                result shouldBe createdAppRecId
+                mshInternalClient.postAppRec(messageId.toString(), appRecRequest, requestParams) shouldBe
+                    createdAppRecId.toString()
 
                 wireMockServer.verify(
-                    postRequestedFor(urlEqualTo("/Messages/$messageId/apprec/$senderHerId"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
-                        .withHeader("Content-Type", containing("application/json"))
-                        .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
+                    postRequestedFor(urlEqualTo("/messages/$messageId/apprec"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
+                        .withRequestBody(matchingJsonPath("$.appRecSenderHerId", equalTo("54321")))
                         .withRequestBody(matchingJsonPath("$.appRecStatus", equalTo("Ok")))
                 )
             }
 
-            it("getBusinessDocument via MshInternalClient should send GET /Messages/{id}/business-document") {
+            it("getBusinessDocument via MshInternalClient should send GET /messages/{id}/business-document") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId/business-document"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    {
-                                        "contentType": "application/xml",
-                                        "contentTransferEncoding": "base64",
-                                        "businessDocument": "PHRlc3Q+ZG9jPC90ZXN0Pg=="
-                                    }
-                                    """
-                                        .trimIndent()
-                                )
-                        )
+                stubJson(
+                    get(urlEqualTo("/messages/$messageId/business-document")),
+                    """
+                    {
+                        "contentType": "application/xml",
+                        "contentTransferEncoding": "base64",
+                        "businessDocument": "PHRlc3Q+ZG9jPC90ZXN0Pg=="
+                    }
+                    """
+                        .trimIndent(),
                 )
 
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                val result = mshInternalClient.getBusinessDocument(messageId, requestParams)
+                val result = mshInternalClient.getBusinessDocument(messageId.toString(), requestParams)
 
                 result.contentType shouldBe "application/xml"
                 result.contentTransferEncoding shouldBe "base64"
                 result.businessDocument shouldBe "PHRlc3Q+ZG9jPC90ZXN0Pg=="
 
                 wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages/$messageId/business-document"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
-                        .withHeader("Authorization", equalTo("DPoP test-access-token-123"))
+                    getRequestedFor(urlEqualTo("/messages/$messageId/business-document"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                 )
             }
 
             it("should handle error responses from MSH API with MshException") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(404)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody("""{"error": "Message not found"}""")
-                        )
-                )
+                stubJson(get(urlEqualTo("/messages/$messageId")), """{"title": "Message not found"}""", 404)
 
-                val requestParams =
-                    RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters("123456789")))
-                shouldThrow<MshException> { mshClient.getMessage(messageId, requestParams) }
+                shouldThrow<MshException> { mshClient.getMessage(messageId.toString(), requestParams) }
             }
         }
 
@@ -453,122 +325,98 @@ class MshClientIT :
 
             it("getSenderHerId via MshService should read the sender when other metadata is missing") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody("""{"id": "$messageId", "receiverHerId": 12345, "senderHerId": 98765}""")
-                        )
-                )
+                stubJson(get(urlEqualTo("/messages/$messageId")), """{"id": "$messageId", "senderHerId": 98765}""")
 
                 mshService.getSenderHerId(messageId, singleTenantContext) shouldBe 98765
             }
 
             it("getSenderHerId via MshService should report a message without a sender as invalid data") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody("""{"id": "$messageId", "receiverHerId": 12345}""")
-                        )
+                stubJson(
+                    get(urlEqualTo("/messages/$messageId")),
+                    """{"id": "$messageId", "receiverHerIds": [12345]}""",
                 )
 
                 shouldThrow<InvalidMshDataException> { mshService.getSenderHerId(messageId, singleTenantContext) }
             }
 
-            it("getMessagesWithMetadata via MshService should use single-tenant context and retrieve messages") {
+            it("getMessagesWithMetadata via MshService should list the messages of the unread notifications") {
                 val messageId = UUID.randomUUID()
+                stubUnreadNotifications("NewMessage" to messageId, "MessageSentStateUpdated" to UUID.randomUUID())
+                stubJson(get(urlEqualTo("/messages/$messageId")), messageJson(messageId))
                 wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages?receiverHerIds=12345&includeMetadata=true"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    [
-                                        {
-                                            "id": "$messageId",
-                                            "contentType": "application/xml",
-                                            "receiverHerId": 12345,
-                                            "senderHerId": 98765,
-                                            "businessDocumentId": "doc-uuid-1",
-                                            "businessDocumentGenDate": "2026-08-21T08:00:00+02:00",
-                                            "isAppRec": false
-                                        }
-                                    ]
-                                    """
-                                        .trimIndent()
-                                )
-                        )
+                    post(urlEqualTo("/notifications/delete")).willReturn(aResponse().withStatus(204))
                 )
 
                 val result = mshService.getMessagesWithMetadata(12345, singleTenantContext)
+
                 result shouldHaveSize 1
-                result[0].id shouldBe messageId
-                result[0].receiverHerId shouldBe 12345
+                result[0].id shouldBe messageId.toString()
+                result[0].toInMessage(12345).isAppRec shouldBe false
 
                 wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages?receiverHerIds=12345&includeMetadata=true"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
+                    getRequestedFor(urlPathEqualTo("/notifications/unread"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
+                )
+                wireMockServer.verify(
+                    postRequestedFor(urlEqualTo("/notifications/delete"))
+                        .withRequestBody(matchingJsonPath("$.notificationIds.size()", equalTo("1")))
                 )
             }
 
             it("getStatus via MshService should use multi-tenant context and retrieve status") {
                 val messageId = UUID.randomUUID()
-                wireMockServer.stubFor(
-                    get(urlEqualTo("/Messages/$messageId/status"))
-                        .willReturn(
-                            aResponse()
-                                .withStatus(200)
-                                .withHeader("Content-Type", "application/json")
-                                .withBody(
-                                    """
-                                    [
-                                        {
-                                            "receiverHerId": 12345,
-                                            "transportDeliveryState": "Acknowledged",
-                                            "appRecStatus": "Ok"
-                                        }
-                                    ]
-                                    """
-                                        .trimIndent()
-                                )
-                        )
+                stubJson(
+                    get(urlEqualTo("/messages/$messageId/status")),
+                    """
+                    {
+                        "statusList": [
+                            {
+                                "receiverHerId": 12345,
+                                "transportDeliveryState": "Acknowledged",
+                                "sent": true,
+                                "apprecInfo": {"appRecStatus": "Ok"}
+                            }
+                        ]
+                    }
+                    """
+                        .trimIndent(),
                 )
 
                 val result = mshService.getStatus(messageId, multiTenantContext)
                 result shouldHaveSize 1
                 result[0].deliveryState shouldBe DeliveryState.ACKNOWLEDGED
-                result[0].appRecStatus shouldBe AppRecStatus.OK
+                result[0].apprecInfo?.appRecStatus shouldBe AppRecStatus.OK
 
                 wireMockServer.verify(
-                    getRequestedFor(urlEqualTo("/Messages/$messageId/status"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
+                    getRequestedFor(urlEqualTo("/messages/$messageId/status"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                 )
             }
 
-            it("markMessageRead via MshService should send PUT request with client context") {
+            it("markMessageRead via MshService should mark the message downloaded and delete its notification") {
                 val messageId = UUID.randomUUID()
-                val receiverHerId = 12345
-
                 wireMockServer.stubFor(
-                    put(urlEqualTo("/Messages/$messageId/read/$receiverHerId")).willReturn(aResponse().withStatus(204))
+                    put(urlEqualTo("/messages/$messageId/downloaded")).willReturn(aResponse().withStatus(204))
+                )
+                stubUnreadNotifications("NewMessage" to messageId)
+                wireMockServer.stubFor(
+                    post(urlEqualTo("/notifications/delete")).willReturn(aResponse().withStatus(204))
                 )
 
-                mshService.markMessageRead(messageId, receiverHerId, singleTenantContext)
+                mshService.markMessageRead(messageId, 12345, singleTenantContext)
 
                 wireMockServer.verify(
-                    putRequestedFor(urlEqualTo("/Messages/$messageId/read/$receiverHerId"))
-                        .withHeader("api-version", equalTo("2"))
-                        .withHeader("nhn-source-system", equalTo("digdir"))
+                    putRequestedFor(urlEqualTo("/messages/$messageId/downloaded"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
+                        .withRequestBody(matchingJsonPath("$.receiverHerId", equalTo("12345")))
+                )
+                wireMockServer.verify(
+                    postRequestedFor(urlEqualTo("/notifications/delete"))
+                        .withRequestBody(matchingJsonPath("$.notificationIds.size()", equalTo("1")))
                 )
             }
         }

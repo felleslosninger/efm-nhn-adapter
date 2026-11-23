@@ -140,7 +140,7 @@ class OutHandler(
         multipartData: MultiValueMap<String, Part>,
         permitHeld: Boolean,
         clientContext: ClientContext,
-    ): UUID {
+    ): String {
         val message = sbd.dialogmelding
         val pasient = message.pasient ?: throw ClientInputException("Dialogmelding is missing pasient")
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
@@ -148,7 +148,7 @@ class OutHandler(
 
         val received = withContext(Dispatchers.IO) { parcelService.receiveDokumentpakke(dokumentpakke) }
 
-        suspend fun send(): UUID =
+        suspend fun send(): String =
             withContext(Dispatchers.IO) {
                 val documents = parcelService.getAttachments(received)
                 val dialogmelding = readDialogmelding(documents, message.hoveddokument)
@@ -180,7 +180,7 @@ class OutHandler(
         sbd: StandardBusinessDocument,
         auditEntry: AuditEntry.AuditEntryBuilder,
         clientContext: ClientContext,
-    ): UUID {
+    ): String {
         val receipt = sbd.dialogmeldingKvittering
         auditEntry.attribute("status", receipt.status)
         return withContext(Dispatchers.IO) {

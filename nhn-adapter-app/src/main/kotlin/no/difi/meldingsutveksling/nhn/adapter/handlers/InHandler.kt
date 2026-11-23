@@ -53,7 +53,7 @@ class InHandler(
         auditLogService.log(auditEntry, skipOnSuccess = { messageCount == 0 }) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
             val messages = mshService.getMessagesWithMetadata(receiverHerId, clientContext)
-            val inMessages = fromMshData { messages.map { it.toInMessage() } }
+            val inMessages = fromMshData { messages.map { it.toInMessage(receiverHerId) } }
             messageCount = inMessages.size
             auditEntry.attribute("messageCount", messageCount)
 
