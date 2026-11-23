@@ -9,6 +9,10 @@ spring:
   webflux:
     multipart:
       max-in-memory-size: 256KB
+      # As in production: above limits.max-request-size, so that it is the limit of the whole request that applies.
+      # Spring Boot 4.2 defaults to 1MB, and to 50 parts.
+      max-disk-usage-per-part: 50MB
+      max-parts: 10
       file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart-test
 
 digdir:
