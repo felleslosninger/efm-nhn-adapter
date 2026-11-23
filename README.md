@@ -215,7 +215,7 @@ på `/nhn-adapter/v3/api-docs`. Begge er opne utan token.
 | GET    | `/api/notifications/unread?herId=<HER-id>[&notificationsToFetch=<1-1000>]` | – | `application/json` `Notification[]` | Uleste notifikasjonar frå MSH for ein HER-id, slik MSH gir dei. Ei ny melding vert annonsert med `NEW_MESSAGE` og `relatedMessageId`. Ein notifikasjon er ulesen til han vert sletta. |
 | POST   | `/api/notifications/delete`                 | `application/json` `{"notificationIds": [...]}` (1–1000) | `text/plain` | Slettar notifikasjonar i MSH. MSH avgrensar slettinga til HER-id-ane til organisasjonen klienten handlar for. Ein leverandør utan godkjend delegering får `403`. |
 | GET    | `/api/messages/in/{messageId}?receiverHerId=<HER-id>` | –                                     | `application/json` `IncomingMessage` | Metadata for ei innkomen melding. `403` om meldinga ikkje er til `receiverHerId`. |
-| POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. |
+| POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. `403` om mottakaren i meldinga høyrer til ein annan organisasjon. Kopimottakarar er ikkje støtta: MSH listar dei som mottakarar, men meldinga namngir hovudmottakaren. |
 | POST   | `/api/messages/in/{messageId}/downloaded?receiverHerId=<HER-id>` | –                          | `text/plain`                    | Markerer meldinga som nedlasta i MSH, som slettar forretningsdokumentet der. Notifikasjonen vert ikkje sletta. |
 
 ### Feil
@@ -232,8 +232,8 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | Fleirdelt kropp over grensene i `spring.webflux.multipart`               | 413            |
 | Førespurnaden er ikkje motteken innan `limits.max-upload-time`           | 408            |
 | Feil frå AR (`E7778`) eller FLR (`E7779`)                                | 502            |
-| 4xx frå MSH, unnateke 401 og 403                                         | same status og melding som MSH gav |
-| Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 5xx og nettverksfeil | 502 |
+| 4xx frå MSH, unnateke 401, 403 og 423                                    | same status og melding som MSH gav |
+| Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 423 (klienten er låst i MSH), 5xx og nettverksfeil | 502 |
 | Timeout mot AR (`E7778`), FLR (`E7779`) eller MSH og HelseID (`E7780`)   | 504            |
 | For mange store sendingar samstundes (`E7781`)                           | 503            |
 | Alt anna (`E7777`)                                                       | 500            |

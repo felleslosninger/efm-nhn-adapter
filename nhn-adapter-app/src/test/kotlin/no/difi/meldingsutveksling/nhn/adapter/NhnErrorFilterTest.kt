@@ -328,6 +328,7 @@ class NhnErrorFilterTest :
             listOf(
                     HttpClientException(401, body = "Invalid token"),
                     HttpClientException(403, body = "Not allowed"),
+                    HttpClientException(423, body = "Client locked"),
                     HttpServerException(500, body = "Internal error"),
                     HttpException(499, 200, "Unknown status"),
                 )

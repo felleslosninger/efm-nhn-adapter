@@ -69,6 +69,11 @@ class InHandler(
         }
     }
 
+    /**
+     * The business document, for the receiver named in it. Copy receivers are not supported: MSH lists them as
+     * receivers of the message, but the business document names the main receiver, so a copy receiver in another
+     * organization is denied access.
+     */
     suspend fun getBusinessDocument(
         request: ServerRequest,
         @Parameter(hidden = true) clientContext: ClientContext,

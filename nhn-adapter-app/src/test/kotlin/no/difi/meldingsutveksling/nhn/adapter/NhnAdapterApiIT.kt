@@ -144,6 +144,9 @@ private const val KOMMUNE_PARENT_HER_ID = 1000001
 private const val KOMMUNE_HER_ID = 1000002
 private const val LEGEKONTOR_HER_ID = 2000001
 private const val LEGEKONTOR_ORG_NUMBER = "987654321"
+
+/** A supplier that acts on behalf of [CONSUMER_ORG_NUMBER]. */
+private const val SUPPLIER_ORG_NUMBER = "912345678"
 private const val FASTLEGE_HER_ID = 2000002
 private const val LEGEKONTOR_TJENESTE_HER_ID = 2000003
 private const val UNKNOWN_HER_ID = 9999999
@@ -231,6 +234,9 @@ class NhnAdapterApiIT(
                     }
                     .authorities(SimpleGrantedAuthority("SCOPE_$scope"))
             )
+
+        fun trustedDelegationSource(): String =
+            applicationContext.environment.getRequiredProperty("security.delegation-source")
 
         fun signAndEncrypt(payload: String): String =
             parcelService.signAndEncrypt(payload, keystoreHelper.x509Certificate)
@@ -1187,7 +1193,7 @@ class NhnAdapterApiIT(
             }
 
             it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
-                client(supplier = "987654321", delegationSource = "not-trusted")
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
                     .get()
                     .uri("/api/messages/out/${UUID.randomUUID()}/statuses")
                     .accept(MediaType.APPLICATION_JSON)
@@ -1297,6 +1303,22 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
             }
 
+            it("returns the notifications for a supplier delegated through the trusted delegation source") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) {
+                    mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 50, supplierTenant())
+                }
+            }
+
             // AccessDeniedException from SecurityService.assertAccessToHerId maps to 403.
             it("denies access to the notifications of a HER-id belonging to another organization") {
                 client()
@@ -1330,11 +1352,9 @@ class NhnAdapterApiIT(
             }
 
             it("deletes the notifications for a supplier delegated through the trusted delegation source") {
-                val trustedDelegationSource =
-                    applicationContext.environment.getRequiredProperty("security.delegation-source")
                 coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
 
-                client(supplier = "987654321", delegationSource = trustedDelegationSource)
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
                     .post()
                     .uri("/api/notifications/delete")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -1343,20 +1363,11 @@ class NhnAdapterApiIT(
                     .expectStatus()
                     .isOk
 
-                // With a HelseID token for the consumer, which the supplier acts on behalf of
-                coVerify(exactly = 1) {
-                    mshClient.deleteNotifications(
-                        listOf("notification-1"),
-                        match {
-                            (it.helseId?.tenant as? MultiTenantHelseIdTokenParameters)?.parentOrganization ==
-                                CONSUMER_ORG_NUMBER
-                        },
-                    )
-                }
+                coVerify(exactly = 1) { mshClient.deleteNotifications(listOf("notification-1"), supplierTenant()) }
             }
 
             it("denies a supplier delegated through another delegation source") {
-                client(supplier = "987654321", delegationSource = "not-trusted")
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
                     .post()
                     .uri("/api/notifications/delete")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -1462,6 +1473,23 @@ class NhnAdapterApiIT(
                     .isEqualTo(false)
             }
 
+            it("returns the metadata for a supplier delegated through the trusted delegation source") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), supplierTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.id")
+                    .isEqualTo(messageId.toString())
+            }
+
             it("returns an application receipt as such") {
                 val messageId = UUID.randomUUID()
                 coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
@@ -1533,7 +1561,7 @@ class NhnAdapterApiIT(
 
         describe("POST /api/messages/in") {
             it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
-                client(supplier = "987654321", delegationSource = "not-trusted")
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
                     .post()
                     .uri("/api/messages/in")
                     .contentType(APPLICATION_JOSE)
@@ -1544,6 +1572,40 @@ class NhnAdapterApiIT(
                     .isForbidden
 
                 coVerify(exactly = 0) { mshInternalClient.getBusinessDocument(any(), any()) }
+            }
+
+            // Copy receivers are not supported: the business document names the main receiver
+            it("returns 403 when the receiver in the business document belongs to another organization") {
+                every { adresseregisteretClient.lookupHerId(LEGEKONTOR_TJENESTE_HER_ID) } returns legekontorTjeneste
+                val messageId = UUID.randomUUID()
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = legekontorTjeneste.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
             }
 
             it("returns the incoming dialogmelding as an encrypted forretningsmelding and dokumentpakke") {
@@ -1759,7 +1821,23 @@ class NhnAdapterApiIT(
                     .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
                     .exchange()
                     .expectStatus()
-                    .is5xxServerError
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+            }
+
+            it("marks the message as downloaded for a supplier delegated through the trusted delegation source") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .post()
+                    .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) {
+                    mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, supplierTenant())
+                }
             }
 
             it("denies marking a message for a HER-id belonging to another organization") {
@@ -1805,6 +1883,12 @@ private fun notification(type: NotificationType, messageId: UUID) =
 private fun MockKMatcherScope.consumerTenant() =
     match<RequestParameters> {
         (it.helseId?.tenant as? SingleTenantHelseIdTokenParameters)?.childOrganization == CONSUMER_ORG_NUMBER
+    }
+
+/** A HelseID token for the consumer, which a supplier acts on behalf of. */
+private fun MockKMatcherScope.supplierTenant() =
+    match<RequestParameters> {
+        (it.helseId?.tenant as? MultiTenantHelseIdTokenParameters)?.parentOrganization == CONSUMER_ORG_NUMBER
     }
 
 /** MSH metadata for a dialogmelding sent from [senderHerId] to [receiverHerId]. */

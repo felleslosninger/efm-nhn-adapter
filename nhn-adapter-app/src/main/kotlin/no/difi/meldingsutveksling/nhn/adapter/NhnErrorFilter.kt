@@ -47,8 +47,11 @@ private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
 private const val MSH_ERROR_CODE = "E7780"
 private const val ADAPTER_BUSY_ERROR_CODE = "E7781"
 
-/** MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client. */
-private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
+/**
+ * MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client, or when its client
+ * is locked in MSH (423).
+ */
+private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.LOCKED)
 
 /**
  * Translates exceptions thrown by the handlers into [ApiError] responses.
