@@ -37,6 +37,7 @@ import no.ks.fiks.nhn.msh.PersonId
 import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.Sender
 import no.ks.fiks.nhn.parseOffsetDateTimeOrNull
+import org.springframework.util.MimeType
 
 object BusinessDocumentDeserializer {
     const val MSG_HEAD_ROOT = "MsgHead"
@@ -52,20 +53,20 @@ object BusinessDocumentDeserializer {
                 "Invalid MIGversion. Only $MSG_HEAD_VERSION is supported.",
             )
         }
-        try {
-            XmlContext.validateXml(xml)
-        } catch (e: Exception) {
-            // Not e.message: messages from the schema validation may quote values from the message,
-            // e.g. the patient's fødselsnummer. The cause has them.
-            throw ApplicationReceiptException(
-                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
-                "The MsgHead is not valid",
-                e,
-            )
-        }
-
         val msgHead =
-            XmlContext.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), MsgHead::class.java).value
+            try {
+                XmlContext.validateXml(xml)
+                XmlContext.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), MsgHead::class.java).value
+            } catch (e: Exception) {
+                // Not e.message: messages from the schema validation may quote values from the
+                // message,
+                // e.g. the patient's fødselsnummer. The cause has them.
+                throw ApplicationReceiptException(
+                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                    "The MsgHead is not valid",
+                    e,
+                )
+            }
         if (msgHead.msgInfo == null) {
             throw ApplicationReceiptException(
                 FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
@@ -96,7 +97,13 @@ object BusinessDocumentDeserializer {
      */
     fun Organisation.getChild() =
         organisation?.getParent()
-            ?: with(healthcareProfessional) {
+            ?: with(
+                healthcareProfessional
+                    ?: throw invalidMessage(
+                        FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
+                        "Found neither a sub-organisation nor a healthcare professional in $organisationName",
+                    )
+            ) {
                 PersonCommunicationParty(
                     ids = ident.getPersonId(),
                     address = this@getChild.convertAddress(),
@@ -120,11 +127,20 @@ object BusinessDocumentDeserializer {
         }
 
     private fun MsgHead.getPatient() =
-        with(msgInfo.patient) {
+        with(
+            msgInfo.patient
+                ?: throw invalidMessage(
+                    FeilmeldingForApplikasjonskvittering.UTILSTREKKELIG_PASIENTOPPLYSNING,
+                    "Found no patient",
+                )
+        ) {
             Patient(
                 fnr =
                     ident.getPersonId().firstOrNull()?.id
-                        ?: throw IllegalArgumentException("Found no ids for patient"),
+                        ?: throw invalidMessage(
+                            FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR,
+                            "Found no ids for patient",
+                        ),
                 firstName = givenName,
                 middleName = middleName,
                 lastName = familyName,
@@ -136,8 +152,16 @@ object BusinessDocumentDeserializer {
         when (val content = document.firstOrNull()?.refDoc?.content?.any?.singleOrNull()) {
             is no.kith.xmlstds.dialog._2006_10_11.Dialogmelding -> DialogmeldingConverter.toLatest(content)
             is Dialogmelding -> content
-            null -> throw IllegalArgumentException("Found no Dialogmelding in MsgHead")
-            else -> throw IllegalArgumentException("Unsupported message type: $content")
+            null ->
+                throw invalidMessage(
+                    FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                    "Found no Dialogmelding in MsgHead",
+                )
+            else ->
+                throw invalidMessage(
+                    FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                    "Unsupported message type: ${content::class.simpleName}",
+                )
         }
 
     /** The documents following the Dialogmelding are its attachments. Only 'A, Vedlegg' is supported. */
@@ -156,14 +180,24 @@ object BusinessDocumentDeserializer {
                 IncomingAttachment(
                     issueDate = refDoc.issueDate?.v?.parseOffsetDateTimeOrNull()?.toInstant()?.toKotlinInstant(),
                     description = refDoc.description,
-                    mimeType = refDoc.mimeType,
+                    mimeType = refDoc.validMimeType(),
                     data = ByteArrayInputStream(refDoc.base64Content().value),
                 )
             }
 
     private fun RefDoc.base64Content(): Base64Container =
-        content.any.single() as? Base64Container
-            ?: throw IllegalArgumentException("Expected Base64Container, but got $content")
+        content?.any?.singleOrNull() as? Base64Container
+            ?: throw invalidMessage(
+                FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                "Expected a vedlegg in a Base64Container",
+            )
+
+    private fun RefDoc.validMimeType(): String =
+        mimeType?.takeIf { runCatching { MimeType.valueOf(it) }.isSuccess }
+            ?: throw invalidMessage(
+                FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
+                "A vedlegg has no valid MIME type",
+            )
 
     fun MsgHead.getConversationRef() =
         if (
@@ -180,15 +214,24 @@ object BusinessDocumentDeserializer {
 
     private fun CS.toTypeDokumentreferanse() = TypeDokumentreferanse.entries.firstOrNull { it.verdi == v }
 
+    // The messages name the type, not the id, which may be a fødselsnummer
+
     private fun List<Ident>.getPersonId() =
         getId().map {
-            it as? PersonId ?: throw IllegalArgumentException("Expected id with type PersonId, but got $it")
+            it as? PersonId
+                ?: throw invalidMessage(
+                    FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
+                    "Expected an id of a person, but got one of type ${it.type}",
+                )
         }
 
     private fun List<Ident>.getOrganisasjonId() =
         getId().map {
             it as? OrganizationId
-                ?: throw IllegalArgumentException("Expected id with type OrganisasjonId, but got $it")
+                ?: throw invalidMessage(
+                    FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
+                    "Expected an id of an organisation, but got one of type ${it.type}",
+                )
         }
 
     private fun List<Ident>.getId() = map {
@@ -200,5 +243,12 @@ object BusinessDocumentDeserializer {
 
     private fun CV.toIdType() =
         KodeverkRegister.getKodeverk(s, v) as? IdType
-            ?: throw IllegalArgumentException("Expected kodeverk of a valid IdType, but got ($s, $v, $dn)")
+            ?: throw invalidMessage(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
+                "Expected kodeverk of a valid IdType, but got ($s, $v, $dn)",
+            )
 }
+
+/** The message is invalid: the sender's fault, which the receiver answers with [error] in an application receipt. */
+internal fun invalidMessage(error: FeilmeldingForApplikasjonskvittering, message: String) =
+    ApplicationReceiptException(error, message)

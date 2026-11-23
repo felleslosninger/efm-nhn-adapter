@@ -240,7 +240,7 @@ class IncomingBusinessDocumentMapperTest :
                 val xml = msgHeadXml.replace(Regex("<([a-zA-Z0-9]+:)?MsgId>"), "<$1Unknown/><$1MsgId>")
 
                 shouldThrow<ApplicationReceiptException> { BusinessDocumentDeserializer.deserializeMsgHead(xml) }
-                    .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
             }
 
             it("does not quote the invalid value in the message, only in the cause") {
@@ -265,7 +265,7 @@ class IncomingBusinessDocumentMapperTest :
 
         describe("getDialogmelding") {
             it("rejects a MsgHead without documents") {
-                shouldThrow<IllegalArgumentException> { MsgHead().getDialogmelding() }.message shouldBe
+                shouldThrow<ApplicationReceiptException> { MsgHead().getDialogmelding() }.message shouldBe
                     "Found no Dialogmelding in MsgHead"
             }
 
@@ -281,7 +281,7 @@ class IncomingBusinessDocumentMapperTest :
                             )
                     }
 
-                shouldThrow<IllegalArgumentException> { msgHead.getDialogmelding() }.message shouldContain
+                shouldThrow<ApplicationReceiptException> { msgHead.getDialogmelding() }.message shouldContain
                     "Unsupported message type"
             }
         }

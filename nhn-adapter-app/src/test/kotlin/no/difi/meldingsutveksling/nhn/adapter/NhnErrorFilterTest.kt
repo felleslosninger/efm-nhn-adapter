@@ -20,6 +20,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
@@ -47,6 +48,7 @@ import reactor.core.publisher.Mono
 
 private const val LOOKUP_PATH = "/api/lookup/123"
 private const val OUTGOING_PATH = ApiPaths.OUTGOING_MESSAGES
+private const val INCOMING_PATH = ApiPaths.INCOMING_MESSAGES
 private const val TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 private const val ISO_8601_INSTANT = """\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z"""
 
@@ -59,6 +61,7 @@ class NhnErrorFilterTest :
                     RouterFunctions.route()
                         .GET(ApiPaths.LOOKUP) { Mono.error(error) }
                         .GET(ApiPaths.OUTGOING_MESSAGES) { Mono.error(error) }
+                        .GET(ApiPaths.INCOMING_MESSAGES) { Mono.error(error) }
                         .filter(nhnErrorFilter())
                         .build()
                 )
@@ -202,6 +205,40 @@ class NhnErrorFilterTest :
                     HttpStatus.BAD_REQUEST,
                     null,
                     FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                )
+            }
+
+            it("maps an invalid incoming message to 422 with its error code, without the message") {
+                expectApiError(
+                    INCOMING_PATH,
+                    InvalidIncomingDocumentException(
+                        ApplicationReceiptException(
+                            FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                            "Unsupported root element = Foo.",
+                        ),
+                        isAppRec = false,
+                    ),
+                    HttpStatus.UNPROCESSABLE_CONTENT,
+                    null,
+                    FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                    technicalCode = "E7782",
+                )
+            }
+
+            it("maps an invalid incoming application receipt to 422 with a technical code of its own") {
+                expectApiError(
+                    INCOMING_PATH,
+                    InvalidIncomingDocumentException(
+                        ApplicationReceiptException(
+                            FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                            "The AppRec is not valid",
+                        ),
+                        isAppRec = true,
+                    ),
+                    HttpStatus.UNPROCESSABLE_CONTENT,
+                    null,
+                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                    technicalCode = "E7783",
                 )
             }
 

@@ -4,6 +4,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.TimeZone
 import javax.xml.datatype.XMLGregorianCalendar
+import javax.xml.stream.XMLStreamException
 import no.difi.meldingsutveksling.domain.sbdh.BusinessScope
 import no.difi.meldingsutveksling.domain.sbdh.DocumentIdentification
 import no.difi.meldingsutveksling.domain.sbdh.Scope
@@ -53,15 +54,25 @@ data class BusinessDocumentResponse(val sbd: StandardBusinessDocument, val attac
 object IncomingBusinessDocumentMapper {
     private val FILE_REFERENCE = Regex("<FileReference>[^<]+</FileReference>")
 
+    /** @throws ApplicationReceiptException if the business document is invalid, e.g. not well-formed XML */
     fun toBusinessDocumentResponse(xml: String): BusinessDocumentResponse =
-        when (val rootElement = XMLUtils.getRootElement(xml)) {
-            ApplicationReceiptDeserializer.APP_REC_ROOT -> fromApplicationReceipt(xml)
-            BusinessDocumentDeserializer.MSG_HEAD_ROOT -> fromMsgHead(xml)
-            else ->
-                throw ApplicationReceiptException(
-                    FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
-                    "Unsupported root element = $rootElement.",
-                )
+        try {
+            when (val rootElement = XMLUtils.getRootElement(xml)) {
+                ApplicationReceiptDeserializer.APP_REC_ROOT -> fromApplicationReceipt(xml)
+                BusinessDocumentDeserializer.MSG_HEAD_ROOT -> fromMsgHead(xml)
+                else ->
+                    throw ApplicationReceiptException(
+                        FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                        "Unsupported root element = $rootElement.",
+                    )
+            }
+        } catch (e: XMLStreamException) {
+            // Not e.message, which may quote the document
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                "Not well-formed XML",
+                e,
+            )
         }
 
     private fun fromMsgHead(xml: String): BusinessDocumentResponse {
@@ -173,15 +184,23 @@ object IncomingBusinessDocumentMapper {
     private fun IncomingAttachment.filename(index: Int) = AttachmentNames.vedlegg(index, mimeType)
 
     private fun CommunicationParty.requireHerId(role: String): Int =
-        checkNotNull(herId) { "Missing HER-id for the $role in MsgHead" }
+        herId
+            ?: throw invalidMessage(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
+                "Missing HER-id for the $role in MsgHead",
+            )
 
     /** The most specific party wins: a person, then a department/service, then the institution itself. */
-    private fun HCP.toHerId(): Int =
-        if (inst != null) {
-            (inst.hcPerson?.firstOrNull()?.id ?: inst.dept?.firstOrNull()?.id ?: inst.id).toInt()
-        } else {
-            hcProf.id.toInt()
-        }
+    private fun HCP.toHerId(): Int {
+        val id =
+            if (inst != null) {
+                inst.hcPerson?.firstOrNull()?.id ?: inst.dept?.firstOrNull()?.id ?: inst.id
+            } else {
+                hcProf?.id
+            }
+        return id?.toIntOrNull()
+            ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.UGYLDIG_ID, "Missing HER-id in AppRec")
+    }
 
     /** The status is coded in kodeverk 8222. Only the code (V) is reliable, the display name (DN) is e.g. "Avvist". */
     private fun CS.toKvitteringStatus(): DialogmeldingKvitteringStatus =

@@ -36,13 +36,14 @@ object XMLUtils {
                 reader.nextRejectingDoctype() == XMLStreamConstants.START_ELEMENT &&
                     reader.localName == MIG_VERSION_ELEMENT
             ) {
-                reader.next()
-                return reader.text
+                // An empty element has no text
+                return if (reader.next() == XMLStreamConstants.CHARACTERS) reader.text else null
             }
         }
         return null
     }
 
+    /** The name of the root element, or null if it is not found within [MAX_PROLOG_EVENTS] events. */
     fun getRootElement(xml: String): String? {
         val reader = createReader(xml)
         var skippedEvents = 0
@@ -53,7 +54,7 @@ object XMLUtils {
         ) {
             skippedEvents++
         }
-        return reader.localName
+        return if (reader.eventType == XMLStreamConstants.START_ELEMENT) reader.localName else null
     }
 
     private fun createReader(xml: String): XMLStreamReader = factory.createXMLStreamReader(StringReader(xml))

@@ -79,6 +79,7 @@ import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.JsonWebEncryption
 import no.difi.move.common.dokumentpakking.PartUtils
 import no.difi.move.common.dokumentpakking.domain.Document
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.nhn.ar.rest.AddressNotFoundException
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretClient
@@ -1842,6 +1843,61 @@ class NhnAdapterApiIT(
                     .expectBody()
                     .jsonPath("$.details")
                     .isEqualTo("JWS verification failed")
+            }
+
+            it("returns 422 with the error code for an application receipt when the message is invalid") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString("<Unknown/>".toByteArray()))
+
+                getIncoming(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7782")
+            }
+
+            it("returns 422 with a technical code of its own when an application receipt is invalid") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(
+                            Base64.getEncoder()
+                                .encodeToString("<AppRec><MIGversion>9</MIGversion></AppRec>".toByteArray())
+                        )
+
+                getIncoming(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7783")
+            }
+
+            it("returns 502 when the business document from MSH cannot be decoded") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument("not base64!")
+
+                getIncoming(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
             }
         }
 

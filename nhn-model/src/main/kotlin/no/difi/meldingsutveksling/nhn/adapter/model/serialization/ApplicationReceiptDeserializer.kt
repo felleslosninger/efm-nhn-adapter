@@ -56,16 +56,32 @@ object ApplicationReceiptDeserializer {
     }
 
     private fun fromApplicationReceipt10(xml: String): AppRec {
-        schema1_0.newSecureValidator().validate(StreamSource(StringReader(xml)))
-        val appRec =
+        val appRec = valid {
+            schema1_0.newSecureValidator().validate(StreamSource(StringReader(xml)))
             context1_0.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec1_0::class.java).value
+        }
         return toLatest(appRec)
     }
 
-    private fun fromApplicationReceipt11(xml: String): AppRec {
+    private fun fromApplicationReceipt11(xml: String): AppRec = valid {
         schema1_1.newSecureValidator().validate(StreamSource(StringReader(xml)))
-        return context1_1.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec::class.java).value
+        context1_1.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec::class.java).value
     }
+
+    /**
+     * Reports an AppRec that is not valid against its schema as [ApplicationReceiptException]. Not with the message of
+     * the error, which may quote values from the AppRec; the cause has it.
+     */
+    private inline fun <T> valid(block: () -> T): T =
+        try {
+            block()
+        } catch (e: Exception) {
+            throw ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                "The AppRec is not valid",
+                e,
+            )
+        }
 
     private fun toLatest(input: AppRec1_0): AppRec {
         return AppRec().apply {

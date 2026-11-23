@@ -10,6 +10,7 @@ import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
@@ -46,6 +47,12 @@ private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
 private const val MSH_ERROR_CODE = "E7780"
 private const val ADAPTER_BUSY_ERROR_CODE = "E7781"
+
+/** An incoming message that is invalid, which the client rejects with an application receipt. */
+private const val INVALID_MESSAGE_CODE = "E7782"
+
+/** An incoming application receipt that is invalid, which the client must not answer with another one. */
+private const val INVALID_APP_REC_CODE = "E7783"
 
 /**
  * MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client, or when its client
@@ -93,6 +100,16 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
         is ApplicationReceiptException -> {
             logger.warn("Invalid message for ${route()}: ${error.loggableMessage()}")
             toApiError(HttpStatus.BAD_REQUEST, error.error)
+        }
+        // The client rejects an invalid message with the error code, but must not answer an invalid
+        // application receipt, which the technical code tells. Without the stack trace, as above.
+        is InvalidIncomingDocumentException -> {
+            logger.warn("Invalid incoming message for ${route()}: ${error.loggableMessage()}")
+            toApiError(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                error.error,
+                technicalCode = if (error.isAppRec) INVALID_APP_REC_CODE else INVALID_MESSAGE_CODE,
+            )
         }
         is AdresseregisteretException -> serviceError("Adresseregisteret", ADRESSEREGISTERET_ERROR_CODE, error)
         is FastlegeregisteretException -> serviceError("Fastlegeregisteret", FASTLEGEREGISTERET_ERROR_CODE, error)

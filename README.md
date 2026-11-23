@@ -215,7 +215,7 @@ på `/nhn-adapter/v3/api-docs`. Begge er opne utan token.
 | GET    | `/api/notifications/unread?herId=<HER-id>[&notificationsToFetch=<1-1000>]` | – | `application/json` `Notification[]` | Uleste notifikasjonar frå MSH for ein HER-id, slik MSH gir dei. Ei ny melding vert annonsert med `NEW_MESSAGE` og `relatedMessageId`. Ein notifikasjon er ulesen til han vert sletta. |
 | POST   | `/api/notifications/delete`                 | `application/json` `{"notificationIds": [...]}` (1–1000) | `text/plain` | Slettar notifikasjonar i MSH. MSH avgrensar slettinga til HER-id-ane til organisasjonen klienten handlar for. Ein leverandør utan godkjend delegering får `403`. |
 | GET    | `/api/messages/in/{messageId}?receiverHerId=<HER-id>` | –                                     | `application/json` `IncomingMessage` | Metadata for ei innkomen melding. `403` om meldinga ikkje er til `receiverHerId`. |
-| POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. `403` om mottakaren i meldinga høyrer til ein annan organisasjon. Kopimottakarar er ikkje støtta: MSH listar dei som mottakarar, men meldinga namngir hovudmottakaren. |
+| POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. `403` om mottakaren i meldinga høyrer til ein annan organisasjon. `422` om meldinga er ugyldig, med feilkoden for applikasjonskvitteringa som `errorCode` og `E7782` (melding) eller `E7783` (applikasjonskvittering) som `technicalCode`. Ein 4xx frå MSH har ingen `technicalCode`. Kopimottakarar er ikkje støtta: MSH listar dei som mottakarar, men meldinga namngir hovudmottakaren. |
 | POST   | `/api/messages/in/{messageId}/downloaded?receiverHerId=<HER-id>` | –                          | `text/plain`                    | Markerer meldinga som nedlasta i MSH, som slettar forretningsdokumentet der. Notifikasjonen vert ikkje sletta. |
 
 ### Feil
@@ -227,6 +227,8 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | `HerIdNotFoundException` på oppslag                                      | 404            |
 | `HerIdNotFoundException` elles, `IllegalArgumentException`, `DialogmeldingNotFoundException`, `ApplicationReceiptException` | 400 |
 | `ClientInputException`, til dømes fleire filer i dokumentpakken enn `limits.max-dokumentpakke-files` | 400 |
+| Ei innkomen melding er ugyldig (`E7782`), til dømes ikkje velforma XML, ikkje gyldig etter skjemaet, eit format som ikkje er støtta eller utan pasient eller HER-id. `errorCode` er feilkoden klienten avviser meldinga med i ein applikasjonskvittering | 422 |
+| Ein innkomen applikasjonskvittering er ugyldig (`E7783`). Klienten skal ikkje svare på han med ein ny applikasjonskvittering | 422 |
 | `AccessDeniedException`                                                  | 403            |
 | `MessageTooLargeException`: førespurnaden, dei utpakka filene i dokumentpakken eller meldinga til MSH er for stor | 413 |
 | Fleirdelt kropp over grensene i `spring.webflux.multipart`               | 413            |

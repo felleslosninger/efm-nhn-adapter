@@ -20,6 +20,7 @@ import java.util.Base64
 import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
@@ -226,22 +227,115 @@ class MshServiceTest :
                     .message shouldContain "application/json"
             }
 
-            it("reports a business document it cannot interpret as invalid data from MSH") {
+            fun businessDocument(xml: String) =
+                GetBusinessDocumentResponse()
+                    .contentType("application/xml")
+                    .contentTransferEncoding("base64")
+                    .businessDocument(Base64.getEncoder().encodeToString(xml.toByteArray()))
+
+            it("reports a business document of a format that is not supported as an invalid incoming document") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument("<Unknown/>")
+
+                shouldThrow<InvalidIncomingDocumentException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
+            }
+
+            it("reports a business document that is not well-formed XML as an invalid incoming document") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument("<MsgHead><MsgInfo>")
+
+                val error =
+                    shouldThrow<InvalidIncomingDocumentException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                error.error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+                error.isAppRec shouldBe false
+            }
+
+            it("reports a business document with a DOCTYPE as an invalid incoming document") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument("""<!DOCTYPE MsgHead [<!ENTITY x "y">]><MsgHead>&x;</MsgHead>""")
+
+                shouldThrow<InvalidIncomingDocumentException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("reads a business document with a byte order mark") {
+                val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
                 coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
                     GetBusinessDocumentResponse()
                         .contentType("application/xml")
                         .contentTransferEncoding("base64")
-                        .businessDocument(Base64.getEncoder().encodeToString("<Unknown/>".toByteArray()))
+                        .businessDocument(Base64.getEncoder().encodeToString(bom + "<Unknown/>".toByteArray()))
 
-                shouldThrow<InvalidMshDataException> {
+                // Not UGYLDIG_XML, which a byte order mark read as text gives
+                shouldThrow<InvalidIncomingDocumentException> {
                         mshService.getBusinessDocument(messageId.toString(), clientContext())
                     }
-                    .message shouldContain "Unknown"
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
+            }
+
+            listOf(
+                    "not well-formed" to ("<AppRec><MIGversion>" to FeilmeldingForApplikasjonskvittering.UGYLDIG_XML),
+                    "of a version that is not supported" to
+                        ("<AppRec><MIGversion>9</MIGversion></AppRec>" to
+                            FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT),
+                    "not valid against the schema" to
+                        ("""<AppRec xmlns="http://www.kith.no/xmlstds/apprec/2012-02-15">""" +
+                            "<MIGversion>v1.1 2012-02-15</MIGversion></AppRec>" to
+                            FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML),
+                )
+                .forEach { (description, input) ->
+                    val (xml, expectedError) = input
+                    it("reports an AppRec that is $description as an invalid incoming AppRec") {
+                        coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                            businessDocument(xml)
+
+                        val error =
+                            shouldThrow<InvalidIncomingDocumentException> {
+                                mshService.getBusinessDocument(messageId.toString(), clientContext())
+                            }
+                        error.error shouldBe expectedError
+                        error.isAppRec shouldBe true
+                    }
+                }
+
+            it("reports a MsgHead of a version that is not supported as an invalid incoming document") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument(
+                        """<MsgHead xmlns="http://www.kith.no/xmlstds/msghead/2006-05-24"><Unknown/></MsgHead>"""
+                    )
+
+                shouldThrow<InvalidIncomingDocumentException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
             }
 
             it("rejects an id that is not a UUID as invalid client input") {
                 shouldThrow<ClientInputException> { mshService.getBusinessDocument("not-a-uuid", clientContext()) }
                     .message shouldBe "id must be an UUID!"
+            }
+        }
+
+        describe("decodeText") {
+            val text = "<MsgHead>æøå</MsgHead>"
+
+            it("reads UTF-8") { decodeText(text.toByteArray(Charsets.UTF_8)) shouldBe text }
+
+            it("leaves out a UTF-8 byte order mark") {
+                decodeText(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + text.toByteArray()) shouldBe text
+            }
+
+            it("reads UTF-16 with a byte order mark, leaving the mark out") {
+                decodeText(text.toByteArray(Charsets.UTF_16)) shouldBe text
+                decodeText(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + text.toByteArray(Charsets.UTF_16LE)) shouldBe
+                    text
             }
         }
 
