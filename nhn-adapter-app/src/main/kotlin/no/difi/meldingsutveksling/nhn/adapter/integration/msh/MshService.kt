@@ -28,8 +28,14 @@ import no.nhn.msh.v3.model.GetBusinessDocumentResponse
 import no.nhn.msh.v3.model.PostAppRecRequest
 import no.nhn.msh.v3.model.PostMessageRequest
 
-/** The largest business document MSH accepts, Base64 encoded. */
-const val MESSAGE_MAX_BYTES = 50 * 1000 * 1000
+/** The largest request MSH accepts to send a message (API version 3), counted in decimal megabytes to be safe. */
+const val MSH_REQUEST_MAX_BYTES = 35 * 1000 * 1000
+
+/**
+ * The largest business document MSH accepts, Base64 encoded: the request to MSH also holds the sender, receivers and
+ * other metadata, which a margin is left for. Divisible by 4, as Base64 is.
+ */
+const val MESSAGE_MAX_BYTES = MSH_REQUEST_MAX_BYTES - 64 * 1000
 
 /**
  * The business document holds the documents of a message, the vedlegg Base64 encoded, and is Base64 encoded itself.

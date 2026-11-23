@@ -212,9 +212,11 @@ på `/nhn-adapter/v3/api-docs`. Begge er opne utan token.
 | GET    | `/api/lookup/{identifier}`                  | –                                               | `application/json` `ArDetails`  | Slår opp `her-id:<HER-id>` eller `fastlege-for:<fødselsnummer>` i AR. Ukjend HER-id gir `404`. |
 | POST   | `/api/messages/out`                         | `multipart/form-data` (`forretningsmelding`, `dokumentpakke`) | `text/plain` meldingsreferanse | Sender ei dialogmelding eller ein kvittering. `dokumentpakke` trengst berre for dialogmelding. |
 | GET    | `/api/messages/out/{messageId}/statuses`    | –                                               | `application/json` `MessageStatus[]` | Transport- og kvitteringsstatus for ei utgåande melding. Krev tilgang til HER-id-en til avsendaren. |
-| GET    | `/api/messages/in?receiverHerId=<HER-id>`   | –                                               | `application/json` `IncomingMessage[]` | Lister innkomne meldingar for ein HER-id.                                              |
+| GET    | `/api/notifications/unread?herId=<HER-id>[&notificationsToFetch=<1-1000>]` | – | `application/json` `Notification[]` | Uleste notifikasjonar frå MSH for ein HER-id, slik MSH gir dei. Ei ny melding vert annonsert med `NEW_MESSAGE` og `relatedMessageId`. Ein notifikasjon er ulesen til han vert sletta. |
+| POST   | `/api/notifications/delete`                 | `application/json` `{"notificationIds": [...]}` (1–1000) | `text/plain` | Slettar notifikasjonar i MSH. MSH avgrensar slettinga til HER-id-ane klienten kan handle for. |
+| GET    | `/api/messages/in/{messageId}?receiverHerId=<HER-id>` | –                                     | `application/json` `IncomingMessage` | Metadata for ei innkomen melding. `403` om meldinga ikkje er til `receiverHerId`. |
 | POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. |
-| POST   | `/api/messages/in/{messageId}/read?receiverHerId=<HER-id>` | –                                | `text/plain`                    | Markerer ei innkomen melding som lesen i MSH.                                                  |
+| POST   | `/api/messages/in/{messageId}/downloaded?receiverHerId=<HER-id>` | –                          | `text/plain`                    | Markerer meldinga som nedlasta i MSH, som slettar forretningsdokumentet der. Notifikasjonen vert ikkje sletta. |
 
 ### Feil
 
@@ -246,7 +248,7 @@ MSH har i tillegg `request`, som avgrensar heile kallet, òg sendinga av ei stor
 
 - `max-request-size`: førespurnader med større `Content-Length` vert avviste før kroppen vert lesen.
 - `max-dokumentpakke-files`: kor mange filer dokumentpakken kan ha. Filene kan til saman vere 3/4 av grensa til MSH på
-  50 MB utpakka, sidan meldinga til MSH er Base64-koda. Storleiken vert målt, òg for `META-INF`, før filene vert lesne.
+  35 MB utpakka, sidan meldinga til MSH er Base64-koda. Storleiken vert målt, òg for `META-INF`, før filene vert lesne.
 - `large-send-threshold`, `max-concurrent-large-sends` og `large-send-max-wait`: kor mange store sendingar som kan
   byggjast samstundes, og kor lenge ei sending ventar på tur før ho får `503`. Ei sending er stor når førespurnaden
   eller den utpakka dokumentpakken er over terskelen.
@@ -382,6 +384,7 @@ Felles oppsett ligg i [`application.yml`](nhn-adapter-app/src/main/resources/app
 | `nhn.services.ar.url`                         | –                                           | URL til REST-API-et til Adresseregisteret.                        |
 | `nhn.services.flr.*`                          | `NHN_SERVICES_USERNAME`, `NHN_SERVICES_PASSWORD` | URL og innlogging til Fastlegeregisteret.                    |
 | `nhn.services.msh.url`                        | –                                           | URL til MSH-API-et.                                               |
+| `nhn.services.msh.notifications-to-fetch`    | –                                           | Kor mange uleste notifikasjonar `GET /api/notifications/unread` gir når klienten ikkje ber om eit tal (1–1000, standard 1000). |
 | `oauth2.helse-id.client-id`, `.private-key`   | `NHN_CLIENT_ID`, `NHN_PRIVATE_KEY`          | HelseID-klienten adapteret brukar mot MSH og Adresseregisteret. Nøkkelen er ein JWK. |
 | `oauth2.helse-id.issuer`, `.audience`         | –                                           | HelseID-miljø.                                                    |
 | `keystore.path`, `.alias`, `.password`, `.type` | `KEYSTORE_VALUE`, `KEYSTORE_ALIAS`, `KEYSTORE_PASSWORD`, `KEYSTORE_TYPE` (standard `JKS`) | Nøkkellager med adapteret sitt virksomheitssertifikat. |
@@ -596,16 +599,21 @@ sequenceDiagram
     participant "NHN Adapter"
     participant Adresseregisteret
     participant MSH
-    Integrasjonspunktet ->> "NHN Adapter": GET /api/messages/in?receiverHerId
+    Integrasjonspunktet ->> "NHN Adapter": GET /api/notifications/unread?herId
     "NHN Adapter" ->> Adresseregisteret: HerId (tilgangskontroll)
-    "NHN Adapter" ->> MSH: Hent meldingar for HerId
-    MSH ->> "NHN Adapter": Meldingar med metadata
-    "NHN Adapter" ->> Integrasjonspunktet: IncomingMessage[]
+    "NHN Adapter" ->> MSH: Hent uleste notifikasjonar for HerId
+    MSH ->> "NHN Adapter": Notifikasjonar
+    "NHN Adapter" ->> Integrasjonspunktet: Notification[] (NEW_MESSAGE med relatedMessageId, m.fl.)
+    Integrasjonspunktet ->> "NHN Adapter": GET /api/messages/in/{id}?receiverHerId
+    "NHN Adapter" ->> MSH: Hent metadata for meldinga
+    "NHN Adapter" ->> Integrasjonspunktet: IncomingMessage
     Integrasjonspunktet ->> "NHN Adapter": POST /api/messages/in (JWE signert med IP-sertifikat + id)
     "NHN Adapter" ->> MSH: Hent business document
     MSH ->> "NHN Adapter": MsgHead/AppRec med vedlegg
     "NHN Adapter" ->> Integrasjonspunktet: SBD (JWE) + ASiCe kryptert til IP-sertifikatet
-    Integrasjonspunktet ->> "NHN Adapter": POST /api/messages/in/{id}/read
-    "NHN Adapter" ->> MSH: Marker som lesen
+    Integrasjonspunktet ->> "NHN Adapter": POST /api/messages/in/{id}/downloaded?receiverHerId
+    "NHN Adapter" ->> MSH: Marker som nedlasta (slettar forretningsdokumentet)
+    Integrasjonspunktet ->> "NHN Adapter": POST /api/notifications/delete
+    "NHN Adapter" ->> MSH: Slett notifikasjonen
     Integrasjonspunktet ->> Fagsystem: SBH + ASiCe
 ```

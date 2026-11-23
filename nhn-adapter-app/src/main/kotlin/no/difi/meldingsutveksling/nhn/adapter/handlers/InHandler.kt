@@ -26,6 +26,7 @@ import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
@@ -53,6 +54,13 @@ class InHandler(
         auditLogService.log(auditEntry) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
             val message = mshService.getMessage(messageId, clientContext)
+            // MSH lets the client get any message to the HER-ids of its organization, not only
+            // those to [receiverHerId]
+            message.receiverHerIds?.let { receivers ->
+                if (receiverHerId !in receivers) {
+                    throw AccessDeniedException("Message $messageId is not to $receiverHerId")
+                }
+            }
             val inMessage = fromMshData { message.toInMessage(receiverHerId) }
             auditEntry.attribute("senderHerId", inMessage.senderHerId)
 

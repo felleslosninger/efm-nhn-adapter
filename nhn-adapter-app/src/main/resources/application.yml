@@ -13,13 +13,13 @@ spring:
       # A larger part is buffered on disk, like the dokumentpakke later on (temp.threshold)
       max-in-memory-size: 10MB
       # The whole request is limited by limits.max-request-size, also when it is chunked
-      max-disk-usage-per-part: 50MB
+      max-disk-usage-per-part: 35MB
       max-parts: 10
       # Swept for files left behind by MultipartTempFileSweeper, see temp.multipart-max-age
       file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart
   http:
     codecs:
-      max-in-memory-size: 50MB
+      max-in-memory-size: 35MB
   web:
     error:
       include-message: never
@@ -74,7 +74,7 @@ nhn:
       timeout:
         connect: 5s
         read: 30s
-        # A whole call, sending a message of up to 50 MB included
+        # A whole call, sending a message of up to 35 MB included
         request: 120s
       # How many unread notifications GET /api/notifications/unread returns when the client does not ask for a number
       # (1-1000)
@@ -89,9 +89,9 @@ oauth2:
       read: 15s
 
 limits:
-  # MSH accepts at most 50 MB, so a larger request can never be sent. Checked against Content-Length, or, for a chunked
+  # MSH accepts at most 35 MB, so a larger request can never be sent. Checked against Content-Length, or, for a chunked
   # request, against the bytes received.
-  max-request-size: 50MB
+  max-request-size: 35MB
   max-dokumentpakke-files: 100
   # Sends of requests or unpacked dokumentpakker above the threshold are held in memory several times over, and are
   # limited to a few at a time

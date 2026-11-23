@@ -23,13 +23,13 @@ data class IncomingMessage(
  * Maps the metadata of a message received by [receiverHerId].
  *
  * MSH lists every receiver of a message, while the client fetches the messages of one receiver at a time: the message
- * is therefore given to the client as received by [receiverHerId], which must be one of the receivers. Whether the
- * message is an application receipt follows from the MsgType of its business document.
+ * is therefore given to the client as received by [receiverHerId], which must be one of the receivers. Without the
+ * receivers, that cannot be checked, so the metadata is rejected. Whether the message is an application receipt
+ * follows from the MsgType of its business document.
  */
 fun MessageWithMetadata.toInMessage(receiverHerId: Int): IncomingMessage {
-    require(receiverHerIds?.contains(receiverHerId) != false) {
-        "Message $id is not received by $receiverHerId, but by $receiverHerIds"
-    }
+    val receivers = requireNotNull(receiverHerIds) { "Message $id is missing receiverHerIds" }
+    require(receiverHerId in receivers) { "Message $id is not received by $receiverHerId, but by $receivers" }
     return IncomingMessage(
         id = id,
         receiverHerId = receiverHerId,

@@ -33,7 +33,7 @@ audit:
   pseudonymization-key: "test-pseudonymization-key-of-at-least-32-characters"
 
 limits:
-  # 50MB in production, see the comment on spring.webflux.multipart
+  # 35MB in production, see the comment on spring.webflux.multipart
   max-request-size: 2MB
   max-dokumentpakke-files: 100
   # 5MB in production. Below max-request-size, as there, so that a request with a Content-Length can be large enough

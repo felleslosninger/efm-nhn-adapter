@@ -1333,6 +1333,32 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
 
+            it("returns 413 and reads no further when the body is larger than a list of notification ids can be") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["${"x".repeat(200 * 1024)}"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when a notification id is too long") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["${"x".repeat(101)}"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
             it("returns 400 when the input is not valid") {
                 client()
                     .post()
@@ -1390,11 +1416,25 @@ class NhnAdapterApiIT(
                     .isEqualTo(true)
             }
 
-            it("returns 502 when MSH gives a message not received by the receiver") {
+            it("returns 403 when the message is not to the receiver") {
                 val messageId = UUID.randomUUID()
                 coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
                     incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
                         .copy(receiverHerIds = listOf(LEGEKONTOR_HER_ID))
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+            }
+
+            it("returns 502 when MSH does not list the receivers of the message") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG").copy(receiverHerIds = null)
 
                 client()
                     .get()

@@ -40,7 +40,7 @@
                 </exclusion>
                 <exclusion>
                     <groupId>no.ks.fiks</groupId>
-                    <artifactId>msh-api-v2</artifactId>
+                    <artifactId>msh-api-v3</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>no.ks.fiks</groupId>

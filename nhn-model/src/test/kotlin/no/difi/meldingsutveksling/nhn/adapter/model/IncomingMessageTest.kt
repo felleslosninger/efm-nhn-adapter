@@ -55,8 +55,8 @@ class IncomingMessageTest :
                     incomingMessage
             }
 
-            it("gives the message to the requested receiver when MSH does not list the receivers") {
-                metadata(receiverHerIds = null).toInMessage(1000002) shouldBe incomingMessage
+            it("rejects a message when MSH does not list the receivers, as the receiver cannot be checked") {
+                shouldThrow<IllegalArgumentException> { metadata(receiverHerIds = null).toInMessage(1000002) }
             }
 
             it("rejects a message not received by the requested receiver") {
