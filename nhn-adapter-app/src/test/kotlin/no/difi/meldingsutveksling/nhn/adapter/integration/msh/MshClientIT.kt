@@ -30,6 +30,8 @@ import no.difi.meldingsutveksling.nhn.adapter.config.TimeoutConfig
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.stubHelseIdSts
+import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
+import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
 import no.difi.meldingsutveksling.nhn.adapter.model.TransportStatus
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
@@ -40,7 +42,7 @@ import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DeliveryState
 import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
-import no.ks.fiks.nhn.msh.MshException
+import no.ks.fiks.nhn.msh.HttpClientException
 import no.ks.fiks.nhn.msh.MshInternalClient
 import no.ks.fiks.nhn.msh.NotificationType
 import no.ks.fiks.nhn.msh.RequestParameters
@@ -299,11 +301,12 @@ class MshClientIT :
                 )
             }
 
-            it("should handle error responses from MSH API with MshException") {
+            it("should pass on error responses from MSH API as HttpClientException with the status") {
                 val messageId = UUID.randomUUID()
                 stubJson(get(urlEqualTo("/messages/$messageId")), """{"title": "Message not found"}""", 404)
 
-                shouldThrow<MshException> { mshClient.getMessage(messageId.toString(), requestParams) }
+                shouldThrow<HttpClientException> { mshClient.getMessage(messageId.toString(), requestParams) }
+                    .status shouldBe 404
             }
         }
 
@@ -433,6 +436,44 @@ class MshClientIT :
                 )
 
                 shouldThrow<InvalidMshDataException> { mshService.getStatus(messageId, singleTenantContext) }
+            }
+
+            it("getMessage via MshService should pass on a client error from MSH, also when its body is not JSON") {
+                val messageId = UUID.randomUUID()
+                wireMockServer.stubFor(
+                    get(urlEqualTo("/messages/$messageId"))
+                        .willReturn(
+                            aResponse()
+                                .withStatus(404)
+                                .withHeader("Content-Type", "text/html")
+                                .withBody("<html><body>Not Found</body></html>")
+                        )
+                )
+
+                shouldThrow<HttpClientException> { mshService.getMessage(messageId, singleTenantContext) }
+                    .status shouldBe 404
+            }
+
+            it(
+                "sendApplicationReceipt via MshService should report an accepted receipt without an id as invalid data"
+            ) {
+                val messageId = UUID.randomUUID()
+                wireMockServer.stubFor(
+                    post(urlEqualTo("/messages/$messageId/apprec")).willReturn(aResponse().withStatus(202))
+                )
+
+                shouldThrow<InvalidMshDataException> {
+                    mshService.sendApplicationReceipt(
+                        54321,
+                        DialogmeldingKvitteringMessage(
+                            relatedToMessageId = messageId.toString(),
+                            status = DialogmeldingKvitteringStatus.OK,
+                            messages = null,
+                        ),
+                        singleTenantContext,
+                    )
+                }
+                wireMockServer.verify(1, postRequestedFor(urlEqualTo("/messages/$messageId/apprec")))
             }
 
             it("getStatus via MshService should use multi-tenant context and retrieve status") {

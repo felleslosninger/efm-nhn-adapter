@@ -238,6 +238,10 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | For mange store sendingar samstundes (`E7781`)                           | 503            |
 | Alt anna (`E7777`)                                                       | 500            |
 
+Når MSH har teke imot ei melding eller ein applikasjonskvittering, men svaret frå MSH ikkje kan lesast, svarer
+adapteren `502` (`E7780`) sjølv om meldinga er send. Ein klient som sender på nytt etter `502` eller `504`, kan difor
+sende same melding to gonger.
+
 ### Timeout og grenser
 
 Kvar klient mot NHN har eigne timeoutar i `application.yml`: `nhn.services.{ar,flr,msh}.timeout` og

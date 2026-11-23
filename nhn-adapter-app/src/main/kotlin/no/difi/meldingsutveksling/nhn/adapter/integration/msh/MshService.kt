@@ -70,41 +70,34 @@ class MshService(
         herId: Int,
         notificationsToFetch: Int,
         clientContext: ClientContext,
-    ): List<UnreadNotification> = fromMshResponse {
-        mshClient.getUnreadNotifications(listOf(herId), notificationsToFetch, requestParameters(clientContext))
-    }
+    ): List<UnreadNotification> =
+        fromMshResponse(clientContext) { mshClient.getUnreadNotifications(listOf(herId), notificationsToFetch, it) }
 
-    suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) = fromMshResponse {
-        mshClient.deleteNotifications(notificationIds, requestParameters(clientContext))
-    }
+    suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) =
+        fromMshResponse(clientContext) { mshClient.deleteNotifications(notificationIds, it) }
 
-    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata = fromMshResponse {
-        mshClient.getMessage(id.toString(), requestParameters(clientContext))
-    }
+    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata =
+        fromMshResponse(clientContext) { mshClient.getMessage(id.toString(), it) }
 
     /** Reads the sender from the message metadata in MSH. */
     suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int {
-        val message = fromMshResponse { internalClient.getMessage(id.toString(), requestParameters(clientContext)) }
+        val message = fromMshResponse(clientContext) { internalClient.getMessage(id.toString(), it) }
         return message.senderHerId ?: throw InvalidMshDataException("Invalid data from MSH: Message $id has no sender")
     }
 
-    suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> = fromMshResponse {
-        mshClient.getStatus(id.toString(), requestParameters(clientContext)).statusList.orEmpty()
-    }
+    suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> =
+        fromMshResponse(clientContext) { mshClient.getStatus(id.toString(), it).statusList.orEmpty() }
 
     /**
      * Marks the message downloaded by [receiverHerId], which deletes its business document from MSH. Its NewMessage
      * notification is left for the client to delete.
      */
-    suspend fun markMessageDownloaded(id: UUID, receiverHerId: Int, clientContext: ClientContext) = fromMshResponse {
-        mshClient.markMessageDownloaded(id.toString(), receiverHerId, requestParameters(clientContext))
-    }
+    suspend fun markMessageDownloaded(id: UUID, receiverHerId: Int, clientContext: ClientContext) =
+        fromMshResponse(clientContext) { mshClient.markMessageDownloaded(id.toString(), receiverHerId, it) }
 
     suspend fun getBusinessDocument(id: String, clientContext: ClientContext): BusinessDocumentResponse {
         val messageId = id.toClientUuid("id").toString()
-        val businessDocument = fromMshResponse {
-            internalClient.getBusinessDocument(messageId, requestParameters(clientContext))
-        }
+        val businessDocument = fromMshResponse(clientContext) { internalClient.getBusinessDocument(messageId, it) }
         return fromMshData { IncomingBusinessDocumentMapper.toBusinessDocumentResponse(businessDocument.decodeXml()) }
     }
 
@@ -126,7 +119,7 @@ class MshService(
                 .messageTypeIdentificator(BusinessDocumentSerializer.MESSAGE_TYPE.verdi)
                 .applicationName(applicationMetadata.applicationName)
                 .applicationVersion(applicationMetadata.applicationVersion)
-        val id = fromMshResponse { internalClient.postMessage(request, requestParameters(clientContext)) }
+        val id = fromMshResponse(clientContext) { internalClient.postMessage(request, it) }
         return id ?: throw InvalidMshDataException("Invalid data from MSH: No id for the sent message")
     }
 
@@ -137,22 +130,27 @@ class MshService(
     ): String {
         val messageId = receipt.relatedToMessageId.toClientUuid("relatedToMessageId").toString()
         val request = receipt.toPostAppRecRequest(senderHerId, applicationMetadata)
-        val id = fromMshResponse { internalClient.postAppRec(messageId, request, requestParameters(clientContext)) }
+        val id = fromMshResponse(clientContext) { internalClient.postAppRec(messageId, request, it) }
         return id ?: throw InvalidMshDataException("Invalid data from MSH: No id for the sent application receipt")
     }
 
     /**
-     * Calls MSH through msh-client, reporting a response that cannot be read as [InvalidMshDataException]. [block]
-     * must hold the call only, so that the errors caught can only come from the response.
+     * Calls MSH through msh-client with the request parameters for [clientContext], reporting a response that cannot
+     * be read as [InvalidMshDataException]. [block] must hold the call only, so that the errors caught can only come
+     * from the response.
      *
      * msh-client reads the response after the call, so a body that is not the expected JSON throws a ktor
      * [ContentConvertException] or [NoTransformationFoundException]. It also maps some responses without checking that
      * MSH gave the required fields, so a field MSH leaves out throws a [NullPointerException]. A failing call throws
      * an `MshException`, which passes through.
+     *
+     * When MSH has accepted a message to send, but its answer cannot be read, the message is sent although this
+     * reports an error. A client that sends it again may send it twice.
      */
-    private inline fun <T> fromMshResponse(block: () -> T): T =
-        try {
-            block()
+    private inline fun <T> fromMshResponse(clientContext: ClientContext, block: (RequestParameters) -> T): T {
+        val requestParameters = requestParameters(clientContext)
+        return try {
+            block(requestParameters)
         } catch (e: NullPointerException) {
             throw InvalidMshDataException("Invalid data from MSH: A required field is missing", e)
         } catch (e: ContentConvertException) {
@@ -160,6 +158,7 @@ class MshService(
         } catch (e: NoTransformationFoundException) {
             throw InvalidMshDataException("Invalid data from MSH: The response could not be read", e)
         }
+    }
 
     private fun requestParameters(clientContext: ClientContext): RequestParameters =
         RequestParameters(HelseIdTokenParameters(tenantParameters(clientContext)))
