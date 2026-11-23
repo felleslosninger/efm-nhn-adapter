@@ -63,6 +63,7 @@ nhn:
         connect: 1s
         read: 1s
         request: 1s
+      notifications-to-fetch: 50
 oauth2:
   helse-id:
     # The private key is generated for each test run by IntegrationTestEnvironment

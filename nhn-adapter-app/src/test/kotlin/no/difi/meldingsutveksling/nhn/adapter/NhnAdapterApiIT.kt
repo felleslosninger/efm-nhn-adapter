@@ -1206,6 +1206,9 @@ class NhnAdapterApiIT(
                     .jsonPath("$[0].isAppRec")
                     .isEqualTo(false)
 
+                // As many as nhn.services.msh.notifications-to-fetch in the test configuration
+                coVerify { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 50, consumerTenant()) }
+
                 // The notifications about sent messages would otherwise keep new messages from
                 // being listed
                 coVerify(exactly = 1) {

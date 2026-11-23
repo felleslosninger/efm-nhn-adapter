@@ -61,6 +61,7 @@ private object PropertyPrefixes {
 
 private const val SERVICES_AR_URL = "nhn.services.ar.url"
 private const val SERVICES_MSH_URL = "nhn.services.msh.url"
+private const val SERVICES_MSH_NOTIFICATIONS_TO_FETCH = "nhn.services.msh.notifications-to-fetch"
 private const val MULTIPART_FILE_STORAGE_DIRECTORY = "spring.webflux.multipart.file-storage-directory"
 
 private const val OPENAPI_SECURITY_SCHEME = "maskinporten"
@@ -107,7 +108,14 @@ private fun integrations() = BeanRegistrarDsl {
             env.bindRequired(PropertyPrefixes.NHN_SERVICE_MSH_TIMEOUT),
         )
     }
-    registerBean { IntegrationBeans.mshService(bean(), bean(), bean()) }
+    registerBean {
+        IntegrationBeans.mshService(
+            bean(),
+            bean(),
+            bean(),
+            env.getRequiredProperty(SERVICES_MSH_NOTIFICATIONS_TO_FETCH, Int::class.java),
+        )
+    }
 }
 
 private fun services() = BeanRegistrarDsl {

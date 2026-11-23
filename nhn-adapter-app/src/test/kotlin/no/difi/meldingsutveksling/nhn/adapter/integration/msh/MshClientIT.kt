@@ -87,7 +87,7 @@ class MshClientIT :
                     MshTimeoutConfig(timeout.connect, timeout.read, Duration.ofSeconds(10)),
                 )
             mshClient = IntegrationBeans.mshClient(mshInternalClient, applicationMetadata)
-            mshService = IntegrationBeans.mshService(mshClient, mshInternalClient, applicationMetadata)
+            mshService = IntegrationBeans.mshService(mshClient, mshInternalClient, applicationMetadata, 50)
         }
 
         fun stubJson(mapping: MappingBuilder, body: String, status: Int = 200) {

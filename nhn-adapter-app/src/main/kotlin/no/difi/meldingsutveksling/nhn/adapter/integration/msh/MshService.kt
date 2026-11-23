@@ -47,12 +47,25 @@ private const val CONTENT_TRANSFER_ENCODING = "base64"
 
 private val log = KotlinLogging.logger {}
 
-/** Sends and receives messages through NHN's Message Service Handler (MSH) on behalf of the calling client. */
+/**
+ * Sends and receives messages through NHN's Message Service Handler (MSH) on behalf of the calling client.
+ *
+ * [notificationsToFetch] is how many unread notifications are read from MSH at a time, at most
+ * [MAX_NOTIFICATIONS_TO_FETCH]. The messages to a receiver are listed from them, so it limits how many messages are
+ * listed at a time.
+ */
 class MshService(
     private val mshClient: Client,
     private val internalClient: MshInternalClient,
     private val applicationMetadata: ApplicationMetadata,
+    private val notificationsToFetch: Int,
 ) {
+    init {
+        require(notificationsToFetch in 1..MAX_NOTIFICATIONS_TO_FETCH) {
+            "notificationsToFetch must be between 1 and $MAX_NOTIFICATIONS_TO_FETCH, but is $notificationsToFetch"
+        }
+    }
+
     /**
      * MSH has no list of the messages to a receiver: each new message is announced by a NewMessage notification, which
      * stays unread until it is deleted. The messages to [receiverHerId] are therefore the ones its unread NewMessage
@@ -65,7 +78,7 @@ class MshService(
         val requestParameters = requestParameters(clientContext)
         val (newMessages, others) =
             mshClient
-                .getUnreadNotifications(listOf(receiverHerId), MAX_NOTIFICATIONS_TO_FETCH, requestParameters)
+                .getUnreadNotifications(listOf(receiverHerId), notificationsToFetch, requestParameters)
                 .partition { it.type == NotificationType.NEW_MESSAGE }
 
         if (others.isNotEmpty()) {
@@ -90,7 +103,8 @@ class MshService(
 
     /**
      * Marks the message downloaded, which deletes its business document from MSH, and then deletes its NewMessage
-     * notifications, so that it is no longer listed by [getMessagesWithMetadata].
+     * notifications, so that it is no longer listed by [getMessagesWithMetadata]. The notifications are looked for
+     * among as many as MSH returns, so that they are found also when [notificationsToFetch] is lower.
      */
     suspend fun markMessageRead(id: UUID, receiverHerId: Int, clientContext: ClientContext) {
         val requestParameters = requestParameters(clientContext)

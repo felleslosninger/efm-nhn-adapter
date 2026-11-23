@@ -56,13 +56,14 @@ import org.springframework.core.io.ByteArrayResource
 private const val CONSUMER_ORG_NUMBER = "123456789"
 private const val SUPPLIER_ORG_NUMBER = "987654321"
 private const val SENDER_HER_ID = 1000002
+private const val NOTIFICATIONS_TO_FETCH = 50
 
 class MshServiceTest :
     DescribeSpec({
         val mshClient = mockk<Client>()
         val internalClient = mockk<MshInternalClient>()
         val applicationMetadata = ApplicationMetadata("efm-nhn-adapter", "1.2.3")
-        val mshService = MshService(mshClient, internalClient, applicationMetadata)
+        val mshService = MshService(mshClient, internalClient, applicationMetadata, NOTIFICATIONS_TO_FETCH)
 
         fun clientContext(supplier: String? = null) =
             mockk<ClientContext>().also {
@@ -125,6 +126,14 @@ class MshServiceTest :
         describe("getMessagesWithMetadata") {
             beforeEach { clearMocks(mshClient) }
 
+            it("rejects a number of notifications to fetch that MSH does not accept") {
+                listOf(0, MAX_NOTIFICATIONS_TO_FETCH + 1).forEach { notificationsToFetch ->
+                    shouldThrow<IllegalArgumentException> {
+                        MshService(mshClient, internalClient, applicationMetadata, notificationsToFetch)
+                    }
+                }
+            }
+
             it("returns the messages the unread NewMessage notifications refer to, each once") {
                 val first = UUID.randomUUID().toString()
                 val second = UUID.randomUUID().toString()
@@ -140,7 +149,7 @@ class MshServiceTest :
                     listOf(first, second)
 
                 coVerify(exactly = 1) {
-                    mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), MAX_NOTIFICATIONS_TO_FETCH, any())
+                    mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), NOTIFICATIONS_TO_FETCH, any())
                 }
                 coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
