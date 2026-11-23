@@ -1,7 +1,10 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
+import jakarta.xml.bind.JAXBException
 import java.io.ByteArrayInputStream
 import java.io.StringReader
+import javax.xml.stream.XMLInputFactory
+import javax.xml.stream.XMLStreamConstants
 import javax.xml.transform.stream.StreamSource
 import kotlin.time.toKotlinInstant
 import mu.KotlinLogging
@@ -38,12 +41,26 @@ import no.ks.fiks.nhn.msh.Receiver
 import no.ks.fiks.nhn.msh.Sender
 import no.ks.fiks.nhn.parseOffsetDateTimeOrNull
 import org.springframework.util.MimeType
+import org.xml.sax.SAXException
 
 object BusinessDocumentDeserializer {
     const val MSG_HEAD_ROOT = "MsgHead"
     const val MSG_HEAD_VERSION = "v1.2 2006-05-24"
+    private const val MSG_HEAD_NAMESPACE = "http://www.kith.no/xmlstds/msghead/2006-05-24"
+    private const val CONTENT_ELEMENT = "Content"
+    private val DIALOGMELDING_NAMESPACES =
+        setOf("http://www.kith.no/xmlstds/dialog/2006-10-11", "http://www.kith.no/xmlstds/dialog/2013-01-23")
+
+    /** The kodeverk of person ids, which has the D-nummer too, though [PersonIdType] does not. */
+    private const val D_NUMMER = "DNR"
 
     private val log = KotlinLogging.logger {}
+
+    private val contentReaderFactory =
+        XMLInputFactory.newInstance().apply {
+            setProperty(XMLInputFactory.SUPPORT_DTD, false)
+            setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
+        }
 
     fun deserializeMsgHead(xml: String): MsgHead {
         XMLUtils.validateRootElement(xml, MSG_HEAD_ROOT)
@@ -57,15 +74,10 @@ object BusinessDocumentDeserializer {
             try {
                 XmlContext.validateXml(xml)
                 XmlContext.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), MsgHead::class.java).value
-            } catch (e: Exception) {
-                // Not e.message: messages from the schema validation may quote values from the
-                // message,
-                // e.g. the patient's fødselsnummer. The cause has them.
-                throw ApplicationReceiptException(
-                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
-                    "The MsgHead is not valid",
-                    e,
-                )
+            } catch (e: SAXException) {
+                throw invalidMsgHead(xml, e)
+            } catch (e: JAXBException) {
+                throw invalidMsgHead(xml, e)
             }
         if (msgHead.msgInfo == null) {
             throw ApplicationReceiptException(
@@ -76,6 +88,41 @@ object BusinessDocumentDeserializer {
 
         return msgHead
     }
+
+    /**
+     * The schema only accepts the documents the adapter knows, so a message that is not a Dialogmelding fails it too:
+     * that is a format the adapter does not support. Not with e.message, which may quote values from the message, e.g.
+     * the patient's fødselsnummer. The cause has them.
+     */
+    private fun invalidMsgHead(xml: String, cause: Exception): ApplicationReceiptException =
+        if (firstContentNamespace(xml) in DIALOGMELDING_NAMESPACES) {
+            ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                "The MsgHead is not valid",
+                cause,
+            )
+        } else {
+            ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                "The first document is not a Dialogmelding",
+                cause,
+            )
+        }
+
+    /** The namespace of the content of the first document, which is the message itself, if it can be read. */
+    private fun firstContentNamespace(xml: String): String? =
+        runCatching {
+                val reader = contentReaderFactory.createXMLStreamReader(StringReader(xml))
+                var inContent = false
+                while (reader.hasNext()) {
+                    if (reader.next() == XMLStreamConstants.START_ELEMENT) {
+                        if (inContent) return@runCatching reader.namespaceURI
+                        inContent = reader.localName == CONTENT_ELEMENT && reader.namespaceURI == MSG_HEAD_NAMESPACE
+                    }
+                }
+                null
+            }
+            .getOrNull()
 
     fun MsgHead.getSender() = with(msgInfo.sender.organisation) { Sender(parent = getParent(), child = getChild()) }
 
@@ -101,7 +148,7 @@ object BusinessDocumentDeserializer {
                 healthcareProfessional
                     ?: throw invalidMessage(
                         FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
-                        "Found neither a sub-organisation nor a healthcare professional in $organisationName",
+                        "Found neither a sub-organisation nor a healthcare professional in an organisation",
                     )
             ) {
                 PersonCommunicationParty(
@@ -136,7 +183,7 @@ object BusinessDocumentDeserializer {
         ) {
             Patient(
                 fnr =
-                    ident.getPersonId().firstOrNull()?.id
+                    ident.getPatientId()
                         ?: throw invalidMessage(
                             FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR,
                             "Found no ids for patient",
@@ -214,39 +261,39 @@ object BusinessDocumentDeserializer {
 
     private fun CS.toTypeDokumentreferanse() = TypeDokumentreferanse.entries.firstOrNull { it.verdi == v }
 
-    // The messages name the type, not the id, which may be a fødselsnummer
+    /**
+     * The fødselsnummer of the patient, else the D-nummer, else another id of a person. Only the patient's id is
+     * needed, and the D-nummer is not in [PersonIdType].
+     */
+    private fun List<Ident>.getPatientId(): String? =
+        firstOrNull { it.isPersonId(PersonIdType.FNR.verdi) }?.id
+            ?: firstOrNull { it.isPersonId(D_NUMMER) }?.id
+            ?: getPersonId().firstOrNull()?.id
 
-    private fun List<Ident>.getPersonId() =
-        getId().map {
-            it as? PersonId
-                ?: throw invalidMessage(
-                    FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
-                    "Expected an id of a person, but got one of type ${it.type}",
-                )
-        }
+    private fun Ident.isPersonId(type: String) = typeId?.s == PersonIdType.FNR.kodeverk && typeId?.v == type
 
-    private fun List<Ident>.getOrganisasjonId() =
-        getId().map {
-            it as? OrganizationId
-                ?: throw invalidMessage(
-                    FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
-                    "Expected an id of an organisation, but got one of type ${it.type}",
-                )
-        }
+    /**
+     * Ids of types the adapter does not know, or of the wrong kind, are left out rather than rejected: the message is
+     * valid, and only the HER-ids and the patient's id are needed.
+     */
+    private fun List<Ident>.getPersonId() = getId().filterIsInstance<PersonId>()
 
-    private fun List<Ident>.getId() = map {
-        when (val type = it.typeId.toIdType()) {
-            is PersonIdType -> PersonId(it.id, type)
-            is OrganizationIdType -> OrganizationId(it.id, type)
+    private fun List<Ident>.getOrganisasjonId() = getId().filterIsInstance<OrganizationId>()
+
+    private fun List<Ident>.getId() = mapNotNull { ident ->
+        when (val type = ident.typeId?.toIdTypeOrNull()) {
+            is PersonIdType -> PersonId(ident.id, type)
+            is OrganizationIdType -> OrganizationId(ident.id, type)
+            else -> null
         }
     }
 
-    private fun CV.toIdType() =
-        KodeverkRegister.getKodeverk(s, v) as? IdType
-            ?: throw invalidMessage(
-                FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
-                "Expected kodeverk of a valid IdType, but got ($s, $v, $dn)",
-            )
+    private fun CV.toIdTypeOrNull(): IdType? {
+        val kodeverk = s ?: return null
+        val verdi = v ?: return null
+        // getKodeverk throws on a kodeverk it does not know
+        return runCatching { KodeverkRegister.getKodeverk(kodeverk, verdi) }.getOrNull() as? IdType
+    }
 }
 
 /** The message is invalid: the sender's fault, which the receiver answers with [error] in an application receipt. */

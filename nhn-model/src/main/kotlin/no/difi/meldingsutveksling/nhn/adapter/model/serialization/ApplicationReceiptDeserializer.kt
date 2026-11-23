@@ -1,6 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter.model.serialization
 
 import jakarta.xml.bind.JAXBContext
+import jakarta.xml.bind.JAXBException
 import java.io.StringReader
 import javax.xml.transform.stream.StreamSource
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils.getVersion
@@ -34,6 +35,7 @@ import no.kith.xmlstds.apprec._2012_02_15.HCProf
 import no.kith.xmlstds.apprec._2012_02_15.Inst
 import no.kith.xmlstds.apprec._2012_02_15.OriginalMsgId
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
+import org.xml.sax.SAXException
 
 object ApplicationReceiptDeserializer {
     const val APP_REC_ROOT = "AppRec"
@@ -75,13 +77,18 @@ object ApplicationReceiptDeserializer {
     private inline fun <T> valid(block: () -> T): T =
         try {
             block()
-        } catch (e: Exception) {
-            throw ApplicationReceiptException(
-                FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
-                "The AppRec is not valid",
-                e,
-            )
+        } catch (e: SAXException) {
+            throw invalidAppRec(e)
+        } catch (e: JAXBException) {
+            throw invalidAppRec(e)
         }
+
+    private fun invalidAppRec(cause: Exception) =
+        ApplicationReceiptException(
+            FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+            "The AppRec is not valid",
+            cause,
+        )
 
     private fun toLatest(input: AppRec1_0): AppRec {
         return AppRec().apply {

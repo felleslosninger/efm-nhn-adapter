@@ -261,6 +261,70 @@ class IncomingBusinessDocumentMapperTest :
                     }
                     .error shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
             }
+
+            fun rejected(xml: String) =
+                shouldThrow<ApplicationReceiptException> {
+                        IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml)
+                    }
+                    .error
+
+            it("rejects a message without a patient") {
+                rejected(msgHeadXml.withoutElements("Patient")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.UTILSTREKKELIG_PASIENTOPPLYSNING
+            }
+
+            it("rejects a message without an id of the patient") {
+                rejected(msgHeadXml.inElement("Patient") { it.withoutElements("Ident") }) shouldBe
+                    FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR
+            }
+
+            it("accepts a patient with a D-nummer, which is not a known id type") {
+                val xml = msgHeadXml.inElement("Patient") { it.replace("V=\"FNR\"", "V=\"DNR\"") }
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.dialogmelding.pasient?.fnr shouldBe
+                    receiver.patient.fnr
+            }
+
+            it("rejects a sender with neither a sub-organisation nor a healthcare professional") {
+                rejected(msgHeadXml.withoutElements("HealthcareProfessional")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a sender without a HER-id") {
+                val xml = msgHeadXml.inElement("HealthcareProfessional") { it.replace("V=\"HER\"", "V=\"HPR\"") }
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a vedlegg without a MIME type") {
+                rejected(msgHeadXml.withoutElements("MimeType")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a message that is not a Dialogmelding as a format that is not supported") {
+                val xml = msgHeadXml.replace("http://www.kith.no/xmlstds/dialog/2013-01-23", "urn:example:unknown")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
+            }
+
+            it("maps a message with a byte order mark") {
+                val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(decodeText(bom + msgHeadXml.toByteArray()))
+                    .sbd
+                    .messageId shouldBe msgId.toString()
+            }
+
+            it("maps a message that declares another encoding") {
+                msgHeadXml shouldContain "encoding=\"UTF-8\""
+                val latin1 = msgHeadXml.replaceFirst("encoding=\"UTF-8\"", "encoding=\"ISO-8859-1\"")
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
+                        decodeText(latin1.toByteArray(Charsets.ISO_8859_1))
+                    )
+                    .sbd
+                    .messageId shouldBe msgId.toString()
+            }
         }
 
         describe("getDialogmelding") {
@@ -423,3 +487,15 @@ class IncomingBusinessDocumentMapperTest :
 private fun readResource(path: String): ByteArray =
     checkNotNull(IncomingBusinessDocumentMapperTest::class.java.getResourceAsStream(path)) { "Missing $path" }
         .use { it.readAllBytes() }
+
+private fun elementPattern(name: String) =
+    Regex("""<(\w+:)?$name\b[^>]*>.*?</(\w+:)?$name>""", RegexOption.DOT_MATCHES_ALL)
+
+/** The XML without the elements named [name]. */
+private fun String.withoutElements(name: String) = replace(elementPattern(name), "")
+
+/** The XML with the first element named [name] changed by [change]. */
+private fun String.inElement(name: String, change: (String) -> String): String {
+    val element = elementPattern(name).find(this) ?: error("Found no $name")
+    return replaceRange(element.range, change(element.value))
+}

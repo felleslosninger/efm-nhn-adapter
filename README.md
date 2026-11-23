@@ -244,6 +244,19 @@ Når MSH har teke imot ei melding eller ein applikasjonskvittering, men svaret f
 adapteren `502` (`E7780`) sjølv om meldinga er send. Ein klient som sender på nytt etter `502` eller `504`, kan difor
 sende same melding to gonger.
 
+Ei innkomen melding vert avvist med `422` (`E7782`) og denne feilkoden når ho ikkje oppfyller det adapteren krev:
+
+| Krav | Feilkode |
+|------|----------|
+| Velforma XML i UTF-8, UTF-16 med byte order mark eller kodinga XML-deklarasjonen oppgir | `T01` ugyldig XML |
+| MsgHead `v1.2 2006-05-24` med ein Dialogmelding 1.0 eller 1.1 som første dokument | `T10` støttar ikkje formatet |
+| Gyldig etter skjemaet. Eit ekstra dokument i eit namnerom adapteren ikkje kjenner, gjer meldinga ugyldig | `T02` validerer ikkje |
+| Ein pasient, med fødselsnummer, D-nummer eller anna person-id | `E36` utan pasient, `E30` utan id |
+| Avsendar og mottakar med HER-id på to nivå: verksemd, og underavdeling eller helsepersonell | `T99` anna feil i formatet |
+| Vedlegg (`A`) i ein `Base64Container` med gyldig MIME-type | `T10` / `T99` |
+
+Id-ar av typar adapteren ikkje kjenner, vert ignorerte. Dokument som ikkje er vedlegg, til dømes referansar, vert òg ignorerte.
+
 ### Timeout og grenser
 
 Kvar klient mot NHN har eigne timeoutar i `application.yml`: `nhn.services.{ar,flr,msh}.timeout` og

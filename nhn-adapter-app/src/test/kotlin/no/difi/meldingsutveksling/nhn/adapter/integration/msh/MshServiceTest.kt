@@ -26,6 +26,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.move.common.dokumentpakking.domain.Document
@@ -259,10 +260,34 @@ class MshServiceTest :
                 coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
                     businessDocument("""<!DOCTYPE MsgHead [<!ENTITY x "y">]><MsgHead>&x;</MsgHead>""")
 
-                shouldThrow<InvalidIncomingDocumentException> {
+                val error =
+                    shouldThrow<InvalidIncomingDocumentException> {
                         mshService.getBusinessDocument(messageId.toString(), clientContext())
                     }
-                    .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+                error.error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+                error.isAppRec shouldBe false
+            }
+
+            it("reports an AppRec with a DOCTYPE as an invalid incoming AppRec") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument("""<!DOCTYPE AppRec [<!ENTITY x "y">]><AppRec>&x;</AppRec>""")
+
+                val error =
+                    shouldThrow<InvalidIncomingDocumentException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                error.error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+                error.isAppRec shouldBe true
+            }
+
+            it("reports an empty business document as invalid data from MSH, not the sender's fault") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument("  ")
+
+                shouldThrow<InvalidMshDataException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                    .message shouldContain "empty"
             }
 
             it("reads a business document with a byte order mark") {
@@ -336,6 +361,27 @@ class MshServiceTest :
                 decodeText(text.toByteArray(Charsets.UTF_16)) shouldBe text
                 decodeText(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + text.toByteArray(Charsets.UTF_16LE)) shouldBe
                     text
+            }
+
+            it("reads the encoding the XML declaration gives, and declares UTF-8 instead") {
+                val latin1 = """<?xml version="1.0" encoding="ISO-8859-1"?><MsgHead>Bjørn</MsgHead>"""
+
+                decodeText(latin1.toByteArray(Charsets.ISO_8859_1)) shouldBe
+                    """<?xml version="1.0" encoding="UTF-8"?><MsgHead>Bjørn</MsgHead>"""
+            }
+
+            it("rejects a document that is not valid in its encoding") {
+                val notUtf8 = "<MsgHead>Bjørn</MsgHead>".toByteArray(Charsets.ISO_8859_1)
+
+                shouldThrow<ApplicationReceiptException> { decodeText(notUtf8) }.error shouldBe
+                    FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("rejects an encoding that is not supported") {
+                val xml = """<?xml version="1.0" encoding="X-UNKNOWN"?><MsgHead/>"""
+
+                shouldThrow<ApplicationReceiptException> { decodeText(xml.toByteArray()) }.error shouldBe
+                    FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
             }
         }
 

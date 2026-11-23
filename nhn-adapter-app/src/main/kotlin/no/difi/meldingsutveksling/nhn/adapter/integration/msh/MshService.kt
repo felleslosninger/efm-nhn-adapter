@@ -11,9 +11,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toClientUuid
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
-import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
-import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.msh.ApplicationMetadata
@@ -102,13 +100,13 @@ class MshService(
     suspend fun getBusinessDocument(id: String, clientContext: ClientContext): BusinessDocumentResponse {
         val messageId = id.toClientUuid("id").toString()
         val businessDocument = fromMshResponse(clientContext) { internalClient.getBusinessDocument(messageId, it) }
-        val xml = fromMshData { businessDocument.decodeXml() }
+        val bytes = fromMshData { businessDocument.decodeBytes() }
         return fromMshData {
             try {
-                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml)
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(decodeText(bytes))
             } catch (e: ApplicationReceiptException) {
                 // The sender's document is invalid, which trying again does not fix
-                throw InvalidIncomingDocumentException(e, isAppRec = isAppRec(xml))
+                throw InvalidIncomingDocumentException(e, isAppRec = isAppRec(bytes))
             }
         }
     }
@@ -193,35 +191,16 @@ internal fun base64Length(size: Int): Long = (size + 2L) / 3 * 4
 private fun herId(child: CommunicationParty, parent: CommunicationParty, role: String): Int =
     child.herId ?: parent.herId ?: throw IllegalArgumentException("The $role has no HER-id")
 
-private fun GetBusinessDocumentResponse.decodeXml(): String {
+/** The bytes of the business document. A document that is missing is MSH's fault, not the sender's. */
+private fun GetBusinessDocumentResponse.decodeBytes(): ByteArray {
     require(contentTransferEncoding == CONTENT_TRANSFER_ENCODING) {
         "'$contentTransferEncoding' is not a supported transfer encoding"
     }
     require(contentType == CONTENT_TYPE) { "'$contentType' is not a supported content type" }
-    return decodeText(Base64.getDecoder().decode(businessDocument))
+    val bytes = Base64.getDecoder().decode(businessDocument.orEmpty())
+    require(bytes.any { !it.toInt().toChar().isWhitespace() }) { "The business document is empty" }
+    return bytes
 }
-
-private val UTF_8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
-private val UTF_16BE_BOM = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
-private val UTF_16LE_BOM = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
-
-/**
- * The text of an XML document, which is UTF-8 unless a byte order mark says otherwise. The mark is left out: the
- * parsers read the text, not the bytes, and would take it for content before the root element.
- */
-internal fun decodeText(bytes: ByteArray): String {
-    fun startsWith(bom: ByteArray) = bytes.size >= bom.size && bom.indices.all { bytes[it] == bom[it] }
-    return when {
-        startsWith(UTF_8_BOM) -> String(bytes, UTF_8_BOM.size, bytes.size - UTF_8_BOM.size, Charsets.UTF_8)
-        startsWith(UTF_16BE_BOM) -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
-        startsWith(UTF_16LE_BOM) -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
-        else -> String(bytes, Charsets.UTF_8)
-    }
-}
-
-/** Whether the document is an AppRec, as far as its root element tells. */
-private fun isAppRec(xml: String): Boolean =
-    runCatching { XMLUtils.getRootElement(xml) == ApplicationReceiptDeserializer.APP_REC_ROOT }.getOrDefault(false)
 
 private fun DialogmeldingKvitteringMessage.toPostAppRecRequest(
     senderHerId: Int,

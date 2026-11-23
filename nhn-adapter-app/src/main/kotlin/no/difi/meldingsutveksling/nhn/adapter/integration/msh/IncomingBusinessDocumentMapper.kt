@@ -186,7 +186,7 @@ object IncomingBusinessDocumentMapper {
     private fun CommunicationParty.requireHerId(role: String): Int =
         herId
             ?: throw invalidMessage(
-                FeilmeldingForApplikasjonskvittering.UGYLDIG_ID,
+                FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
                 "Missing HER-id for the $role in MsgHead",
             )
 
@@ -199,7 +199,7 @@ object IncomingBusinessDocumentMapper {
                 hcProf?.id
             }
         return id?.toIntOrNull()
-            ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.UGYLDIG_ID, "Missing HER-id in AppRec")
+            ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT, "Missing HER-id in AppRec")
     }
 
     /** The status is coded in kodeverk 8222. Only the code (V) is reliable, the display name (DN) is e.g. "Avvist". */
@@ -211,7 +211,7 @@ object IncomingBusinessDocumentMapper {
             null ->
                 throw ApplicationReceiptException(
                     FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
-                    "Unknown AppRec status V=$v DN=$dn",
+                    "Unknown AppRec status V=$v",
                 )
         }
 
