@@ -223,10 +223,16 @@ class IncomingBusinessDocumentMapperTest :
                     )
             }
 
-            it("has no conversation scopes without a conversation reference") {
-                val xml = BusinessDocumentSerializer.serializeNhnMessage(sendMessageInput())
+            // The receiver cannot process a message without a process, i.e. a conversation
+            it("starts a conversation of its own without a conversation reference") {
+                val id = UUID.randomUUID()
+                val xml = BusinessDocumentSerializer.serializeNhnMessage(sendMessageInput(id = id))
 
-                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.scopes.shouldBeEmpty()
+                with(IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd) {
+                    conversationId shouldBe id.toString()
+                    parentId.shouldBeNull()
+                    process.shouldNotBeNull()
+                }
             }
 
             it("rejects another MIGversion") {
@@ -285,15 +291,65 @@ class IncomingBusinessDocumentMapperTest :
                     receiver.patient.fnr
             }
 
-            it("rejects a sender with neither a sub-organisation nor a healthcare professional") {
-                rejected(msgHeadXml.withoutElements("HealthcareProfessional")) shouldBe
-                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            fun senderHerId(xml: String) =
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.senderHerId
+
+            it("uses the HER-id of the organisation for a sender addressed at one level only") {
+                senderHerId(msgHeadXml.withoutElements("HealthcareProfessional")) shouldBe LEGEKONTOR_HER_ID
             }
 
-            it("rejects a sender without a HER-id") {
+            it("uses the HER-id of the organisation when the healthcare professional has none") {
                 val xml = msgHeadXml.inElement("HealthcareProfessional") { it.replace("V=\"HER\"", "V=\"HPR\"") }
 
+                senderHerId(xml) shouldBe LEGEKONTOR_HER_ID
+            }
+
+            it("accepts a HER-id given in the kodeverk of organisations") {
+                val xml =
+                    msgHeadXml.inElement("HealthcareProfessional") {
+                        it.replace("2.16.578.1.12.4.1.1.8116", "2.16.578.1.12.4.1.1.9051")
+                    }
+
+                senderHerId(xml) shouldBe FASTLEGE_HER_ID
+            }
+
+            it("rejects a sender without a HER-id at either level") {
+                val xml = msgHeadXml.inElement("Sender") { it.replace("V=\"HER\"", "V=\"ENH\"") }
+
                 rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a patient identified by another id than a fødselsnummer or D-nummer") {
+                val xml = msgHeadXml.inElement("Patient") { it.replace("V=\"FNR\"", "V=\"HPR\"") }
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR
+            }
+
+            it("accepts a fødselsnummer without a kodeverk") {
+                val xml = msgHeadXml.inElement("Patient") { it.replace(Regex(""" S="[^"]*""""), "") }
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.dialogmelding.pasient?.fnr shouldBe
+                    receiver.patient.fnr
+            }
+
+            it("rejects a MsgHead that is not well-formed XML as such, wherever it breaks") {
+                val xml = msgHeadXml.replaceFirst(Regex("</(\\w+:)?MsgInfo>"), "</Broken>")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("rejects an error in the text of the MIGversion as XML that is not well-formed") {
+                val xml = msgHeadXml.replace(BusinessDocumentDeserializer.MSG_HEAD_VERSION, "v1.2 &bogus; 2006-05-24")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("maps a message in UTF-16 with a byte order mark") {
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
+                        decodeText(msgHeadXml.toByteArray(Charsets.UTF_16))
+                    )
+                    .sbd
+                    .messageId shouldBe msgId.toString()
             }
 
             it("rejects a vedlegg without a MIME type") {

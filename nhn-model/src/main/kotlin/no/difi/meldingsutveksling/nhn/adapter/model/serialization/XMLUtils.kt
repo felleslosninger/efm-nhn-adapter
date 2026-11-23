@@ -36,8 +36,10 @@ object XMLUtils {
                 reader.nextRejectingDoctype() == XMLStreamConstants.START_ELEMENT &&
                     reader.localName == MIG_VERSION_ELEMENT
             ) {
-                // An empty element has no text
-                return if (reader.next() == XMLStreamConstants.CHARACTERS) reader.text else null
+                // All the text, also in CDATA or around comments. Unlike reader.text, which some
+                // parsers read
+                // lazily, it reports an error in the text as an XMLStreamException.
+                return reader.elementText.trim().ifEmpty { null }
             }
         }
         return null

@@ -87,7 +87,9 @@ private val rootElementFactory =
  */
 internal fun isAppRec(bytes: ByteArray): Boolean =
     runCatching {
-            val (charset, offset) = encodingOf(bytes)
+            // The name of the root element is ASCII, so readable also in an encoding that is not
+            // supported
+            val (charset, offset) = runCatching { encodingOf(bytes) }.getOrElse { Charsets.ISO_8859_1 to 0 }
             val reader =
                 rootElementFactory.createXMLStreamReader(
                     StringReader(String(bytes, offset, bytes.size - offset, charset))

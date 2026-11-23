@@ -29,6 +29,7 @@ import no.ks.fiks.hdir.PersonIdType
 import no.ks.fiks.hdir.TypeDokumentreferanse
 import no.ks.fiks.nhn.edi.XmlContext
 import no.ks.fiks.nhn.msh.Address
+import no.ks.fiks.nhn.msh.CommunicationParty
 import no.ks.fiks.nhn.msh.ConversationRef
 import no.ks.fiks.nhn.msh.Country
 import no.ks.fiks.nhn.msh.County
@@ -94,8 +95,18 @@ object BusinessDocumentDeserializer {
      * that is a format the adapter does not support. Not with e.message, which may quote values from the message, e.g.
      * the patient's fødselsnummer. The cause has them.
      */
-    private fun invalidMsgHead(xml: String, cause: Exception): ApplicationReceiptException =
-        if (firstContentNamespace(xml) in DIALOGMELDING_NAMESPACES) {
+    private fun invalidMsgHead(xml: String, cause: Exception): ApplicationReceiptException {
+        val namespace =
+            try {
+                firstContentNamespace(xml)
+            } catch (e: Exception) {
+                return ApplicationReceiptException(
+                    FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                    "The MsgHead is not well-formed XML",
+                    e,
+                )
+            }
+        return if (namespace in DIALOGMELDING_NAMESPACES) {
             ApplicationReceiptException(
                 FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
                 "The MsgHead is not valid",
@@ -108,21 +119,24 @@ object BusinessDocumentDeserializer {
                 cause,
             )
         }
+    }
 
-    /** The namespace of the content of the first document, which is the message itself, if it can be read. */
-    private fun firstContentNamespace(xml: String): String? =
-        runCatching {
-                val reader = contentReaderFactory.createXMLStreamReader(StringReader(xml))
-                var inContent = false
-                while (reader.hasNext()) {
-                    if (reader.next() == XMLStreamConstants.START_ELEMENT) {
-                        if (inContent) return@runCatching reader.namespaceURI
-                        inContent = reader.localName == CONTENT_ELEMENT && reader.namespaceURI == MSG_HEAD_NAMESPACE
-                    }
-                }
-                null
+    /**
+     * The namespace of the content of the first document, which is the message itself. The whole document is read, so
+     * that a document that is not well-formed throws, wherever it breaks.
+     */
+    private fun firstContentNamespace(xml: String): String? {
+        val reader = contentReaderFactory.createXMLStreamReader(StringReader(xml))
+        var namespace: String? = null
+        var inContent = false
+        while (reader.hasNext()) {
+            if (reader.next() == XMLStreamConstants.START_ELEMENT && namespace == null) {
+                if (inContent) namespace = reader.namespaceURI ?: ""
+                inContent = reader.localName == CONTENT_ELEMENT && reader.namespaceURI == MSG_HEAD_NAMESPACE
             }
-            .getOrNull()
+        }
+        return namespace
+    }
 
     fun MsgHead.getSender() = with(msgInfo.sender.organisation) { Sender(parent = getParent(), child = getChild()) }
 
@@ -142,23 +156,19 @@ object BusinessDocumentDeserializer {
      * The child is either a sub-organization or a healthcare professional within the parent organization. Note that a
      * healthcare professional is given the address of the parent organization, not its own.
      */
-    fun Organisation.getChild() =
+    fun Organisation.getChild(): CommunicationParty =
         organisation?.getParent()
-            ?: with(
-                healthcareProfessional
-                    ?: throw invalidMessage(
-                        FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
-                        "Found neither a sub-organisation nor a healthcare professional in an organisation",
-                    )
-            ) {
+            ?: healthcareProfessional?.let {
                 PersonCommunicationParty(
-                    ids = ident.getPersonId(),
-                    address = this@getChild.convertAddress(),
-                    firstName = givenName,
-                    middleName = middleName,
-                    lastName = familyName,
+                    ids = it.ident.getPersonId(),
+                    address = convertAddress(),
+                    firstName = it.givenName,
+                    middleName = it.middleName,
+                    lastName = it.familyName,
                 )
             }
+            // An organisation addressed at one level only is its own child
+            ?: getParent()
 
     private fun Organisation.convertAddress() =
         address?.let { address ->
@@ -262,23 +272,36 @@ object BusinessDocumentDeserializer {
     private fun CS.toTypeDokumentreferanse() = TypeDokumentreferanse.entries.firstOrNull { it.verdi == v }
 
     /**
-     * The fødselsnummer of the patient, else the D-nummer, else another id of a person. Only the patient's id is
-     * needed, and the D-nummer is not in [PersonIdType].
+     * The fødselsnummer of the patient, else the D-nummer, which is not in [PersonIdType]. Other ids, e.g. a H-nummer,
+     * are not national ids, so the patient has none. The kodeverk may be left out.
      */
     private fun List<Ident>.getPatientId(): String? =
-        firstOrNull { it.isPersonId(PersonIdType.FNR.verdi) }?.id
-            ?: firstOrNull { it.isPersonId(D_NUMMER) }?.id
-            ?: getPersonId().firstOrNull()?.id
+        firstOrNull { it.isPersonId(PersonIdType.FNR.verdi) }?.id ?: firstOrNull { it.isPersonId(D_NUMMER) }?.id
 
-    private fun Ident.isPersonId(type: String) = typeId?.s == PersonIdType.FNR.kodeverk && typeId?.v == type
+    private fun Ident.isPersonId(type: String) =
+        typeId?.v == type && (typeId?.s == null || typeId?.s == PersonIdType.FNR.kodeverk)
 
     /**
-     * Ids of types the adapter does not know, or of the wrong kind, are left out rather than rejected: the message is
-     * valid, and only the HER-ids and the patient's id are needed.
+     * Ids of types the adapter does not know are left out rather than rejected: the message is valid, and only the
+     * HER-ids and the patient's id are needed. A HER-id is one whichever of the two kodeverk it is given in.
      */
-    private fun List<Ident>.getPersonId() = getId().filterIsInstance<PersonId>()
+    private fun List<Ident>.getPersonId(): List<PersonId> =
+        getId().mapNotNull {
+            when {
+                it is PersonId -> it
+                it.type == OrganizationIdType.HER_ID -> PersonId(it.id, PersonIdType.HER_ID)
+                else -> null
+            }
+        }
 
-    private fun List<Ident>.getOrganisasjonId() = getId().filterIsInstance<OrganizationId>()
+    private fun List<Ident>.getOrganisasjonId(): List<OrganizationId> =
+        getId().mapNotNull {
+            when {
+                it is OrganizationId -> it
+                it.type == PersonIdType.HER_ID -> OrganizationId(it.id, OrganizationIdType.HER_ID)
+                else -> null
+            }
+        }
 
     private fun List<Ident>.getId() = mapNotNull { ident ->
         when (val type = ident.typeId?.toIdTypeOrNull()) {

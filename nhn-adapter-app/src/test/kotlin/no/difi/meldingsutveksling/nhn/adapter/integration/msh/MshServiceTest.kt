@@ -16,6 +16,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import java.nio.charset.Charset
 import java.util.Base64
 import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
@@ -280,6 +281,18 @@ class MshServiceTest :
                 error.isAppRec shouldBe true
             }
 
+            it("reports an AppRec in an encoding that is not supported as an invalid incoming AppRec") {
+                coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
+                    businessDocument("""<?xml version="1.0" encoding="bogus-1"?><AppRec/>""")
+
+                val error =
+                    shouldThrow<InvalidIncomingDocumentException> {
+                        mshService.getBusinessDocument(messageId.toString(), clientContext())
+                    }
+                error.error shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
+                error.isAppRec shouldBe true
+            }
+
             it("reports an empty business document as invalid data from MSH, not the sender's fault") {
                 coEvery { internalClient.getBusinessDocument(messageId.toString(), any()) } returns
                     businessDocument("  ")
@@ -382,6 +395,13 @@ class MshServiceTest :
 
                 shouldThrow<ApplicationReceiptException> { decodeText(xml.toByteArray()) }.error shouldBe
                     FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
+            }
+
+            it("reads a declaration with single quotes and standalone") {
+                val latin1 = "<?xml version='1.0' encoding='windows-1252' standalone='yes'?><MsgHead>Bjørn</MsgHead>"
+
+                decodeText(latin1.toByteArray(Charset.forName("windows-1252"))) shouldBe
+                    "<?xml version='1.0' encoding=\"UTF-8\" standalone='yes'?><MsgHead>Bjørn</MsgHead>"
             }
         }
 

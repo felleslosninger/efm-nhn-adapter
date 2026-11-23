@@ -65,6 +65,21 @@ class XMLUtilsTest :
                 XMLUtils.getVersion("<AppRec><MIGversion/></AppRec>").shouldBeNull()
             }
 
+            it("reads all the text of the MIGversion, trimmed") {
+                XMLUtils.getVersion("<AppRec><MIGversion>\n  v1.1 2012-02-15\n</MIGversion></AppRec>") shouldBe
+                    "v1.1 2012-02-15"
+                XMLUtils.getVersion("<AppRec><MIGversion><![CDATA[v1.1 2012-02-15]]></MIGversion></AppRec>") shouldBe
+                    "v1.1 2012-02-15"
+                XMLUtils.getVersion("<AppRec><MIGversion><!-- c -->v1.1 2012-02-15</MIGversion></AppRec>") shouldBe
+                    "v1.1 2012-02-15"
+            }
+
+            it("reports an error in the text of the MIGversion as XML that is not well-formed") {
+                shouldThrow<XMLStreamException> {
+                    XMLUtils.getVersion("<AppRec><MIGversion>v1.1 &bogus; 2012-02-15</MIGversion></AppRec>")
+                }
+            }
+
             it("rejects a DOCTYPE") {
                 shouldThrow<ApplicationReceiptException> {
                         XMLUtils.getVersion(

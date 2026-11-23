@@ -88,8 +88,8 @@ object IncomingBusinessDocumentMapper {
                     scopes = conversationScopes(msgHead),
                 )
                 .apply {
-                    senderHerId = msgHead.getSender().child.requireHerId("sender")
-                    receiverHerId = receiver.child.requireHerId("receiver")
+                    senderHerId = msgHead.getSender().let { requireHerId(it.child, it.parent, "sender") }
+                    receiverHerId = requireHerId(receiver.child, receiver.parent, "receiver")
                     dialogmelding =
                         DialogmeldingMessage(
                             hoveddokument = AttachmentNames.DIALOGMELDING,
@@ -113,11 +113,18 @@ object IncomingBusinessDocumentMapper {
         return BusinessDocumentResponse(sbd, attachments)
     }
 
+    /**
+     * The conversation the message belongs to, which the receiver needs to process it. Without a reference to one, the
+     * message starts a conversation of its own, as the first message of a dialog does.
+     */
     private fun conversationScopes(msgHead: MsgHead): List<Scope> {
-        val conversationRef = msgHead.getConversationRef() ?: return emptyList()
+        val conversationRef = msgHead.getConversationRef()
         return listOfNotNull(
-            processScope(ScopeType.CONVERSATION_ID, conversationRef.refToConversation ?: msgHead.msgInfo.msgId),
-            conversationRef.refToParent?.let { processScope(ScopeType.PARENT_ID, it) },
+            processScope(
+                ScopeType.CONVERSATION_ID,
+                conversationRef?.refToConversation?.takeUnless { it.isBlank() } ?: msgHead.msgInfo.msgId,
+            ),
+            conversationRef?.refToParent?.takeUnless { it.isBlank() }?.let { processScope(ScopeType.PARENT_ID, it) },
         )
     }
 
@@ -183,8 +190,10 @@ object IncomingBusinessDocumentMapper {
 
     private fun IncomingAttachment.filename(index: Int) = AttachmentNames.vedlegg(index, mimeType)
 
-    private fun CommunicationParty.requireHerId(role: String): Int =
-        herId
+    /** The HER-id of the child, else of the parent, as messages are addressed when sent too. */
+    private fun requireHerId(child: CommunicationParty, parent: CommunicationParty, role: String): Int =
+        child.herId
+            ?: parent.herId
             ?: throw invalidMessage(
                 FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
                 "Missing HER-id for the $role in MsgHead",
@@ -211,7 +220,7 @@ object IncomingBusinessDocumentMapper {
             null ->
                 throw ApplicationReceiptException(
                     FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
-                    "Unknown AppRec status V=$v",
+                    "Unknown AppRec status",
                 )
         }
 
