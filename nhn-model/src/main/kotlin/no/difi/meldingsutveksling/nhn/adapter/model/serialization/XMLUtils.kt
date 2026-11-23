@@ -3,6 +3,7 @@ package no.difi.meldingsutveksling.nhn.adapter.model.serialization
 import java.io.StringReader
 import javax.xml.stream.XMLInputFactory
 import javax.xml.stream.XMLStreamConstants
+import javax.xml.stream.XMLStreamException
 import javax.xml.stream.XMLStreamReader
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 
@@ -39,11 +40,33 @@ object XMLUtils {
                 // All the text, also in CDATA or around comments. Unlike reader.text, which some
                 // parsers read
                 // lazily, it reports an error in the text as an XMLStreamException.
-                return reader.elementText.trim().ifEmpty { null }
+                return try {
+                    reader.elementText.trim().ifEmpty { null }
+                } catch (e: XMLStreamException) {
+                    // An element in the MIGversion is well-formed, but not valid
+                    if (!isWellFormed(xml)) throw e
+                    throw ApplicationReceiptException(
+                        FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                        "The MIGversion is not text",
+                        e,
+                    )
+                }
             }
         }
         return null
     }
+
+    /** Whether the whole document is well-formed XML. A DOCTYPE is rejected. */
+    fun isWellFormed(xml: String): Boolean =
+        try {
+            val reader = createReader(xml)
+            while (reader.hasNext()) {
+                reader.nextRejectingDoctype()
+            }
+            true
+        } catch (_: XMLStreamException) {
+            false
+        }
 
     /** The name of the root element, or null if it is not found within [MAX_PROLOG_EVENTS] events. */
     fun getRootElement(xml: String): String? {

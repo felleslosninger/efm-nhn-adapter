@@ -68,7 +68,6 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingMessage
-import no.difi.meldingsutveksling.nhn.adapter.messages.PROCESS
 import no.difi.meldingsutveksling.nhn.adapter.messages.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
@@ -1665,6 +1664,44 @@ class NhnAdapterApiIT(
                     .isForbidden
             }
 
+            it("returns 422 when the receiver in the business document is not in Adresseregisteret") {
+                // Adresseregisteret does not know LEGEKONTOR_TJENESTE_HER_ID here
+                val messageId = UUID.randomUUID()
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = legekontorTjeneste.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7782")
+            }
+
             it("returns the incoming dialogmelding as an encrypted forretningsmelding and dokumentpakke") {
                 val messageId = UUID.randomUUID()
                 val msgHead =
@@ -1719,6 +1756,13 @@ class NhnAdapterApiIT(
                 val sbd = jsonMapper.readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
                 sbd.type shouldBe BusinessMessageType.DIALOGMELDING.type
                 sbd.messageId shouldBe messageId.toString()
+                // A dialogmelding without a conversation reference starts a conversation of its
+                // own, which the
+                // receiver needs to process it
+                sbd.conversationId shouldBe messageId.toString()
+                sbd.process shouldBe BusinessMessageType.DIALOGMELDING.process
+                sbd.standardBusinessDocumentHeader.documentIdentification.standard shouldBe
+                    BusinessMessageType.DIALOGMELDING.standard
                 sbd.senderHerId shouldBe FASTLEGE_HER_ID
                 sbd.receiverHerId shouldBe KOMMUNE_HER_ID
                 sbd.dialogmelding.hoveddokument shouldBe AttachmentNames.DIALOGMELDING
@@ -1812,6 +1856,7 @@ class NhnAdapterApiIT(
                     )
                 val sbd = jsonMapper.readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
                 sbd.type shouldBe BusinessMessageType.DIALOGMELDING_KVITTERING.type
+                sbd.process shouldBe BusinessMessageType.DIALOGMELDING_KVITTERING.process
                 sbd.senderHerId shouldBe LEGEKONTOR_TJENESTE_HER_ID
                 sbd.receiverHerId shouldBe KOMMUNE_HER_ID
                 sbd.dialogmeldingKvittering.relatedToMessageId shouldBe originalMessageId.toString()
@@ -2074,7 +2119,7 @@ private fun sbd(type: BusinessMessageType, messageId: UUID, conversationId: UUID
 private fun scope(type: ScopeType, id: UUID) =
     Scope().apply {
         this.type = type.fullname
-        identifier = PROCESS
+        identifier = BusinessMessageType.DIALOGMELDING.process
         instanceIdentifier = id.toString()
     }
 

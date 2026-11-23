@@ -6,6 +6,8 @@ import kotlinx.serialization.SerializationException
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
 import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
@@ -13,15 +15,18 @@ import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toJWEToken
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
+import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
 import no.difi.meldingsutveksling.nhn.adapter.model.GetDocumentInput
 import no.difi.meldingsutveksling.nhn.adapter.model.IncomingMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
@@ -98,7 +103,20 @@ class InHandler(
             auditEntry
                 .attribute("senderHerId", document.sbd.senderHerId)
                 .attribute("receiverHerId", document.sbd.receiverHerId)
-            securityService.assertAccessToHerId(clientContext, document.sbd.receiverHerId)
+            try {
+                securityService.assertAccessToHerId(clientContext, document.sbd.receiverHerId)
+            } catch (e: HerIdNotFoundException) {
+                // The client only gave the message id: the receiver in the message is the sender's
+                // fault
+                throw InvalidIncomingDocumentException(
+                    ApplicationReceiptException(
+                        FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE,
+                        "The receiver of the message is not in Adresseregisteret",
+                        e,
+                    ),
+                    isAppRec = document.sbd.type == BusinessMessageType.DIALOGMELDING_KVITTERING.type,
+                )
+            }
 
             val forretningsmelding =
                 parcelService.signAndEncrypt(jsonMapper.writeValueAsString(document.sbd), clientCertificate)

@@ -156,9 +156,10 @@ object BusinessDocumentDeserializer {
      * The child is either a sub-organization or a healthcare professional within the parent organization. Note that a
      * healthcare professional is given the address of the parent organization, not its own.
      */
-    fun Organisation.getChild(): CommunicationParty =
-        organisation?.getParent()
-            ?: healthcareProfessional?.let {
+    fun Organisation.getChild(): CommunicationParty {
+        val subOrganisation = organisation?.getParent()
+        val professional =
+            healthcareProfessional?.let {
                 PersonCommunicationParty(
                     ids = it.ident.getPersonId(),
                     address = convertAddress(),
@@ -167,8 +168,14 @@ object BusinessDocumentDeserializer {
                     lastName = it.familyName,
                 )
             }
-            // An organisation addressed at one level only is its own child
+        // The one with a HER-id, as the message is addressed to it. An organisation addressed at
+        // one level only is its
+        // own child.
+        return listOfNotNull(subOrganisation, professional).firstOrNull { it.hasHerIdent() }
+            ?: subOrganisation
+            ?: professional
             ?: getParent()
+    }
 
     private fun Organisation.convertAddress() =
         address?.let { address ->
@@ -275,38 +282,34 @@ object BusinessDocumentDeserializer {
      * The fødselsnummer of the patient, else the D-nummer, which is not in [PersonIdType]. Other ids, e.g. a H-nummer,
      * are not national ids, so the patient has none. The kodeverk may be left out.
      */
-    private fun List<Ident>.getPatientId(): String? =
-        firstOrNull { it.isPersonId(PersonIdType.FNR.verdi) }?.id ?: firstOrNull { it.isPersonId(D_NUMMER) }?.id
+    private fun List<Ident>.getPatientId(): String? = patientId(PersonIdType.FNR.verdi) ?: patientId(D_NUMMER)
 
-    private fun Ident.isPersonId(type: String) =
-        typeId?.v == type && (typeId?.s == null || typeId?.s == PersonIdType.FNR.kodeverk)
+    private fun List<Ident>.patientId(type: String): String? =
+        filter { it.typeId?.v == type && (it.typeId?.s == null || it.typeId?.s == PersonIdType.FNR.kodeverk) }
+            .firstNotNullOfOrNull { it.id?.trim()?.ifEmpty { null } }
 
     /**
      * Ids of types the adapter does not know are left out rather than rejected: the message is valid, and only the
-     * HER-ids and the patient's id are needed. A HER-id is one whichever of the two kodeverk it is given in.
+     * HER-ids and the patient's id are needed. A HER-id is one whichever of the two kodeverk it is given in, but one
+     * in the party's own kodeverk comes first.
      */
-    private fun List<Ident>.getPersonId(): List<PersonId> =
-        getId().mapNotNull {
-            when {
-                it is PersonId -> it
-                it.type == OrganizationIdType.HER_ID -> PersonId(it.id, PersonIdType.HER_ID)
-                else -> null
-            }
-        }
+    private fun List<Ident>.getPersonId(): List<PersonId> {
+        val ids = getId()
+        return ids.filterIsInstance<PersonId>() +
+            ids.filter { it.type == OrganizationIdType.HER_ID }.map { PersonId(it.id, PersonIdType.HER_ID) }
+    }
 
-    private fun List<Ident>.getOrganisasjonId(): List<OrganizationId> =
-        getId().mapNotNull {
-            when {
-                it is OrganizationId -> it
-                it.type == PersonIdType.HER_ID -> OrganizationId(it.id, OrganizationIdType.HER_ID)
-                else -> null
-            }
-        }
+    private fun List<Ident>.getOrganisasjonId(): List<OrganizationId> {
+        val ids = getId()
+        return ids.filterIsInstance<OrganizationId>() +
+            ids.filter { it.type == PersonIdType.HER_ID }.map { OrganizationId(it.id, OrganizationIdType.HER_ID) }
+    }
 
     private fun List<Ident>.getId() = mapNotNull { ident ->
+        val id = ident.id?.trim().orEmpty()
         when (val type = ident.typeId?.toIdTypeOrNull()) {
-            is PersonIdType -> PersonId(ident.id, type)
-            is OrganizationIdType -> OrganizationId(ident.id, type)
+            is PersonIdType -> PersonId(id, type)
+            is OrganizationIdType -> OrganizationId(id, type)
             else -> null
         }
     }
@@ -317,6 +320,21 @@ object BusinessDocumentDeserializer {
         // getKodeverk throws on a kodeverk it does not know
         return runCatching { KodeverkRegister.getKodeverk(kodeverk, verdi) }.getOrNull() as? IdType
     }
+}
+
+/** Whether the party gives a HER-id, readable or not. */
+internal fun CommunicationParty.hasHerIdent(): Boolean =
+    ids.any { it.type == PersonIdType.HER_ID || it.type == OrganizationIdType.HER_ID }
+
+/**
+ * The HER-id the party gives, or null if it gives none.
+ *
+ * @throws ApplicationReceiptException if the HER-id is not a positive number
+ */
+internal fun CommunicationParty.herIdOrNull(role: String): Int? {
+    val id = ids.firstOrNull { it.type == PersonIdType.HER_ID || it.type == OrganizationIdType.HER_ID } ?: return null
+    return id.id.toIntOrNull()?.takeIf { it > 0 }
+        ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT, "Invalid HER-id for the $role")
 }
 
 /** The message is invalid: the sender's fault, which the receiver answers with [error] in an application receipt. */

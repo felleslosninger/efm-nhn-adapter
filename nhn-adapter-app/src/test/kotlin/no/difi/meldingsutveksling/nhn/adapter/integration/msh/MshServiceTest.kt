@@ -327,6 +327,10 @@ class MshServiceTest :
                         ("""<AppRec xmlns="http://www.kith.no/xmlstds/apprec/2012-02-15">""" +
                             "<MIGversion>v1.1 2012-02-15</MIGversion></AppRec>" to
                             FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML),
+                    "cut off after the MIGversion" to
+                        ("""<AppRec xmlns="http://www.kith.no/xmlstds/apprec/2012-02-15">""" +
+                            "<MIGversion>v1.1 2012-02-15</MIGversion><Status" to
+                            FeilmeldingForApplikasjonskvittering.UGYLDIG_XML),
                 )
                 .forEach { (description, input) ->
                     val (xml, expectedError) = input

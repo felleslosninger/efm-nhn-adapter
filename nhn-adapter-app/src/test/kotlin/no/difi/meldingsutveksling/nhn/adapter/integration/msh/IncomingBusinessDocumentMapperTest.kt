@@ -352,6 +352,96 @@ class IncomingBusinessDocumentMapperTest :
                     .messageId shouldBe msgId.toString()
             }
 
+            fun receiverHerId(xml: String) =
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.receiverHerId
+
+            /** The XML with the ident of [id] changed by [change]. */
+            fun String.inIdent(id: Int, change: (String) -> String): String {
+                val ident =
+                    Regex(
+                            """<(\w+:)?Ident>\s*<(\w+:)?Id>$id</(\w+:)?Id>.*?</(\w+:)?Ident>""",
+                            RegexOption.DOT_MATCHES_ALL,
+                        )
+                        .find(this) ?: error("Found no ident of $id")
+                return replaceRange(ident.range, change(ident.value))
+            }
+
+            it("uses the HER-id of the organisation for a receiver whose sub-organisation has none") {
+                val xml = msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) { it.replace("V=\"HER\"", "V=\"ENH\"") }
+
+                receiverHerId(xml) shouldBe KOMMUNE_HER_ID
+            }
+
+            it("accepts a HER-id of an organisation given in the kodeverk of persons") {
+                val xml =
+                    msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) {
+                        it.replace("2.16.578.1.12.4.1.1.9051", "2.16.578.1.12.4.1.1.8116")
+                    }
+
+                receiverHerId(xml) shouldBe KOMMUNE_TJENESTE_HER_ID
+            }
+
+            it("reads a HER-id with whitespace around it") {
+                val xml =
+                    msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) {
+                        it.replace(">$KOMMUNE_TJENESTE_HER_ID<", "> $KOMMUNE_TJENESTE_HER_ID <")
+                    }
+
+                receiverHerId(xml) shouldBe KOMMUNE_TJENESTE_HER_ID
+            }
+
+            listOf("HER$FASTLEGE_HER_ID", "0", "-7", "99999999999").forEach { invalid ->
+                it("rejects the invalid HER-id '$invalid' rather than falling back to the organisation") {
+                    val xml = msgHeadXml.inIdent(FASTLEGE_HER_ID) { it.replace(">$FASTLEGE_HER_ID<", ">$invalid<") }
+
+                    rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+                }
+            }
+
+            it("rejects a patient whose fødselsnummer is empty") {
+                val xml = msgHeadXml.replace(">$PASIENT_FNR<", "><")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR
+            }
+
+            it("rejects a message whose MsgId is blank") {
+                rejected(msgHeadXml.replace(">$msgId<", "> <")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("starts a conversation of its own when only the parent is referred to") {
+                val xml = msgHeadXml.replace(">$convId<", "><")
+
+                with(IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd) {
+                    conversationId shouldBe msgId.toString()
+                    parentId shouldBe parentMsgId.toString()
+                }
+            }
+
+            it("trims the conversation references") {
+                val xml = msgHeadXml.replace(">$convId<", "> $convId <")
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.conversationId shouldBe
+                    convId.toString()
+            }
+
+            it("rejects a MIGversion with an element in it as not valid") {
+                val xml =
+                    msgHeadXml.replace(
+                        BusinessDocumentDeserializer.MSG_HEAD_VERSION,
+                        "${BusinessDocumentDeserializer.MSG_HEAD_VERSION}<x/>",
+                    )
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
+            }
+
+            it("sets the header version") {
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(msgHeadXml)
+                    .sbd
+                    .standardBusinessDocumentHeader
+                    .headerVersion shouldBe "1.0"
+            }
+
             it("rejects a vedlegg without a MIME type") {
                 rejected(msgHeadXml.withoutElements("MimeType")) shouldBe
                     FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT

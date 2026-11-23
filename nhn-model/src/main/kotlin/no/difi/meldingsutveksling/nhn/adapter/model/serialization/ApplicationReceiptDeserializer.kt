@@ -58,37 +58,48 @@ object ApplicationReceiptDeserializer {
     }
 
     private fun fromApplicationReceipt10(xml: String): AppRec {
-        val appRec = valid {
-            schema1_0.newSecureValidator().validate(StreamSource(StringReader(xml)))
-            context1_0.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec1_0::class.java).value
-        }
+        val appRec =
+            valid(xml) {
+                schema1_0.newSecureValidator().validate(StreamSource(StringReader(xml)))
+                context1_0.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec1_0::class.java).value
+            }
         return toLatest(appRec)
     }
 
-    private fun fromApplicationReceipt11(xml: String): AppRec = valid {
-        schema1_1.newSecureValidator().validate(StreamSource(StringReader(xml)))
-        context1_1.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec::class.java).value
-    }
+    private fun fromApplicationReceipt11(xml: String): AppRec =
+        valid(xml) {
+            schema1_1.newSecureValidator().validate(StreamSource(StringReader(xml)))
+            context1_1.createUnmarshaller().unmarshal(StreamSource(StringReader(xml)), AppRec::class.java).value
+        }
 
     /**
      * Reports an AppRec that is not valid against its schema as [ApplicationReceiptException]. Not with the message of
      * the error, which may quote values from the AppRec; the cause has it.
      */
-    private inline fun <T> valid(block: () -> T): T =
+    private inline fun <T> valid(xml: String, block: () -> T): T =
         try {
             block()
         } catch (e: SAXException) {
-            throw invalidAppRec(e)
+            throw invalidAppRec(xml, e)
         } catch (e: JAXBException) {
-            throw invalidAppRec(e)
+            throw invalidAppRec(xml, e)
         }
 
-    private fun invalidAppRec(cause: Exception) =
-        ApplicationReceiptException(
-            FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
-            "The AppRec is not valid",
-            cause,
-        )
+    /** The schema validation also fails on XML that is not well-formed, which is another error. */
+    private fun invalidAppRec(xml: String, cause: Exception) =
+        if (XMLUtils.isWellFormed(xml)) {
+            ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                "The AppRec is not valid",
+                cause,
+            )
+        } else {
+            ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.UGYLDIG_XML,
+                "The AppRec is not well-formed XML",
+                cause,
+            )
+        }
 
     private fun toLatest(input: AppRec1_0): AppRec {
         return AppRec().apply {

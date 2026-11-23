@@ -27,7 +27,6 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringSt
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.IncomingAttachment
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
-import no.difi.meldingsutveksling.nhn.adapter.messages.PROCESS
 import no.difi.meldingsutveksling.nhn.adapter.messages.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptDeserializer
@@ -47,6 +46,9 @@ import org.springframework.http.MediaType
 import org.springframework.util.MimeType
 
 private val NORWEGIAN_TIME_ZONE = ZoneId.of("Europe/Oslo")
+
+/** The version of the Standard Business Document Header, which is 1.0. */
+private const val HEADER_VERSION = "1.0"
 
 data class BusinessDocumentResponse(val sbd: StandardBusinessDocument, val attachments: List<Attachment>)
 
@@ -83,7 +85,7 @@ object IncomingBusinessDocumentMapper {
         val sbd =
             standardBusinessDocument(
                     messageType = BusinessMessageType.DIALOGMELDING,
-                    instanceId = msgHead.msgInfo.msgId,
+                    instanceId = msgHead.requireMsgId(),
                     createdAt = msgHead.msgInfo.genDate?.toOffsetDateTime(),
                     scopes = conversationScopes(msgHead),
                 )
@@ -121,10 +123,15 @@ object IncomingBusinessDocumentMapper {
         val conversationRef = msgHead.getConversationRef()
         return listOfNotNull(
             processScope(
+                BusinessMessageType.DIALOGMELDING,
                 ScopeType.CONVERSATION_ID,
-                conversationRef?.refToConversation?.takeUnless { it.isBlank() } ?: msgHead.msgInfo.msgId,
+                conversationRef?.refToConversation?.trim()?.ifEmpty { null } ?: msgHead.requireMsgId(),
             ),
-            conversationRef?.refToParent?.takeUnless { it.isBlank() }?.let { processScope(ScopeType.PARENT_ID, it) },
+            conversationRef
+                ?.refToParent
+                ?.trim()
+                ?.ifEmpty { null }
+                ?.let { processScope(BusinessMessageType.DIALOGMELDING, ScopeType.PARENT_ID, it) },
         )
     }
 
@@ -137,20 +144,28 @@ object IncomingBusinessDocumentMapper {
 
     private fun fromApplicationReceipt(xml: String): BusinessDocumentResponse {
         val appRec = ApplicationReceiptDeserializer.deserializeAppRec(xml)
+        val appRecId = requireId(appRec.id, "Id of the AppRec")
 
         val sbd =
             standardBusinessDocument(
                     messageType = BusinessMessageType.DIALOGMELDING_KVITTERING,
-                    instanceId = appRec.id,
+                    instanceId = appRecId,
                     createdAt = appRec.genDate?.toOffsetDateTime(),
-                    scopes = listOf(processScope(ScopeType.CONVERSATION_ID, appRec.id)),
+                    scopes =
+                        listOf(
+                            processScope(
+                                BusinessMessageType.DIALOGMELDING_KVITTERING,
+                                ScopeType.CONVERSATION_ID,
+                                appRecId,
+                            )
+                        ),
                 )
                 .apply {
                     senderHerId = appRec.sender.hcp.toHerId()
                     receiverHerId = appRec.receiver.hcp.toHerId()
                     dialogmeldingKvittering =
                         DialogmeldingKvitteringMessage(
-                            relatedToMessageId = appRec.originalMsgId.id,
+                            relatedToMessageId = requireId(appRec.originalMsgId?.id, "OriginalMsgId of the AppRec"),
                             status = appRec.status.toKvitteringStatus(),
                             messages = appRec.error.map { it.toKvitteringStatusMessage() },
                             rawReceipt = xml,
@@ -169,6 +184,7 @@ object IncomingBusinessDocumentMapper {
         StandardBusinessDocument().apply {
             standardBusinessDocumentHeader =
                 StandardBusinessDocumentHeader().apply {
+                    headerVersion = HEADER_VERSION
                     documentIdentification =
                         DocumentIdentification().apply {
                             instanceIdentifier = instanceId
@@ -181,19 +197,30 @@ object IncomingBusinessDocumentMapper {
                 }
         }
 
-    private fun processScope(scopeType: ScopeType, instanceId: String) =
+    private fun MsgHead.requireMsgId(): String = requireId(msgInfo.msgId, "MsgId of the MsgHead")
+
+    /** An id that is blank cannot identify the message; the schema lets it through. */
+    private fun requireId(id: String?, name: String): String =
+        id?.trim()?.ifEmpty { null }
+            ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT, "The $name is blank")
+
+    private fun processScope(messageType: BusinessMessageType, scopeType: ScopeType, instanceId: String) =
         Scope().apply {
             type = scopeType.fullname
-            identifier = PROCESS
+            identifier = messageType.process
             instanceIdentifier = instanceId
         }
 
     private fun IncomingAttachment.filename(index: Int) = AttachmentNames.vedlegg(index, mimeType)
 
     /** The HER-id of the child, else of the parent, as messages are addressed when sent too. */
+    /**
+     * The HER-id of the child, else of the parent, as messages are addressed when sent too. Only a child without a
+     * HER-id falls back: one with a HER-id that cannot be read is invalid, as the message is addressed to it.
+     */
     private fun requireHerId(child: CommunicationParty, parent: CommunicationParty, role: String): Int =
-        child.herId
-            ?: parent.herId
+        child.herIdOrNull(role)
+            ?: parent.herIdOrNull(role)
             ?: throw invalidMessage(
                 FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
                 "Missing HER-id for the $role in MsgHead",
@@ -207,7 +234,7 @@ object IncomingBusinessDocumentMapper {
             } else {
                 hcProf?.id
             }
-        return id?.toIntOrNull()
+        return id?.trim()?.toIntOrNull()?.takeIf { it > 0 }
             ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT, "Missing HER-id in AppRec")
     }
 
