@@ -70,7 +70,10 @@ class NotificationHandler(
         }
     }
 
-    /** MSH only lets the client delete the notifications of the HER-ids it may act for. */
+    /**
+     * The notification ids do not tell which HER-ids they are for, so MSH limits the deletion to the HER-ids of the
+     * consumer, whose HelseID token is used. The client must still be allowed to act on behalf of the consumer.
+     */
     suspend fun deleteNotifications(
         request: ServerRequest,
         @Parameter(hidden = true) clientContext: ClientContext,
@@ -78,6 +81,7 @@ class NotificationHandler(
         val auditEntry = NHNAdapterAuditIdentifier.DELETE_NOTIFICATIONS.entry(clientContext)
 
         auditLogService.log(auditEntry) {
+            securityService.assertAccessToConsumer(clientContext)
             val notificationIds = readNotificationIds(request)
             auditEntry.attribute("notificationIds", notificationIds)
             mshService.deleteNotifications(notificationIds, clientContext)

@@ -76,6 +76,9 @@ class InHandler(
         val auditEntry = NHNAdapterAuditIdentifier.GET_BUSINESS_DOCUMENT.entry(clientContext)
 
         auditLogService.log(auditEntry) {
+            // Checked again for the receiver once the business document is read, but no MSH call is
+            // made without delegation
+            securityService.assertAccessToConsumer(clientContext)
             val jwsObject = parcelService.decryptAndVerify(request.toJWEToken())
             val input =
                 try {

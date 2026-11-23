@@ -63,6 +63,9 @@ class OutHandler(
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
 
         auditLogService.log(auditEntry) {
+            // Checked again for the sender once it is read from MSH, but no MSH call is made
+            // without delegation
+            securityService.assertAccessToConsumer(clientContext)
             // Do not rely on MSH to limit status lookups to the client's own messages
             val senderHerId = mshService.getSenderHerId(messageId, clientContext)
             auditEntry.attribute("senderHerId", senderHerId)
