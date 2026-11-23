@@ -5,7 +5,10 @@ import kotlinx.serialization.Serializable
 import no.ks.fiks.nhn.msh.NotificationType as MshNotificationType
 import no.ks.fiks.nhn.msh.UnreadNotification
 
-/** The kinds of notifications MSH gives, with the values MSH uses for them. */
+/**
+ * The kinds of notifications MSH gives. The JSON holds the name of the constant, e.g. `NEW_MESSAGE`; [value] is what
+ * MSH calls it, e.g. `NewMessage`.
+ */
 @Serializable
 enum class NotificationType(val value: String) {
     /** A new message to the receiver, given by [Notification.relatedMessageId]. */

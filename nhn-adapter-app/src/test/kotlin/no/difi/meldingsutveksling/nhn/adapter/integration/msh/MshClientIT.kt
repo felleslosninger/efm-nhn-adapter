@@ -403,6 +403,16 @@ class MshClientIT :
                 result.toInMessage(12345).isAppRec shouldBe false
             }
 
+            it("getMessage via MshService should report a message without an id as invalid data") {
+                val messageId = UUID.randomUUID()
+                stubJson(
+                    get(urlEqualTo("/messages/$messageId")),
+                    """{"receiverHerIds": [12345], "senderHerId": 98765}""",
+                )
+
+                shouldThrow<InvalidMshDataException> { mshService.getMessage(messageId, singleTenantContext) }
+            }
+
             it("getStatus via MshService should use multi-tenant context and retrieve status") {
                 val messageId = UUID.randomUUID()
                 stubJson(

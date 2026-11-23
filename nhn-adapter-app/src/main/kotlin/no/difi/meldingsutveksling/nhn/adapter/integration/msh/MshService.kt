@@ -75,8 +75,9 @@ class MshService(
     suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) =
         mshClient.deleteNotifications(notificationIds, requestParameters(clientContext))
 
-    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata =
+    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata = withRequiredFields {
         mshClient.getMessage(id.toString(), requestParameters(clientContext))
+    }
 
     /** Reads the sender from the message metadata in MSH. */
     suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int {
