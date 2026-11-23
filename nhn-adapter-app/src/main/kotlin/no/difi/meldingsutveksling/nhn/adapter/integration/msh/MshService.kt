@@ -68,8 +68,9 @@ class MshService(
         herId: Int,
         notificationsToFetch: Int,
         clientContext: ClientContext,
-    ): List<UnreadNotification> =
+    ): List<UnreadNotification> = withRequiredFields {
         mshClient.getUnreadNotifications(listOf(herId), notificationsToFetch, requestParameters(clientContext))
+    }
 
     suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) =
         mshClient.deleteNotifications(notificationIds, requestParameters(clientContext))
@@ -83,8 +84,21 @@ class MshService(
         return message.senderHerId ?: throw InvalidMshDataException("Invalid data from MSH: Message $id has no sender")
     }
 
-    suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> =
+    suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> = withRequiredFields {
         mshClient.getStatus(id.toString(), requestParameters(clientContext)).statusList.orEmpty()
+    }
+
+    /**
+     * msh-client maps the response of some calls without checking that MSH gave the required fields, so a field MSH
+     * leaves out throws a [NullPointerException] after the call. A failing call throws an `MshException`, which passes
+     * through.
+     */
+    private inline fun <T> withRequiredFields(block: () -> T): T =
+        try {
+            block()
+        } catch (e: NullPointerException) {
+            throw InvalidMshDataException("Invalid data from MSH: a required field is missing", e)
+        }
 
     /**
      * Marks the message downloaded by [receiverHerId], which deletes its business document from MSH. Its NewMessage

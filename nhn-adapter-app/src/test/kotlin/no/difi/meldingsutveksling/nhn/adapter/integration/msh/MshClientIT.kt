@@ -22,6 +22,7 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import java.time.Duration
+import java.time.OffsetDateTime
 import java.util.UUID
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.config.MshTimeoutConfig
@@ -107,6 +108,8 @@ class MshClientIT :
                         "relatedMessageId": ${messageId?.let { "\"$it\"" }},
                         "type": "$type",
                         "notificationReceiverHerId": 12345,
+                        "notificationTriggeredByHerId": 98765,
+                        "description": "Ny melding",
                         "createdAt": "2026-08-21T08:00:00+02:00"
                     }
                     """
@@ -141,6 +144,10 @@ class MshClientIT :
                 result shouldHaveSize 2
                 result[0].type shouldBe NotificationType.NEW_MESSAGE
                 result[0].relatedMessageId shouldBe messageId.toString()
+                result[0].notificationReceiverHerId shouldBe 12345
+                result[0].notificationTriggeredByHerId shouldBe 98765
+                result[0].description shouldBe "Ny melding"
+                result[0].createdAt shouldBe OffsetDateTime.parse("2026-08-21T08:00:00+02:00")
                 result[1].type shouldBe NotificationType.MESSAGE_DELIVERY_STATE_UPDATED
 
                 wireMockServer.verify(
@@ -357,6 +364,20 @@ class MshClientIT :
                 wireMockServer.verify(0, postRequestedFor(urlEqualTo("/notifications/delete")))
             }
 
+            it("getUnreadNotifications via MshService should report a notification without a type as invalid data") {
+                stubJson(
+                    get(urlPathEqualTo("/notifications/unread")),
+                    """
+                    {"unreadNotifications": [{"notificationId": "notification-1", "notificationReceiverHerId": 12345}]}
+                    """
+                        .trimIndent(),
+                )
+
+                shouldThrow<InvalidMshDataException> {
+                    mshService.getUnreadNotifications(12345, 50, singleTenantContext)
+                }
+            }
+
             it("deleteNotifications via MshService should send POST /notifications/delete") {
                 wireMockServer.stubFor(
                     post(urlEqualTo("/notifications/delete")).willReturn(aResponse().withStatus(204))
@@ -411,6 +432,16 @@ class MshClientIT :
                         .withHeader("api-version", equalTo("3"))
                         .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                 )
+            }
+
+            it("getStatus via MshService should report a status without a delivery state as invalid data") {
+                val messageId = UUID.randomUUID()
+                stubJson(
+                    get(urlEqualTo("/messages/$messageId/status")),
+                    """{"statusList": [{"receiverHerId": 12345, "sent": true}]}""",
+                )
+
+                shouldThrow<InvalidMshDataException> { mshService.getStatus(messageId, singleTenantContext) }
             }
 
             it("markMessageDownloaded via MshService should mark the message downloaded and nothing more") {

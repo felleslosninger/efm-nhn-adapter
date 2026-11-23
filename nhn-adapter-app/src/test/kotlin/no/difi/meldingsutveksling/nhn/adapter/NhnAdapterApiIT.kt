@@ -1319,6 +1319,18 @@ class NhnAdapterApiIT(
                 }
             }
 
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
+            }
+
             // AccessDeniedException from SecurityService.assertAccessToHerId maps to 403.
             it("denies access to the notifications of a HER-id belonging to another organization") {
                 client()
@@ -1488,6 +1500,18 @@ class NhnAdapterApiIT(
                     .expectBody()
                     .jsonPath("$.id")
                     .isEqualTo(messageId.toString())
+            }
+
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .get()
+                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getMessage(any(), any()) }
             }
 
             it("returns an application receipt as such") {
@@ -1838,6 +1862,17 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 1) {
                     mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, supplierTenant())
                 }
+            }
+
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .post()
+                    .uri("/api/messages/in/${UUID.randomUUID()}/downloaded?receiverHerId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.markMessageDownloaded(any(), any(), any()) }
             }
 
             it("denies marking a message for a HER-id belonging to another organization") {
