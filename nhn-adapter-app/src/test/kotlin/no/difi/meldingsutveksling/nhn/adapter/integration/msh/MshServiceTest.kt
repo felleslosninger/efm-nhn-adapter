@@ -12,7 +12,6 @@ import io.mockk.Runs
 import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -56,14 +55,13 @@ import org.springframework.core.io.ByteArrayResource
 private const val CONSUMER_ORG_NUMBER = "123456789"
 private const val SUPPLIER_ORG_NUMBER = "987654321"
 private const val SENDER_HER_ID = 1000002
-private const val NOTIFICATIONS_TO_FETCH = 50
 
 class MshServiceTest :
     DescribeSpec({
         val mshClient = mockk<Client>()
         val internalClient = mockk<MshInternalClient>()
         val applicationMetadata = ApplicationMetadata("efm-nhn-adapter", "1.2.3")
-        val mshService = MshService(mshClient, internalClient, applicationMetadata, NOTIFICATIONS_TO_FETCH)
+        val mshService = MshService(mshClient, internalClient, applicationMetadata)
 
         fun clientContext(supplier: String? = null) =
             mockk<ClientContext>().also {
@@ -112,118 +110,62 @@ class MshServiceTest :
                 createdAt = null,
             )
 
-        fun metadata(id: String) =
-            MessageWithMetadata(
-                id = id,
-                contentType = "application/xml",
-                receiverHerIds = listOf(SENDER_HER_ID),
-                senderHerId = 2000002,
-                businessDocumentId = UUID.randomUUID().toString(),
-                businessDocumentDate = null,
-                businessDocumentMsgType = "DIALOG_HELSEFAGLIG",
-            )
-
-        describe("getMessagesWithMetadata") {
+        describe("notifications") {
             beforeEach { clearMocks(mshClient) }
 
-            it("rejects a number of notifications to fetch that MSH does not accept") {
-                listOf(0, MAX_NOTIFICATIONS_TO_FETCH + 1).forEach { notificationsToFetch ->
-                    shouldThrow<IllegalArgumentException> {
-                        MshService(mshClient, internalClient, applicationMetadata, notificationsToFetch)
-                    }
-                }
-            }
-
-            it("returns the messages the unread NewMessage notifications refer to, each once") {
-                val first = UUID.randomUUID().toString()
-                val second = UUID.randomUUID().toString()
-                coEvery { mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), any(), any()) } returns
+            it("returns the unread notifications as MSH gives them, without deleting any") {
+                val notifications =
                     listOf(
-                        notification(NotificationType.NEW_MESSAGE, first),
-                        notification(NotificationType.NEW_MESSAGE, second),
-                        notification(NotificationType.NEW_MESSAGE, first),
+                        notification(NotificationType.NEW_MESSAGE, UUID.randomUUID().toString()),
+                        notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, UUID.randomUUID().toString()),
+                        notification(NotificationType.REFUSED_MESSAGE, null),
                     )
-                coEvery { mshClient.getMessage(any(), any()) } answers { metadata(firstArg()) }
+                coEvery { mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), 50, any()) } returns notifications
 
-                mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext()).map { it.id } shouldBe
-                    listOf(first, second)
+                mshService.getUnreadNotifications(SENDER_HER_ID, 50, clientContext()) shouldBe notifications
 
-                coVerify(exactly = 1) {
-                    mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), NOTIFICATIONS_TO_FETCH, any())
-                }
                 coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
 
-            it("deletes the notifications about sent messages") {
-                val messageId = UUID.randomUUID().toString()
-                val others =
-                    listOf(
-                        notification(NotificationType.MESSAGE_SENT_STATE_UPDATED, UUID.randomUUID().toString()),
-                        notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, UUID.randomUUID().toString()),
-                        notification(NotificationType.MESSAGE_APPREC_INFO_UPDATED, UUID.randomUUID().toString()),
-                        notification(NotificationType.REFUSED_MESSAGE, null),
-                    )
-                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns
-                    others + notification(NotificationType.NEW_MESSAGE, messageId)
+            it("deletes the notifications the client asks to delete") {
                 coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
-                coEvery { mshClient.getMessage(any(), any()) } answers { metadata(firstArg()) }
 
-                mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext()).map { it.id } shouldBe
-                    listOf(messageId)
+                mshService.deleteNotifications(listOf("notification-1", "notification-2"), clientContext())
 
-                coVerify(exactly = 1) { mshClient.deleteNotifications(others.map { it.notificationId }, any()) }
-            }
-
-            it("returns no messages when there are no unread notifications") {
-                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
-
-                mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext()) shouldBe emptyList()
-
-                coVerify(exactly = 0) { mshClient.getMessage(any(), any()) }
-            }
-
-            it("reports a NewMessage notification without a message as invalid data from MSH") {
-                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns
-                    listOf(notification(NotificationType.NEW_MESSAGE, null))
-
-                shouldThrow<InvalidMshDataException> {
-                        mshService.getMessagesWithMetadata(SENDER_HER_ID, clientContext())
-                    }
-                    .message shouldContain "refers to no message"
+                coVerify(exactly = 1) {
+                    mshClient.deleteNotifications(listOf("notification-1", "notification-2"), any())
+                }
             }
         }
 
-        describe("markMessageRead") {
+        describe("incoming messages") {
             val messageId = UUID.randomUUID()
 
             beforeEach { clearMocks(mshClient) }
 
-            it("marks the message downloaded before deleting its NewMessage notifications") {
-                val newMessage = notification(NotificationType.NEW_MESSAGE, messageId.toString())
-                coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
-                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns
-                    listOf(
-                        newMessage,
-                        notification(NotificationType.NEW_MESSAGE, UUID.randomUUID().toString()),
-                        notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, messageId.toString()),
+            it("gets the metadata of a message") {
+                val metadata =
+                    MessageWithMetadata(
+                        id = messageId.toString(),
+                        contentType = "application/xml",
+                        receiverHerIds = listOf(SENDER_HER_ID),
+                        senderHerId = 2000002,
+                        businessDocumentId = UUID.randomUUID().toString(),
+                        businessDocumentDate = null,
+                        businessDocumentMsgType = "DIALOG_HELSEFAGLIG",
                     )
-                coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
+                coEvery { mshClient.getMessage(messageId.toString(), any()) } returns metadata
 
-                mshService.markMessageRead(messageId, SENDER_HER_ID, clientContext())
-
-                coVerifyOrder {
-                    mshClient.markMessageDownloaded(messageId.toString(), SENDER_HER_ID, any())
-                    mshClient.getUnreadNotifications(listOf(SENDER_HER_ID), MAX_NOTIFICATIONS_TO_FETCH, any())
-                    mshClient.deleteNotifications(listOf(newMessage.notificationId), any())
-                }
+                mshService.getMessage(messageId, clientContext()) shouldBe metadata
             }
 
-            it("deletes nothing when the notification is already deleted") {
+            it("marks a message downloaded without deleting its notification") {
                 coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
-                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
 
-                mshService.markMessageRead(messageId, SENDER_HER_ID, clientContext())
+                mshService.markMessageDownloaded(messageId, SENDER_HER_ID, clientContext())
 
+                coVerify(exactly = 1) { mshClient.markMessageDownloaded(messageId.toString(), SENDER_HER_ID, any()) }
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
                 coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
         }

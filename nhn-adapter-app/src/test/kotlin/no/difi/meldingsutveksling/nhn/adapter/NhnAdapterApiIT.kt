@@ -21,7 +21,6 @@ import io.mockk.MockKMatcherScope
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
@@ -384,6 +383,11 @@ class NhnAdapterApiIT(
                     coEvery { mshClient.getStatus(any(), any()) } returns GetStatusResponse(emptyList())
                     coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
                     coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
+                    coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
+                    coEvery { mshClient.getMessage(any(), any()) } answers
+                        {
+                            incomingMessageMetadata(firstArg(), "DIALOG_HELSEFAGLIG")
+                        }
                     coEvery { mshInternalClient.postAppRec(any(), any(), any()) } returns UUID.randomUUID().toString()
                 }
 
@@ -400,10 +404,25 @@ class NhnAdapterApiIT(
                                     .accept(MediaType.APPLICATION_JSON)
                                     .exchange()
                             },
-                        "GET /api/messages/in" to
+                        "GET /api/notifications/unread" to
                             { c ->
                                 c.get()
-                                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                                    .accept(MediaType.APPLICATION_JSON)
+                                    .exchange()
+                            },
+                        "POST /api/notifications/delete" to
+                            { c ->
+                                c.post()
+                                    .uri("/api/notifications/delete")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue("""{"notificationIds":["notification-1"]}""")
+                                    .exchange()
+                            },
+                        "GET /api/messages/in/{messageId}" to
+                            { c ->
+                                c.get()
+                                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$KOMMUNE_HER_ID")
                                     .accept(MediaType.APPLICATION_JSON)
                                     .exchange()
                             },
@@ -430,10 +449,12 @@ class NhnAdapterApiIT(
                                     )
                                     .exchange()
                             },
-                        "POST /api/messages/in/{messageId}/read" to
+                        "POST /api/messages/in/{messageId}/downloaded" to
                             { c ->
                                 c.post()
-                                    .uri("/api/messages/in/${UUID.randomUUID()}/read?receiverHerId=$KOMMUNE_HER_ID")
+                                    .uri(
+                                        "/api/messages/in/${UUID.randomUUID()}/downloaded?receiverHerId=$KOMMUNE_HER_ID"
+                                    )
                                     .exchange()
                             },
                     )
@@ -1165,114 +1186,74 @@ class NhnAdapterApiIT(
             }
         }
 
-        describe("GET /api/messages/in") {
-            it("returns the incoming messages for the receiver") {
+        describe("GET /api/notifications/unread") {
+            it("returns every unread notification from MSH, as MSH gives it, and deletes none") {
                 val messageId = UUID.randomUUID()
-                val businessDocumentId = UUID.randomUUID()
-                val statusNotification =
-                    notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, UUID.randomUUID())
-                coEvery { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), any(), consumerTenant()) } returns
-                    listOf(notification(NotificationType.NEW_MESSAGE, messageId), statusNotification)
-                coEvery { mshClient.deleteNotifications(any(), consumerTenant()) } just Runs
-                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
-                    MessageWithMetadata(
-                        messageId.toString(),
-                        "application/xml",
-                        listOf(KOMMUNE_HER_ID, LEGEKONTOR_HER_ID),
-                        FASTLEGE_HER_ID,
-                        businessDocumentId.toString(),
-                        OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
-                        "DIALOG_HELSEFAGLIG",
-                    )
+                val newMessage = notification(NotificationType.NEW_MESSAGE, messageId)
+                val deliveryState = notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, UUID.randomUUID())
+                coEvery { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 50, consumerTenant()) } returns
+                    listOf(newMessage, deliveryState)
 
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
                     .isOk
                     .expectBody()
                     .jsonPath("$.length()")
-                    .isEqualTo(1)
-                    .jsonPath("$[0].id")
+                    .isEqualTo(2)
+                    .jsonPath("$[0].notificationId")
+                    .isEqualTo(newMessage.notificationId)
+                    .jsonPath("$[0].relatedMessageId")
                     .isEqualTo(messageId.toString())
-                    .jsonPath("$[0].receiverHerId")
+                    .jsonPath("$[0].type")
+                    .isEqualTo("NEW_MESSAGE")
+                    .jsonPath("$[0].notificationReceiverHerId")
                     .isEqualTo(KOMMUNE_HER_ID)
-                    .jsonPath("$[0].senderHerId")
+                    .jsonPath("$[0].notificationTriggeredByHerId")
                     .isEqualTo(FASTLEGE_HER_ID)
-                    .jsonPath("$[0].businessDocumentId")
-                    .isEqualTo(businessDocumentId.toString())
-                    .jsonPath("$[0].isAppRec")
-                    .isEqualTo(false)
+                    .jsonPath("$[0].createdAt")
+                    .isEqualTo("2026-08-21T08:00:00+02:00")
+                    .jsonPath("$[1].type")
+                    .isEqualTo("MESSAGE_DELIVERY_STATE_UPDATED")
 
-                // As many as nhn.services.msh.notifications-to-fetch in the test configuration
-                coVerify { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 50, consumerTenant()) }
-
-                // The notifications about sent messages would otherwise keep new messages from
-                // being listed
-                coVerify(exactly = 1) {
-                    mshClient.deleteNotifications(listOf(statusNotification.notificationId), consumerTenant())
-                }
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
 
-            it("returns an application receipt as such") {
-                val messageId = UUID.randomUUID()
-                coEvery { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), any(), consumerTenant()) } returns
-                    listOf(notification(NotificationType.NEW_MESSAGE, messageId))
-                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
-                    MessageWithMetadata(
-                        messageId.toString(),
-                        "application/xml",
-                        listOf(KOMMUNE_HER_ID),
-                        FASTLEGE_HER_ID,
-                        UUID.randomUUID().toString(),
-                        null,
-                        "APPREC",
-                    )
+            it("gets as many notifications as the client asks for") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
 
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID&notificationsToFetch=1000")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
                     .isOk
                     .expectBody()
-                    .jsonPath("$[0].isAppRec")
-                    .isEqualTo(true)
+                    .json("[]")
 
-                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+                coVerify { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 1000, consumerTenant()) }
             }
 
-            it("returns 502 when MSH gives a message not received by the receiver") {
-                val messageId = UUID.randomUUID()
-                coEvery { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), any(), consumerTenant()) } returns
-                    listOf(notification(NotificationType.NEW_MESSAGE, messageId))
-                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
-                    MessageWithMetadata(
-                        messageId.toString(),
-                        "application/xml",
-                        listOf(LEGEKONTOR_HER_ID),
-                        FASTLEGE_HER_ID,
-                        UUID.randomUUID().toString(),
-                        null,
-                        "DIALOG_HELSEFAGLIG",
-                    )
-
+            it("returns 400 when the client asks for more notifications than MSH gives") {
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID&notificationsToFetch=1001")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
-                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
             }
 
-            it("returns 400 when receiverHerId is missing") {
+            it("returns 400 when herId is missing") {
                 client()
                     .get()
-                    .uri("/api/messages/in")
+                    .uri("/api/notifications/unread")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
@@ -1280,10 +1261,10 @@ class NhnAdapterApiIT(
             }
 
             // HerIdNotFoundException is only a 404 on the lookup route.
-            it("returns 400 when receiverHerId is unknown") {
+            it("returns 400 when herId is unknown") {
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$UNKNOWN_HER_ID")
+                    .uri("/api/notifications/unread?herId=$UNKNOWN_HER_ID")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
@@ -1293,16 +1274,157 @@ class NhnAdapterApiIT(
             }
 
             // AccessDeniedException from SecurityService.assertAccessToHerId maps to 403.
-            it("denies access to messages for a HER-id belonging to another organization") {
+            it("denies access to the notifications of a HER-id belonging to another organization") {
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$FASTLEGE_HER_ID")
+                    .uri("/api/notifications/unread?herId=$FASTLEGE_HER_ID")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
                     .isForbidden
 
                 coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
+            }
+        }
+
+        describe("POST /api/notifications/delete") {
+            it("deletes the notifications in MSH") {
+                coEvery { mshClient.deleteNotifications(any(), consumerTenant()) } just Runs
+
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["notification-1","notification-2","notification-1"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) {
+                    mshClient.deleteNotifications(listOf("notification-1", "notification-2"), consumerTenant())
+                }
+            }
+
+            it("returns 400 when there are no notifications to delete") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":[]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when there are more notifications than MSH deletes at a time") {
+                val ids = (0..1000).joinToString(",") { "\"notification-$it\"" }
+
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":[$ids]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when the input is not valid") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"ids":"notification-1"}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+        }
+
+        describe("GET /api/messages/in/{messageId}") {
+            it("returns the metadata of the message for the receiver") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.id")
+                    .isEqualTo(messageId.toString())
+                    .jsonPath("$.receiverHerId")
+                    .isEqualTo(KOMMUNE_HER_ID)
+                    .jsonPath("$.senderHerId")
+                    .isEqualTo(FASTLEGE_HER_ID)
+                    .jsonPath("$.businessDocumentId")
+                    .isEqualTo(BUSINESS_DOCUMENT_ID)
+                    .jsonPath("$.isAppRec")
+                    .isEqualTo(false)
+            }
+
+            it("returns an application receipt as such") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "APPREC")
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.isAppRec")
+                    .isEqualTo(true)
+            }
+
+            it("returns 502 when MSH gives a message not received by the receiver") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
+                        .copy(receiverHerIds = listOf(LEGEKONTOR_HER_ID))
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+            }
+
+            it("returns 400 when the message id is not a UUID") {
+                client()
+                    .get()
+                    .uri("/api/messages/in/not-a-uuid?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+            }
+
+            it("denies access to a message for a HER-id belonging to another organization") {
+                client()
+                    .get()
+                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$FASTLEGE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getMessage(any(), any()) }
             }
         }
 
@@ -1488,51 +1610,45 @@ class NhnAdapterApiIT(
             }
         }
 
-        describe("POST /api/messages/in/{messageId}/read") {
-            it("marks the message as downloaded in MSH and deletes its notification") {
+        describe("POST /api/messages/in/{messageId}/downloaded") {
+            it("marks the message as downloaded in MSH and leaves its notification") {
                 val messageId = UUID.randomUUID()
-                val newMessage = notification(NotificationType.NEW_MESSAGE, messageId)
                 coEvery {
                     mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, consumerTenant())
                 } just Runs
-                coEvery { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), any(), consumerTenant()) } returns
-                    listOf(newMessage, notification(NotificationType.NEW_MESSAGE, UUID.randomUUID()))
-                coEvery { mshClient.deleteNotifications(any(), consumerTenant()) } just Runs
 
                 client()
                     .post()
-                    .uri("/api/messages/in/$messageId/read?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
                     .exchange()
                     .expectStatus()
                     .isOk
                     .expectBody<String>()
-                    .isEqualTo("Message marked as read")
+                    .isEqualTo("Message marked as downloaded")
 
-                coVerifyOrder {
+                coVerify(exactly = 1) {
                     mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, consumerTenant())
-                    mshClient.deleteNotifications(listOf(newMessage.notificationId), consumerTenant())
                 }
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
 
-            it("keeps the notification when the message cannot be marked as downloaded") {
+            it("returns 502 when MSH fails") {
                 val messageId = UUID.randomUUID()
                 coEvery { mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, any()) } throws
                     HttpServerException(status = 500, body = "Internal Server Error")
 
                 client()
                     .post()
-                    .uri("/api/messages/in/$messageId/read?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
                     .exchange()
                     .expectStatus()
                     .is5xxServerError
-
-                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
 
             it("denies marking a message for a HER-id belonging to another organization") {
                 client()
                     .post()
-                    .uri("/api/messages/in/${UUID.randomUUID()}/read?receiverHerId=$FASTLEGE_HER_ID")
+                    .uri("/api/messages/in/${UUID.randomUUID()}/downloaded?receiverHerId=$FASTLEGE_HER_ID")
                     .exchange()
                     .expectStatus()
                     .isForbidden
@@ -1541,6 +1657,20 @@ class NhnAdapterApiIT(
             }
         }
     })
+
+private const val BUSINESS_DOCUMENT_ID = "9f1c892b-4341-4239-b627-83b7a1eb65ab"
+
+/** MSH metadata for a message from the fastlege to the kommune and the legekontor. */
+private fun incomingMessageMetadata(messageId: String, msgType: String) =
+    MessageWithMetadata(
+        id = messageId,
+        contentType = "application/xml",
+        receiverHerIds = listOf(KOMMUNE_HER_ID, LEGEKONTOR_HER_ID),
+        senderHerId = FASTLEGE_HER_ID,
+        businessDocumentId = BUSINESS_DOCUMENT_ID,
+        businessDocumentDate = OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
+        businessDocumentMsgType = msgType,
+    )
 
 /** An unread MSH notification for [KOMMUNE_HER_ID] about the message [messageId]. */
 private fun notification(type: NotificationType, messageId: UUID) =

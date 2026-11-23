@@ -2,7 +2,6 @@ package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
 import java.util.Base64
 import java.util.UUID
-import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
@@ -19,7 +18,6 @@ import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MessageWithMetadata
 import no.ks.fiks.nhn.msh.MshInternalClient
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
-import no.ks.fiks.nhn.msh.NotificationType
 import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.StatusInfo
@@ -40,57 +38,38 @@ const val MESSAGE_MAX_BYTES = 50 * 1000 * 1000
 const val DOCUMENTS_MAX_BYTES = MESSAGE_MAX_BYTES / 4 * 3
 
 /** The most unread notifications MSH returns at a time. */
-internal const val MAX_NOTIFICATIONS_TO_FETCH = 1000
+const val MAX_NOTIFICATIONS_TO_FETCH = 1000
+
+/** The most notifications MSH deletes at a time. */
+const val MAX_NOTIFICATIONS_TO_DELETE = 1000
 
 private const val CONTENT_TYPE = "application/xml"
 private const val CONTENT_TRANSFER_ENCODING = "base64"
 
-private val log = KotlinLogging.logger {}
-
 /**
  * Sends and receives messages through NHN's Message Service Handler (MSH) on behalf of the calling client.
  *
- * [notificationsToFetch] is how many unread notifications are read from MSH at a time, at most
- * [MAX_NOTIFICATIONS_TO_FETCH]. The messages to a receiver are listed from them, so it limits how many messages are
- * listed at a time.
+ * Incoming messages are found the way MSH gives them: each new message is announced by a NewMessage notification,
+ * which stays unread until the client deletes it. The notifications are passed on as they are, so that the client
+ * decides what to do with each of them.
  */
 class MshService(
     private val mshClient: Client,
     private val internalClient: MshInternalClient,
     private val applicationMetadata: ApplicationMetadata,
-    private val notificationsToFetch: Int,
 ) {
-    init {
-        require(notificationsToFetch in 1..MAX_NOTIFICATIONS_TO_FETCH) {
-            "notificationsToFetch must be between 1 and $MAX_NOTIFICATIONS_TO_FETCH, but is $notificationsToFetch"
-        }
-    }
+    suspend fun getUnreadNotifications(
+        herId: Int,
+        notificationsToFetch: Int,
+        clientContext: ClientContext,
+    ): List<UnreadNotification> =
+        mshClient.getUnreadNotifications(listOf(herId), notificationsToFetch, requestParameters(clientContext))
 
-    /**
-     * MSH has no list of the messages to a receiver: each new message is announced by a NewMessage notification, which
-     * stays unread until it is deleted. The messages to [receiverHerId] are therefore the ones its unread NewMessage
-     * notifications refer to, and are listed until [markMessageRead] deletes their notifications.
-     *
-     * The other notifications are about the state of sent messages, which is looked up with [getStatus] instead. They
-     * are deleted, as they would otherwise take up the unread notifications and keep new messages from being listed.
-     */
-    suspend fun getMessagesWithMetadata(receiverHerId: Int, clientContext: ClientContext): List<MessageWithMetadata> {
-        val requestParameters = requestParameters(clientContext)
-        val (newMessages, others) =
-            mshClient
-                .getUnreadNotifications(listOf(receiverHerId), notificationsToFetch, requestParameters)
-                .partition { it.type == NotificationType.NEW_MESSAGE }
+    suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) =
+        mshClient.deleteNotifications(notificationIds, requestParameters(clientContext))
 
-        if (others.isNotEmpty()) {
-            log.debug { "Deleting ${others.size} notifications about sent messages for $receiverHerId" }
-            mshClient.deleteNotifications(others.map { it.notificationId }, requestParameters)
-        }
-
-        return newMessages
-            .map { it.relatedMessageIdOrThrow() }
-            .distinct()
-            .map { mshClient.getMessage(it, requestParameters) }
-    }
+    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata =
+        mshClient.getMessage(id.toString(), requestParameters(clientContext))
 
     /** Reads the sender from the message metadata in MSH. */
     suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int {
@@ -102,23 +81,11 @@ class MshService(
         mshClient.getStatus(id.toString(), requestParameters(clientContext)).statusList.orEmpty()
 
     /**
-     * Marks the message downloaded, which deletes its business document from MSH, and then deletes its NewMessage
-     * notifications, so that it is no longer listed by [getMessagesWithMetadata]. The notifications are looked for
-     * among as many as MSH returns, so that they are found also when [notificationsToFetch] is lower.
+     * Marks the message downloaded by [receiverHerId], which deletes its business document from MSH. Its NewMessage
+     * notification is left for the client to delete.
      */
-    suspend fun markMessageRead(id: UUID, receiverHerId: Int, clientContext: ClientContext) {
-        val requestParameters = requestParameters(clientContext)
-        mshClient.markMessageDownloaded(id.toString(), receiverHerId, requestParameters)
-
-        val notificationIds =
-            mshClient
-                .getUnreadNotifications(listOf(receiverHerId), MAX_NOTIFICATIONS_TO_FETCH, requestParameters)
-                .filter { it.type == NotificationType.NEW_MESSAGE && it.relatedMessageId.equals(id.toString(), true) }
-                .map { it.notificationId }
-        if (notificationIds.isNotEmpty()) {
-            mshClient.deleteNotifications(notificationIds, requestParameters)
-        }
-    }
+    suspend fun markMessageDownloaded(id: UUID, receiverHerId: Int, clientContext: ClientContext) =
+        mshClient.markMessageDownloaded(id.toString(), receiverHerId, requestParameters(clientContext))
 
     suspend fun getBusinessDocument(id: String, clientContext: ClientContext): BusinessDocumentResponse {
         val businessDocument =
@@ -184,10 +151,6 @@ internal fun base64Length(size: Int): Long = (size + 2L) / 3 * 4
 /** The HER-id a message is addressed with: the one of the child, such as a person, else the one of its parent. */
 private fun herId(child: CommunicationParty, parent: CommunicationParty, role: String): Int =
     child.herId ?: parent.herId ?: throw IllegalArgumentException("The $role has no HER-id")
-
-private fun UnreadNotification.relatedMessageIdOrThrow(): String =
-    relatedMessageId
-        ?: throw InvalidMshDataException("Invalid data from MSH: Notification $notificationId refers to no message")
 
 private fun GetBusinessDocumentResponse.decodeXml(): String {
     require(contentTransferEncoding == CONTENT_TRANSFER_ENCODING) {

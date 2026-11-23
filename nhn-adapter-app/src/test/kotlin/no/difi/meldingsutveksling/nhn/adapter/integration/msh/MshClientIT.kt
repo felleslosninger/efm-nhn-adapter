@@ -87,7 +87,7 @@ class MshClientIT :
                     MshTimeoutConfig(timeout.connect, timeout.read, Duration.ofSeconds(10)),
                 )
             mshClient = IntegrationBeans.mshClient(mshInternalClient, applicationMetadata)
-            mshService = IntegrationBeans.mshService(mshClient, mshInternalClient, applicationMetadata, 50)
+            mshService = IntegrationBeans.mshService(mshClient, mshInternalClient, applicationMetadata)
         }
 
         fun stubJson(mapping: MappingBuilder, body: String, status: Int = 200) {
@@ -340,29 +340,46 @@ class MshClientIT :
                 shouldThrow<InvalidMshDataException> { mshService.getSenderHerId(messageId, singleTenantContext) }
             }
 
-            it("getMessagesWithMetadata via MshService should list the messages of the unread notifications") {
+            it("getUnreadNotifications via MshService should return every notification without deleting any") {
                 val messageId = UUID.randomUUID()
                 stubUnreadNotifications("NewMessage" to messageId, "MessageSentStateUpdated" to UUID.randomUUID())
-                stubJson(get(urlEqualTo("/messages/$messageId")), messageJson(messageId))
+
+                val result = mshService.getUnreadNotifications(12345, 50, singleTenantContext)
+
+                result.map { it.type } shouldBe
+                    listOf(NotificationType.NEW_MESSAGE, NotificationType.MESSAGE_SENT_STATE_UPDATED)
+
+                wireMockServer.verify(
+                    getRequestedFor(urlEqualTo("/notifications/unread?HerIds=12345&NotificationsToFetch=50"))
+                        .withHeader("api-version", equalTo("3"))
+                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
+                )
+                wireMockServer.verify(0, postRequestedFor(urlEqualTo("/notifications/delete")))
+            }
+
+            it("deleteNotifications via MshService should send POST /notifications/delete") {
                 wireMockServer.stubFor(
                     post(urlEqualTo("/notifications/delete")).willReturn(aResponse().withStatus(204))
                 )
 
-                val result = mshService.getMessagesWithMetadata(12345, singleTenantContext)
+                mshService.deleteNotifications(listOf("notification-1", "notification-2"), singleTenantContext)
 
-                result shouldHaveSize 1
-                result[0].id shouldBe messageId.toString()
-                result[0].toInMessage(12345).isAppRec shouldBe false
-
-                wireMockServer.verify(
-                    getRequestedFor(urlPathEqualTo("/notifications/unread"))
-                        .withHeader("api-version", equalTo("3"))
-                        .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
-                )
                 wireMockServer.verify(
                     postRequestedFor(urlEqualTo("/notifications/delete"))
-                        .withRequestBody(matchingJsonPath("$.notificationIds.size()", equalTo("1")))
+                        .withHeader("api-version", equalTo("3"))
+                        .withRequestBody(matchingJsonPath("$.notificationIds[0]", equalTo("notification-1")))
+                        .withRequestBody(matchingJsonPath("$.notificationIds[1]", equalTo("notification-2")))
                 )
+            }
+
+            it("getMessage via MshService should get the metadata of a message") {
+                val messageId = UUID.randomUUID()
+                stubJson(get(urlEqualTo("/messages/$messageId")), messageJson(messageId))
+
+                val result = mshService.getMessage(messageId, singleTenantContext)
+
+                result.id shouldBe messageId.toString()
+                result.toInMessage(12345).isAppRec shouldBe false
             }
 
             it("getStatus via MshService should use multi-tenant context and retrieve status") {
@@ -396,17 +413,13 @@ class MshClientIT :
                 )
             }
 
-            it("markMessageRead via MshService should mark the message downloaded and delete its notification") {
+            it("markMessageDownloaded via MshService should mark the message downloaded and nothing more") {
                 val messageId = UUID.randomUUID()
                 wireMockServer.stubFor(
                     put(urlEqualTo("/messages/$messageId/downloaded")).willReturn(aResponse().withStatus(204))
                 )
-                stubUnreadNotifications("NewMessage" to messageId)
-                wireMockServer.stubFor(
-                    post(urlEqualTo("/notifications/delete")).willReturn(aResponse().withStatus(204))
-                )
 
-                mshService.markMessageRead(messageId, 12345, singleTenantContext)
+                mshService.markMessageDownloaded(messageId, 12345, singleTenantContext)
 
                 wireMockServer.verify(
                     putRequestedFor(urlEqualTo("/messages/$messageId/downloaded"))
@@ -414,10 +427,8 @@ class MshClientIT :
                         .withHeader("nhn-source-system", equalTo(SOURCE_SYSTEM))
                         .withRequestBody(matchingJsonPath("$.receiverHerId", equalTo("12345")))
                 )
-                wireMockServer.verify(
-                    postRequestedFor(urlEqualTo("/notifications/delete"))
-                        .withRequestBody(matchingJsonPath("$.notificationIds.size()", equalTo("1")))
-                )
+                wireMockServer.verify(0, getRequestedFor(urlPathEqualTo("/notifications/unread")))
+                wireMockServer.verify(0, postRequestedFor(urlEqualTo("/notifications/delete")))
             }
         }
     })

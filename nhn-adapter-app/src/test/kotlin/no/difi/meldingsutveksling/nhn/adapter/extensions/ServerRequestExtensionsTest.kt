@@ -45,4 +45,38 @@ class ServerRequestExtensionsTest :
                     .message shouldBe "receiverHerId cannot be null"
             }
         }
+
+        describe("getHerId") {
+            it("parses the HER-id query parameter") {
+                MockServerRequest.builder().queryParam("herId", "1000002").build().getHerId() shouldBe 1000002
+            }
+
+            it("rejects a missing HER-id") {
+                shouldThrow<ClientInputException> { MockServerRequest.builder().build().getHerId() }.message shouldBe
+                    "herId cannot be null"
+            }
+        }
+
+        describe("getNotificationsToFetch") {
+            it("parses the number of notifications to fetch") {
+                MockServerRequest.builder()
+                    .queryParam("notificationsToFetch", "50")
+                    .build()
+                    .getNotificationsToFetch() shouldBe 50
+            }
+
+            it("is null when the client does not ask for a number") {
+                MockServerRequest.builder().build().getNotificationsToFetch() shouldBe null
+            }
+
+            it("rejects a number that is not an integer") {
+                shouldThrow<ClientInputException> {
+                        MockServerRequest.builder()
+                            .queryParam("notificationsToFetch", "many")
+                            .build()
+                            .getNotificationsToFetch()
+                    }
+                    .message shouldBe "notificationsToFetch must be an integer"
+            }
+        }
     })

@@ -27,17 +27,32 @@ object ApiExamples {
   }
 ]"""
 
-    const val INCOMING_MESSAGES =
+    const val INCOMING_MESSAGE =
+        """{
+  "id": "3ef83023-3532-4f9c-9b9a-0ebfba6de4c5",
+  "receiverHerId": 8144796,
+  "senderHerId": 8144717,
+  "businessDocumentId": "1c62e13e-e05b-431b-81f9-197cb794fabc",
+  "businessDocumentDate": "2026-06-26T14:30:45+02:00",
+  "isAppRec": false
+}"""
+
+    const val UNREAD_NOTIFICATIONS =
         """[
   {
-    "id": "3ef83023-3532-4f9c-9b9a-0ebfba6de4c5",
-    "receiverHerId": 8144796,
-    "senderHerId": 8144717,
-    "businessDocumentId": "1c62e13e-e05b-431b-81f9-197cb794fabc",
-    "businessDocumentDate": "2026-06-26T14:30:45+02:00",
-    "isAppRec": false
+    "notificationId": "17aaeaa7-fa1e-4b60-a8e9-bdc31718dfc9",
+    "relatedMessageId": "3ef83023-3532-4f9c-9b9a-0ebfba6de4c5",
+    "type": "NEW_MESSAGE",
+    "notificationReceiverHerId": 8144796,
+    "notificationTriggeredByHerId": 8144717,
+    "description": null,
+    "createdAt": "2026-06-26T14:30:47+02:00"
   }
 ]"""
+
+    const val DELETE_NOTIFICATIONS_INPUT = """{
+  "notificationIds": ["17aaeaa7-fa1e-4b60-a8e9-bdc31718dfc9"]
+}"""
 
     const val GET_DOCUMENT_INPUT = "JWE with a JSON like this {\"id\":\"8baf0255-2687-49e3-9398-bbdf32bfccfc\" }."
 }

@@ -3,7 +3,6 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import io.swagger.v3.oas.annotations.Parameter
 import java.util.UUID
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.builtins.ListSerializer
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
@@ -40,24 +39,24 @@ class InHandler(
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
 ) {
-    suspend fun getMessagesWithMetadata(
+    /** The metadata of a message to [receiverHerId], as referred to by a NewMessage notification. */
+    suspend fun getMessage(
+        messageId: UUID,
         receiverHerId: Int,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
         val auditEntry =
-            NHNAdapterAuditIdentifier.GET_MESSAGES_WITH_METADATA.entry(clientContext)
+            NHNAdapterAuditIdentifier.GET_MESSAGE.entry(clientContext)
+                .attribute("messageId", messageId)
                 .attribute("receiverHerId", receiverHerId)
 
-        // Clients poll this endpoint frequently, so empty results are not audit logged
-        var messageCount = 0
-        auditLogService.log(auditEntry, skipOnSuccess = { messageCount == 0 }) {
+        auditLogService.log(auditEntry) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
-            val messages = mshService.getMessagesWithMetadata(receiverHerId, clientContext)
-            val inMessages = fromMshData { messages.map { it.toInMessage(receiverHerId) } }
-            messageCount = inMessages.size
-            auditEntry.attribute("messageCount", messageCount)
+            val message = mshService.getMessage(messageId, clientContext)
+            val inMessage = fromMshData { message.toInMessage(receiverHerId) }
+            auditEntry.attribute("senderHerId", inMessage.senderHerId)
 
-            val json = jsonParser.encodeToString(ListSerializer(IncomingMessage.serializer()), inMessages)
+            val json = jsonParser.encodeToString(IncomingMessage.serializer(), inMessage)
             return ServerResponse.ok().json().bodyValueAndAwait(json)
         }
     }
@@ -105,20 +104,24 @@ class InHandler(
         }
     }
 
-    suspend fun markMessageRead(
+    /**
+     * Marks the message downloaded by [receiverHerId], which deletes its business document from MSH. The client
+     * deletes its NewMessage notification itself.
+     */
+    suspend fun markMessageDownloaded(
         messageId: UUID,
         receiverHerId: Int,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
         val auditEntry =
-            NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_READ.entry(clientContext)
+            NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_DOWNLOADED.entry(clientContext)
                 .attribute("messageId", messageId)
                 .attribute("receiverHerId", receiverHerId)
 
         auditLogService.log(auditEntry) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
-            mshService.markMessageRead(messageId, receiverHerId, clientContext)
-            return ServerResponse.ok().textPlain().bodyValueAndAwait("Message marked as read")
+            mshService.markMessageDownloaded(messageId, receiverHerId, clientContext)
+            return ServerResponse.ok().textPlain().bodyValueAndAwait("Message marked as downloaded")
         }
     }
 

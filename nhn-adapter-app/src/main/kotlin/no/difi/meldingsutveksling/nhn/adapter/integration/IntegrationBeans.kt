@@ -82,10 +82,6 @@ object IntegrationBeans {
     private fun HelseIdConfiguration.toHelseIdClientConfiguration() =
         HelseIdClientConfiguration(clientId = clientId, jwk = jwk, environment = environment)
 
-    fun mshService(
-        mshClient: Client,
-        internalClient: MshInternalClient,
-        applicationMetadata: ApplicationMetadata,
-        notificationsToFetch: Int,
-    ) = MshService(mshClient, internalClient, applicationMetadata, notificationsToFetch)
+    fun mshService(mshClient: Client, internalClient: MshInternalClient, applicationMetadata: ApplicationMetadata) =
+        MshService(mshClient, internalClient, applicationMetadata)
 }

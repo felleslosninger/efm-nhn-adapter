@@ -76,8 +76,8 @@ nhn:
         read: 30s
         # A whole call, sending a message of up to 50 MB included
         request: 120s
-      # How many unread notifications are read from MSH at a time (1-1000). The incoming messages are listed from them,
-      # so this also limits how many messages one call to GET /api/messages/in lists. Each one is a call to MSH.
+      # How many unread notifications GET /api/notifications/unread returns when the client does not ask for a number
+      # (1-1000)
       notifications-to-fetch: 1000
 
 oauth2:

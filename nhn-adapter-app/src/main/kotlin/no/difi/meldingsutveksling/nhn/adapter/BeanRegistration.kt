@@ -21,6 +21,7 @@ import no.difi.meldingsutveksling.nhn.adapter.config.TempFileConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LargeSendLimiter
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.NotificationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
@@ -108,14 +109,7 @@ private fun integrations() = BeanRegistrarDsl {
             env.bindRequired(PropertyPrefixes.NHN_SERVICE_MSH_TIMEOUT),
         )
     }
-    registerBean {
-        IntegrationBeans.mshService(
-            bean(),
-            bean(),
-            bean(),
-            env.getRequiredProperty(SERVICES_MSH_NOTIFICATIONS_TO_FETCH, Int::class.java),
-        )
-    }
+    registerBean { IntegrationBeans.mshService(bean(), bean(), bean()) }
 }
 
 private fun services() = BeanRegistrarDsl {
@@ -156,6 +150,14 @@ private fun handlers() = BeanRegistrarDsl {
         OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean<LimitsConfig>().maxUploadTime)
     }
     registerBean { LookupHandler(bean(), bean(), bean(), bean()) }
+    registerBean {
+        NotificationHandler(
+            bean(),
+            bean(),
+            bean(),
+            env.getRequiredProperty(SERVICES_MSH_NOTIFICATIONS_TO_FETCH, Int::class.java),
+        )
+    }
 }
 
 private fun openApi() = BeanRegistrarDsl {
