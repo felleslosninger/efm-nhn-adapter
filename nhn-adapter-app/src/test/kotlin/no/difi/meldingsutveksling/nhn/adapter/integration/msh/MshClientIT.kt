@@ -413,6 +413,28 @@ class MshClientIT :
                 shouldThrow<InvalidMshDataException> { mshService.getMessage(messageId, singleTenantContext) }
             }
 
+            it("getSenderHerId via MshService should report a response that is not valid JSON as invalid data") {
+                val messageId = UUID.randomUUID()
+                stubJson(get(urlEqualTo("/messages/$messageId")), """{"id": "$messageId", "senderHerId": """)
+
+                shouldThrow<InvalidMshDataException> { mshService.getSenderHerId(messageId, singleTenantContext) }
+            }
+
+            it("getStatus via MshService should report a response that is not JSON as invalid data") {
+                val messageId = UUID.randomUUID()
+                wireMockServer.stubFor(
+                    get(urlEqualTo("/messages/$messageId/status"))
+                        .willReturn(
+                            aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "text/html")
+                                .withBody("<html><body>Service Unavailable</body></html>")
+                        )
+                )
+
+                shouldThrow<InvalidMshDataException> { mshService.getStatus(messageId, singleTenantContext) }
+            }
+
             it("getStatus via MshService should use multi-tenant context and retrieve status") {
                 val messageId = UUID.randomUUID()
                 stubJson(

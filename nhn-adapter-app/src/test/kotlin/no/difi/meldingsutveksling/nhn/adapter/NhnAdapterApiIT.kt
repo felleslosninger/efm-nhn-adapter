@@ -1268,6 +1268,22 @@ class NhnAdapterApiIT(
                 coVerify { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 1000, consumerTenant()) }
             }
 
+            // msh-client throws a NullPointerException when MSH leaves out a field it requires
+            it("returns 502 when MSH leaves out a required field") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } throws NullPointerException()
+
+                client()
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
+            }
+
             it("returns 400 when the client asks for more notifications than MSH gives") {
                 client()
                     .get()
@@ -1544,6 +1560,22 @@ class NhnAdapterApiIT(
                     .exchange()
                     .expectStatus()
                     .isForbidden
+            }
+
+            // msh-client throws a NullPointerException when MSH leaves out a field it requires
+            it("returns 502 when MSH leaves out a required field") {
+                coEvery { mshClient.getMessage(any(), any()) } throws NullPointerException()
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
             }
 
             it("returns 502 when MSH does not list the receivers of the message") {

@@ -1,5 +1,7 @@
 package no.difi.meldingsutveksling.nhn.adapter.integration.msh
 
+import io.ktor.client.call.NoTransformationFoundException
+import io.ktor.serialization.ContentConvertException
 import java.util.Base64
 import java.util.UUID
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
@@ -68,49 +70,41 @@ class MshService(
         herId: Int,
         notificationsToFetch: Int,
         clientContext: ClientContext,
-    ): List<UnreadNotification> = withRequiredFields {
+    ): List<UnreadNotification> = fromMshResponse {
         mshClient.getUnreadNotifications(listOf(herId), notificationsToFetch, requestParameters(clientContext))
     }
 
-    suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) =
+    suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) = fromMshResponse {
         mshClient.deleteNotifications(notificationIds, requestParameters(clientContext))
+    }
 
-    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata = withRequiredFields {
+    suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata = fromMshResponse {
         mshClient.getMessage(id.toString(), requestParameters(clientContext))
     }
 
     /** Reads the sender from the message metadata in MSH. */
     suspend fun getSenderHerId(id: UUID, clientContext: ClientContext): Int {
-        val message = internalClient.getMessage(id.toString(), requestParameters(clientContext))
+        val message = fromMshResponse { internalClient.getMessage(id.toString(), requestParameters(clientContext)) }
         return message.senderHerId ?: throw InvalidMshDataException("Invalid data from MSH: Message $id has no sender")
     }
 
-    suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> = withRequiredFields {
+    suspend fun getStatus(id: UUID, clientContext: ClientContext): List<StatusInfo> = fromMshResponse {
         mshClient.getStatus(id.toString(), requestParameters(clientContext)).statusList.orEmpty()
     }
-
-    /**
-     * msh-client maps the response of some calls without checking that MSH gave the required fields, so a field MSH
-     * leaves out throws a [NullPointerException] after the call. A failing call throws an `MshException`, which passes
-     * through.
-     */
-    private inline fun <T> withRequiredFields(block: () -> T): T =
-        try {
-            block()
-        } catch (e: NullPointerException) {
-            throw InvalidMshDataException("Invalid data from MSH: a required field is missing", e)
-        }
 
     /**
      * Marks the message downloaded by [receiverHerId], which deletes its business document from MSH. Its NewMessage
      * notification is left for the client to delete.
      */
-    suspend fun markMessageDownloaded(id: UUID, receiverHerId: Int, clientContext: ClientContext) =
+    suspend fun markMessageDownloaded(id: UUID, receiverHerId: Int, clientContext: ClientContext) = fromMshResponse {
         mshClient.markMessageDownloaded(id.toString(), receiverHerId, requestParameters(clientContext))
+    }
 
     suspend fun getBusinessDocument(id: String, clientContext: ClientContext): BusinessDocumentResponse {
-        val businessDocument =
-            internalClient.getBusinessDocument(id.toClientUuid("id").toString(), requestParameters(clientContext))
+        val messageId = id.toClientUuid("id").toString()
+        val businessDocument = fromMshResponse {
+            internalClient.getBusinessDocument(messageId, requestParameters(clientContext))
+        }
         return fromMshData { IncomingBusinessDocumentMapper.toBusinessDocumentResponse(businessDocument.decodeXml()) }
     }
 
@@ -122,19 +116,17 @@ class MshService(
         }
         val encodedBusinessDocument = Base64.getEncoder().encodeToString(businessDocument)
 
-        val id =
-            internalClient.postMessage(
-                PostMessageRequest()
-                    .businessDocument(encodedBusinessDocument)
-                    .senderHerId(herId(input.sender.child, input.sender.parent, "sender"))
-                    .receiverHerIds(listOf(herId(input.receiver.child, input.receiver.parent, "receiver")))
-                    .contentType(CONTENT_TYPE)
-                    .contentTransferEncoding(CONTENT_TRANSFER_ENCODING)
-                    .messageTypeIdentificator(BusinessDocumentSerializer.MESSAGE_TYPE.verdi)
-                    .applicationName(applicationMetadata.applicationName)
-                    .applicationVersion(applicationMetadata.applicationVersion),
-                requestParameters(clientContext),
-            )
+        val request =
+            PostMessageRequest()
+                .businessDocument(encodedBusinessDocument)
+                .senderHerId(herId(input.sender.child, input.sender.parent, "sender"))
+                .receiverHerIds(listOf(herId(input.receiver.child, input.receiver.parent, "receiver")))
+                .contentType(CONTENT_TYPE)
+                .contentTransferEncoding(CONTENT_TRANSFER_ENCODING)
+                .messageTypeIdentificator(BusinessDocumentSerializer.MESSAGE_TYPE.verdi)
+                .applicationName(applicationMetadata.applicationName)
+                .applicationVersion(applicationMetadata.applicationVersion)
+        val id = fromMshResponse { internalClient.postMessage(request, requestParameters(clientContext)) }
         return id ?: throw InvalidMshDataException("Invalid data from MSH: No id for the sent message")
     }
 
@@ -143,14 +135,31 @@ class MshService(
         receipt: DialogmeldingKvitteringMessage,
         clientContext: ClientContext,
     ): String {
-        val id =
-            internalClient.postAppRec(
-                id = receipt.relatedToMessageId.toClientUuid("relatedToMessageId").toString(),
-                request = receipt.toPostAppRecRequest(senderHerId, applicationMetadata),
-                requestParams = requestParameters(clientContext),
-            )
+        val messageId = receipt.relatedToMessageId.toClientUuid("relatedToMessageId").toString()
+        val request = receipt.toPostAppRecRequest(senderHerId, applicationMetadata)
+        val id = fromMshResponse { internalClient.postAppRec(messageId, request, requestParameters(clientContext)) }
         return id ?: throw InvalidMshDataException("Invalid data from MSH: No id for the sent application receipt")
     }
+
+    /**
+     * Calls MSH through msh-client, reporting a response that cannot be read as [InvalidMshDataException]. [block]
+     * must hold the call only, so that the errors caught can only come from the response.
+     *
+     * msh-client reads the response after the call, so a body that is not the expected JSON throws a ktor
+     * [ContentConvertException] or [NoTransformationFoundException]. It also maps some responses without checking that
+     * MSH gave the required fields, so a field MSH leaves out throws a [NullPointerException]. A failing call throws
+     * an `MshException`, which passes through.
+     */
+    private inline fun <T> fromMshResponse(block: () -> T): T =
+        try {
+            block()
+        } catch (e: NullPointerException) {
+            throw InvalidMshDataException("Invalid data from MSH: A required field is missing", e)
+        } catch (e: ContentConvertException) {
+            throw InvalidMshDataException("Invalid data from MSH: The response could not be read", e)
+        } catch (e: NoTransformationFoundException) {
+            throw InvalidMshDataException("Invalid data from MSH: The response could not be read", e)
+        }
 
     private fun requestParameters(clientContext: ClientContext): RequestParameters =
         RequestParameters(HelseIdTokenParameters(tenantParameters(clientContext)))

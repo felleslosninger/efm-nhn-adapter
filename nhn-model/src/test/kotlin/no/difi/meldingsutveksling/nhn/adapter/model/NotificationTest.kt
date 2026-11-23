@@ -76,6 +76,24 @@ class NotificationTest :
                 ) shouldBe notification
             }
 
+            it("round trips a notification without the optional fields, writing them as null") {
+                val refused =
+                    Notification(
+                        notificationId = "notification-2",
+                        relatedMessageId = null,
+                        type = NotificationType.REFUSED_MESSAGE,
+                        notificationReceiverHerId = 1000002,
+                        notificationTriggeredByHerId = null,
+                        description = null,
+                        createdAt = null,
+                    )
+                val json = KxJson.encode(refused, Notification.serializer())
+
+                json shouldContain """"relatedMessageId":null"""
+                json shouldContain """"createdAt":null"""
+                KxJson.decode(json, Notification.serializer()) shouldBe refused
+            }
+
             it("round trips the input to delete notifications") {
                 val input = DeleteNotificationsInput(listOf("notification-1", "notification-2"))
 

@@ -232,7 +232,7 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | Fleirdelt kropp over grensene i `spring.webflux.multipart`               | 413            |
 | Førespurnaden er ikkje motteken innan `limits.max-upload-time`           | 408            |
 | Feil frå AR (`E7778`) eller FLR (`E7779`)                                | 502            |
-| 4xx frå MSH, unnateke 401, 403 og 423                                    | same status og melding som MSH gav |
+| 4xx frå MSH, unnateke 401, 403 og 423                                    | same status som MSH gav, med meldinga «The request was rejected by MSH» |
 | Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 423 (klienten er låst i MSH), 5xx og nettverksfeil | 502 |
 | Timeout mot AR (`E7778`), FLR (`E7779`) eller MSH og HelseID (`E7780`)   | 504            |
 | For mange store sendingar samstundes (`E7781`)                           | 503            |
