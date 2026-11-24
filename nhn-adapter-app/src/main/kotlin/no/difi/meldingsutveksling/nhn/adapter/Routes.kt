@@ -1,11 +1,13 @@
 package no.difi.meldingsutveksling.nhn.adapter
 
+import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
 import no.difi.meldingsutveksling.nhn.adapter.extensions.getHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.getMessageId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.getNotificationsToFetch
 import no.difi.meldingsutveksling.nhn.adapter.extensions.getReceiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.MshConfigurationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.NotificationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
@@ -22,7 +24,13 @@ object ApiPaths {
     const val INCOMING_MESSAGE_DOWNLOADED = "/api/messages/in/{messageId}/downloaded"
     const val UNREAD_NOTIFICATIONS = "/api/notifications/unread"
     const val DELETE_NOTIFICATIONS = "/api/notifications/delete"
+    /** The administration API, see [no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans.ADMIN_SCOPE]. */
+    const val ADMIN = "/api/admin/**"
+    const val MSH_CONFIGURATIONS = "/api/admin/msh-configurations"
+    const val MSH_CONFIGURATION = "/api/admin/msh-configurations/{herId}"
 }
+
+private const val HER_ID = "herId"
 
 private val APPLICATION_JOSE = MediaType.parseMediaType(ContentTypes.APPLICATION_JOSE)
 
@@ -59,3 +67,18 @@ fun CoRouterFunctionDsl.notificationHandler(notificationHandler: NotificationHan
         notificationHandler.deleteNotifications(it, getClientContext())
     }
 }
+
+fun CoRouterFunctionDsl.mshConfigurationHandler(mshConfigurationHandler: MshConfigurationHandler) {
+    GET(ApiPaths.MSH_CONFIGURATIONS, accept(MediaType.APPLICATION_JSON)) {
+        mshConfigurationHandler.list(getClientContext())
+    }
+    PUT(ApiPaths.MSH_CONFIGURATION) {
+        mshConfigurationHandler.register(it.pathVariable(HER_ID).toHerId(), it, getClientContext())
+    }
+    DELETE(ApiPaths.MSH_CONFIGURATION) {
+        mshConfigurationHandler.delete(it.pathVariable(HER_ID).toHerId(), getClientContext())
+    }
+}
+
+private fun String.toHerId(): Int =
+    toIntOrNull()?.takeIf { it > 0 } ?: throw ClientInputException("$HER_ID must be a positive integer")

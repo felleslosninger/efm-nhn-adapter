@@ -20,6 +20,11 @@ spring:
   http:
     codecs:
       max-in-memory-size: 35MB
+  # MariaDB with the MSH configurations of the HER-ids. Flyway migrates it at startup (db/migration).
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
   web:
     error:
       include-message: never

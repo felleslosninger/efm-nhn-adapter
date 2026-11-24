@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import no.difi.meldingsutveksling.nhn.adapter.config.LimitsConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.MshConfigurationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.NotificationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.model.ArDetails
@@ -21,8 +22,11 @@ import no.difi.meldingsutveksling.nhn.adapter.model.DeleteNotificationsInput
 import no.difi.meldingsutveksling.nhn.adapter.model.GetDocumentInput
 import no.difi.meldingsutveksling.nhn.adapter.model.IncomingMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.MessageStatus
+import no.difi.meldingsutveksling.nhn.adapter.model.MshConfigurationDetails
+import no.difi.meldingsutveksling.nhn.adapter.model.MshConfigurationInput
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.Notification
+import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans.ADMIN_SCOPE
 import org.springdoc.core.annotations.RouterOperation
 import org.springdoc.core.annotations.RouterOperations
 import org.springframework.context.annotation.Bean
@@ -384,12 +388,99 @@ class RoutesConfiguration {
                     responses = [ApiResponse(responseCode = "200", description = SUCCESS)],
                 ),
         ),
+        RouterOperation(
+            path = ApiPaths.MSH_CONFIGURATIONS,
+            method = [RequestMethod.GET],
+            beanClass = MshConfigurationHandler::class,
+            beanMethod = "list",
+            operation =
+                Operation(
+                    operationId = "listMshConfigurations",
+                    summary = "List the MSH configurations of the HER-ids",
+                    description =
+                        "Requires the scope $ADMIN_SCOPE. lastUsed is the last time a message was sent or received.",
+                    responses =
+                        [
+                            ApiResponse(
+                                responseCode = "200",
+                                description = SUCCESS,
+                                content =
+                                    [
+                                        Content(
+                                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                            array =
+                                                ArraySchema(
+                                                    schema = Schema(implementation = MshConfigurationDetails::class)
+                                                ),
+                                        )
+                                    ],
+                            )
+                        ],
+                ),
+        ),
+        RouterOperation(
+            path = ApiPaths.MSH_CONFIGURATION,
+            method = [RequestMethod.PUT],
+            beanClass = MshConfigurationHandler::class,
+            beanMethod = "register",
+            operation =
+                Operation(
+                    operationId = "registerMshConfiguration",
+                    summary = "Register the MSH configuration of a HER-id in MSH, or replace it",
+                    description =
+                        "Requires the scope $ADMIN_SCOPE. A HER-id is also registered the first time a client uses " +
+                            "it. 404 if the HER-id is not in Adresseregisteret.",
+                    parameters = [Parameter(name = "herId", `in` = ParameterIn.PATH, example = "8144796")],
+                    requestBody =
+                        RequestBody(
+                            required = false,
+                            content =
+                                [
+                                    Content(
+                                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                        schema = Schema(implementation = MshConfigurationInput::class),
+                                    )
+                                ],
+                        ),
+                    responses =
+                        [
+                            ApiResponse(
+                                responseCode = "200",
+                                description = SUCCESS,
+                                content =
+                                    [
+                                        Content(
+                                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                            schema = Schema(implementation = MshConfigurationDetails::class),
+                                        )
+                                    ],
+                            )
+                        ],
+                ),
+        ),
+        RouterOperation(
+            path = ApiPaths.MSH_CONFIGURATION,
+            method = [RequestMethod.DELETE],
+            beanClass = MshConfigurationHandler::class,
+            beanMethod = "delete",
+            operation =
+                Operation(
+                    operationId = "deleteMshConfiguration",
+                    summary = "Delete the MSH configuration of a HER-id from MSH",
+                    description =
+                        "Requires the scope $ADMIN_SCOPE. 404 if the adapter has no configuration of the HER-id. " +
+                            "A HER-id still in use is registered again the next time a client uses it.",
+                    parameters = [Parameter(name = "herId", `in` = ParameterIn.PATH, example = "8144796")],
+                    responses = [ApiResponse(responseCode = "200", description = SUCCESS)],
+                ),
+        ),
     )
     fun router(
         inHandler: InHandler,
         outHandler: OutHandler,
         lookupHandler: LookupHandler,
         notificationHandler: NotificationHandler,
+        mshConfigurationHandler: MshConfigurationHandler,
         limits: LimitsConfig,
     ): RouterFunction<ServerResponse> =
         coRouter {
@@ -397,6 +488,7 @@ class RoutesConfiguration {
                 outHandler(outHandler)
                 lookupHandler(lookupHandler)
                 notificationHandler(notificationHandler)
+                mshConfigurationHandler(mshConfigurationHandler)
             }
             .filter(requestSizeFilter(limits.maxRequestSize))
             // Added last, so that it also handles the errors from the filters above

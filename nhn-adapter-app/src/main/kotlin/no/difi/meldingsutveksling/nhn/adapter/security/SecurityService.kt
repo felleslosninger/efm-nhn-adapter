@@ -54,10 +54,11 @@ class SecurityService(
                 "on behalf of ${clientContext.onBehalfOfOrgNumber} " +
                 "with delegation source = ${clientContext.delegationSource}"
         )
-
-    private val CommunicationParty.parentOrganizationNumber: String
-        get() =
-            checkNotNull(parentOrganization.organizationNumber) {
-                "Parent organization of communication party $herId has no organization number"
-            }
 }
+
+/** The organization that owns the communication party in Adresseregisteret. */
+val CommunicationParty.parentOrganizationNumber: String
+    get() =
+        checkNotNull(parentOrganization.organizationNumber) {
+            "Parent organization of communication party $herId has no organization number"
+        }

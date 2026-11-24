@@ -10,6 +10,11 @@ spring:
     multipart:
       max-in-memory-size: 256KB
       file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart-test
+  # Testcontainers starts MariaDB on the first connection
+  datasource:
+    url: "jdbc:tc:mariadb:11.4.12:///nhn_adapter"
+    username: test
+    password: test
 
 digdir:
   audit:

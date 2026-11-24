@@ -20,6 +20,7 @@ import no.ks.fiks.nhn.msh.CommunicationParty
 import no.ks.fiks.nhn.msh.HelseIdTenantParameters
 import no.ks.fiks.nhn.msh.HelseIdTokenParameters
 import no.ks.fiks.nhn.msh.MessageWithMetadata
+import no.ks.fiks.nhn.msh.MshConfiguration
 import no.ks.fiks.nhn.msh.MshInternalClient
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.RequestParameters
@@ -77,6 +78,21 @@ class MshService(
 
     suspend fun deleteNotifications(notificationIds: List<String>, clientContext: ClientContext) =
         fromMshResponse(clientContext) { mshClient.deleteNotifications(notificationIds, it) }
+
+    /**
+     * Registers the MSH configuration of the HER-ids, which MSH requires of every HER-id it handles messages for. A
+     * configuration already registered is replaced.
+     */
+    suspend fun setConfigurations(configurations: List<MshConfiguration>, clientContext: ClientContext) =
+        fromMshResponse(clientContext) { mshClient.setMshConfigurations(configurations, it) }
+
+    /** As [setConfigurations], in the HelseID tenant of the organization that owns the HER-ids. */
+    suspend fun setConfigurations(configurations: List<MshConfiguration>, organizationNumber: String) =
+        fromMshResponse(requestParameters(organizationNumber)) { mshClient.setMshConfigurations(configurations, it) }
+
+    /** Deletes the MSH configuration of the HER-id, in the HelseID tenant of the organization that owns it. */
+    suspend fun deleteConfiguration(herId: Int, organizationNumber: String) =
+        fromMshResponse(requestParameters(organizationNumber)) { mshClient.deleteMshConfigurations(listOf(herId), it) }
 
     suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata =
         fromMshResponse(clientContext) { mshClient.getMessage(id.toString(), it) }
@@ -157,9 +173,11 @@ class MshService(
      * When MSH has accepted a message to send, but its answer cannot be read, the message is sent although this
      * reports an error. A client that sends it again may send it twice.
      */
-    private inline fun <T> fromMshResponse(clientContext: ClientContext, block: (RequestParameters) -> T): T {
-        val requestParameters = requestParameters(clientContext)
-        return try {
+    private inline fun <T> fromMshResponse(clientContext: ClientContext, block: (RequestParameters) -> T): T =
+        fromMshResponse(requestParameters(clientContext), block)
+
+    private inline fun <T> fromMshResponse(requestParameters: RequestParameters, block: (RequestParameters) -> T): T =
+        try {
             block(requestParameters)
         } catch (e: NullPointerException) {
             throw InvalidMshDataException("Invalid data from MSH: A required field is missing", e)
@@ -168,10 +186,13 @@ class MshService(
         } catch (e: NoTransformationFoundException) {
             throw InvalidMshDataException("Invalid data from MSH: The response could not be read", e)
         }
-    }
 
     private fun requestParameters(clientContext: ClientContext): RequestParameters =
         RequestParameters(HelseIdTokenParameters(tenantParameters(clientContext)))
+
+    /** For a call made by the adapter itself, e.g. for an administrator, in the HelseID tenant of the organization. */
+    private fun requestParameters(organizationNumber: String): RequestParameters =
+        RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters(organizationNumber)))
 
     /** A client acting through a supplier (e.g. a system vendor) needs a multi-tenant HelseID token. */
     private fun tenantParameters(clientContext: ClientContext): HelseIdTenantParameters {

@@ -31,6 +31,7 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.dokumentpakking.PartUtils
@@ -57,6 +58,7 @@ class OutHandler(
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
     private val largeSendLimiter: LargeSendLimiter,
+    private val mshConfigurationService: MshConfigurationService,
     private val maxUploadTime: Duration,
 ) {
     suspend fun getStatus(messageId: UUID, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
@@ -102,6 +104,7 @@ class OutHandler(
 
                     // Authorize before any further lookups or decryption of the dokumentpakke
                     val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
+                    mshConfigurationService.ensureRegistered(sbd.senderHerId, clientContext)
 
                     when (sbd.type) {
                         BusinessMessageType.DIALOGMELDING.type ->
@@ -109,7 +112,7 @@ class OutHandler(
                         BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
                             sendApplicationReceipt(sbd, auditEntry, clientContext)
                         else -> throw ClientInputException("Unsupported message type ${sbd.type}")
-                    }
+                    }.also { mshConfigurationService.recordUse(sbd.senderHerId, clientContext) }
                 }
             auditEntry.attribute("messageReference", messageReference)
 

@@ -25,6 +25,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
@@ -45,6 +46,7 @@ class InHandler(
     private val parcelService: ParcelService,
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
+    private val mshConfigurationService: MshConfigurationService,
 ) {
     /** The metadata of a message to [receiverHerId], as referred to by a NewMessage notification. */
     suspend fun getMessage(
@@ -109,6 +111,7 @@ class InHandler(
                 auditEntry.attribute("fallbackReceiverHerId", receiverHerId)
                 document.sbd.receiverHerId = receiverHerId
             }
+            mshConfigurationService.recordUse(receiverHerId, clientContext)
 
             val forretningsmelding =
                 parcelService.signAndEncrypt(jsonMapper.writeValueAsString(document.sbd), clientCertificate)

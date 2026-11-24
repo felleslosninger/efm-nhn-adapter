@@ -13,6 +13,7 @@ import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MshConfigurationNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.logging.hasDataInCauses
 import no.difi.meldingsutveksling.nhn.adapter.logging.loggableMessage
@@ -74,11 +75,13 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
     when (error) {
         // Unknown HER-id: 404 when it is the looked-up resource, 400 (bad input) elsewhere.
         is HerIdNotFoundException ->
-            if (matchesRoute(ApiPaths.LOOKUP)) {
+            if (matchesRoute(ApiPaths.LOOKUP) || matchesRoute(ApiPaths.MSH_CONFIGURATION)) {
                 toApiError(HttpStatus.NOT_FOUND, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
             } else {
                 clientError(error.message ?: CLIENT_ERROR)
             }
+        is MshConfigurationNotFoundException ->
+            toApiError(HttpStatus.NOT_FOUND, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
         // Without the stack trace: the message of the cause may quote the client's input
         is ClientInputException -> {
             logger.warn("Invalid input for ${route()}: ${error.loggableMessage()}")

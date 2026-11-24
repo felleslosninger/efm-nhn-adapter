@@ -21,6 +21,7 @@ import no.difi.meldingsutveksling.nhn.adapter.config.TempFileConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LargeSendLimiter
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.MshConfigurationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.NotificationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
@@ -28,6 +29,9 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
 import no.difi.meldingsutveksling.nhn.adapter.logging.SpanUrlMasking
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationRepository
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationStartupRegistration
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper
@@ -132,6 +136,9 @@ private fun services() = BeanRegistrarDsl {
         )
     }
     registerBean { LargeSendLimiter(bean()) }
+    registerBean { MshConfigurationRepository(bean()) }
+    registerBean { MshConfigurationService(bean(), bean(), bean()) }
+    registerBean { MshConfigurationStartupRegistration(bean()) }
     // Picked up by Spring's WebHttpHandlerBuilder, which wraps the server's HttpHandler with it
     registerBean { RequestBodyLimit(bean<LimitsConfig>().maxRequestSize) }
     // Applied to the Netty server by Spring Boot: masks the fødselsnummer in traces
@@ -145,13 +152,15 @@ private fun services() = BeanRegistrarDsl {
 }
 
 private fun handlers() = BeanRegistrarDsl {
-    registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
+    registerBean { InHandler(bean(), bean(), bean(), bean(), bean(), bean()) }
     registerBean {
-        OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean<LimitsConfig>().maxUploadTime)
+        OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean<LimitsConfig>().maxUploadTime)
     }
     registerBean { LookupHandler(bean(), bean(), bean(), bean()) }
+    registerBean { MshConfigurationHandler(bean(), bean()) }
     registerBean {
         NotificationHandler(
+            bean(),
             bean(),
             bean(),
             bean(),

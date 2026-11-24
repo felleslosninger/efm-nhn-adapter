@@ -11,6 +11,8 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldNotBeIn
 import io.kotest.matchers.longs.shouldBeLessThanOrEqual
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotBeBlank
@@ -71,9 +73,11 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
+import no.difi.meldingsutveksling.nhn.adapter.model.MshConfigurationDetails
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.JsonWebEncryption
 import no.difi.move.common.dokumentpakking.PartUtils
@@ -92,6 +96,7 @@ import no.ks.fiks.nhn.msh.DeliveryState
 import no.ks.fiks.nhn.msh.GetStatusResponse
 import no.ks.fiks.nhn.msh.HttpServerException
 import no.ks.fiks.nhn.msh.MessageWithMetadata
+import no.ks.fiks.nhn.msh.MshConfiguration
 import no.ks.fiks.nhn.msh.MshInternalClient
 import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.NotificationType
@@ -124,6 +129,7 @@ import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
 import org.springframework.http.codec.multipart.DefaultPartHttpMessageReader
 import org.springframework.http.codec.multipart.MultipartHttpMessageWriter
 import org.springframework.http.codec.multipart.Part
+import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.mock.http.client.reactive.MockClientHttpRequest
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -200,6 +206,7 @@ class NhnAdapterApiIT(
     private val jsonMapper: JsonMapper,
     private val applicationContext: ApplicationContext,
     private val serverCodecConfigurer: ServerCodecConfigurer,
+    private val jdbcClient: JdbcClient,
 ) :
     DescribeSpec({
         val anonymousClient by lazy {
@@ -508,6 +515,148 @@ class NhnAdapterApiIT(
                         request(client("some:other-scope")).shouldBeForbidden()
                     }
                 }
+            }
+        }
+
+        describe("MSH configurations") {
+            val adminScope = "eformidling:dph.admin"
+
+            fun configurations() =
+                client(adminScope)
+                    .get()
+                    .uri("/api/admin/msh-configurations")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody<String>()
+                    .returnResult()
+                    .responseBody!!
+                    .let { jsonParser.decodeFromString<List<MshConfigurationDetails>>(it) }
+
+            fun register(herId: Int, body: String? = null) =
+                client(adminScope).put().uri("/api/admin/msh-configurations/$herId").let { request ->
+                    body?.let { request.contentType(MediaType.APPLICATION_JSON).bodyValue(it) } ?: request
+                }
+
+            fun pollNotifications() =
+                client()
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+            beforeEach {
+                jdbcClient.sql("DELETE FROM msh_configuration").update()
+                coEvery { mshClient.setMshConfigurations(any(), any()) } just Runs
+                coEvery { mshClient.deleteMshConfigurations(any(), any()) } just Runs
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+            }
+
+            it("registers a HER-id in MSH with the HelseID tenant of its organization, and lists it") {
+                register(KOMMUNE_HER_ID, """{"clientLocked": true}""")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.herId")
+                    .isEqualTo(KOMMUNE_HER_ID)
+                    .jsonPath("$.organizationNumber")
+                    .isEqualTo(CONSUMER_ORG_NUMBER)
+                    .jsonPath("$.clientLocked")
+                    .isEqualTo(true)
+
+                coVerify {
+                    mshClient.setMshConfigurations(listOf(MshConfiguration(KOMMUNE_HER_ID, true)), consumerTenant())
+                }
+                with(configurations().single()) {
+                    herId shouldBe KOMMUNE_HER_ID
+                    clientLocked shouldBe true
+                    lastUsed.shouldBeNull()
+                }
+            }
+
+            it("registers a HER-id without a lock when there is no body") {
+                register(KOMMUNE_HER_ID).exchange().expectStatus().isOk
+
+                configurations().single().clientLocked shouldBe false
+            }
+
+            it("returns 404 for a HER-id that is not in Adresseregisteret, and registers nothing") {
+                register(UNKNOWN_HER_ID).exchange().expectStatus().isNotFound
+
+                coVerify(exactly = 0) { mshClient.setMshConfigurations(any(), any()) }
+                configurations().shouldBeEmpty()
+            }
+
+            it("deletes a configuration from MSH, and 404 when there is none") {
+                register(KOMMUNE_HER_ID).exchange().expectStatus().isOk
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                coVerify { mshClient.deleteMshConfigurations(listOf(KOMMUNE_HER_ID), consumerTenant()) }
+                configurations().shouldBeEmpty()
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isNotFound
+            }
+
+            it("registers a HER-id the first time a client polls for it") {
+                pollNotifications()
+                pollNotifications()
+
+                coVerify(exactly = 1) {
+                    mshClient.setMshConfigurations(listOf(MshConfiguration(KOMMUNE_HER_ID, false)), consumerTenant())
+                }
+                with(configurations().single()) {
+                    herId shouldBe KOMMUNE_HER_ID
+                    organizationNumber shouldBe CONSUMER_ORG_NUMBER
+                    lastUsed.shouldBeNull()
+                }
+            }
+
+            it("answers the poll when the registration fails, and tries again the next time") {
+                coEvery { mshClient.setMshConfigurations(any(), any()) } throws RuntimeException("MSH is down")
+
+                pollNotifications()
+                configurations().shouldBeEmpty()
+
+                coEvery { mshClient.setMshConfigurations(any(), any()) } just Runs
+                pollNotifications()
+                configurations().single().herId shouldBe KOMMUNE_HER_ID
+            }
+
+            it("records when a message was last sent, and keeps the lock") {
+                register(KOMMUNE_HER_ID, """{"clientLocked": true}""").exchange().expectStatus().isOk
+                coEvery { mshInternalClient.postAppRec(any(), any(), any()) } returns UUID.randomUUID().toString()
+
+                sendOutgoing(kvitteringSbd(UUID.randomUUID(), UUID.randomUUID())).expectStatus().isOk
+
+                with(configurations().single()) {
+                    lastUsed.shouldNotBeNull()
+                    clientLocked shouldBe true
+                }
+                coVerify(exactly = 1) { mshClient.setMshConfigurations(any(), any()) }
+            }
+
+            it("is only open to the admin scope") {
+                client().get().uri("/api/admin/msh-configurations").exchange().expectStatus().isForbidden
+                client(adminScope)
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
             }
         }
 

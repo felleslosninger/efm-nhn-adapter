@@ -15,6 +15,7 @@ import no.difi.meldingsutveksling.nhn.adapter.model.DeleteNotificationsInput
 import no.difi.meldingsutveksling.nhn.adapter.model.Notification
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toNotification
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import org.springframework.core.io.buffer.DataBufferLimitException
@@ -35,6 +36,7 @@ class NotificationHandler(
     private val mshService: MshService,
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
+    private val mshConfigurationService: MshConfigurationService,
     private val defaultNotificationsToFetch: Int,
 ) {
     init {
@@ -60,6 +62,7 @@ class NotificationHandler(
         var notificationCount = 0
         auditLogService.log(auditEntry, skipOnSuccess = { notificationCount == 0 }) {
             securityService.assertAccessToHerId(clientContext, herId)
+            mshConfigurationService.ensureRegistered(herId, clientContext)
             val notifications =
                 mshService.getUnreadNotifications(herId, count, clientContext).map { it.toNotification() }
             notificationCount = notifications.size
