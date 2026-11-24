@@ -16,6 +16,7 @@ import no.kith.xmlstds.base64container.Base64Container
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.CS
 import no.kith.xmlstds.msghead._2006_05_24.CV
+import no.kith.xmlstds.msghead._2006_05_24.HealthcareProfessional
 import no.kith.xmlstds.msghead._2006_05_24.Ident
 import no.kith.xmlstds.msghead._2006_05_24.MsgHead
 import no.kith.xmlstds.msghead._2006_05_24.Organisation
@@ -153,29 +154,38 @@ object BusinessDocumentDeserializer {
         )
 
     /**
-     * The child is either a sub-organization or a healthcare professional within the parent organization. Note that a
-     * healthcare professional is given the address of the parent organization, not its own.
+     * The child is either a sub-organization or a healthcare professional within the parent organization or the
+     * sub-organization. Note that a healthcare professional is given the address of the organization it is in, not its
+     * own.
      */
     fun Organisation.getChild(): CommunicationParty {
         val subOrganisation = organisation?.getParent()
-        val professional =
-            healthcareProfessional?.let {
-                PersonCommunicationParty(
-                    ids = it.ident.getPersonId(),
-                    address = convertAddress(),
-                    firstName = it.givenName,
-                    middleName = it.middleName,
-                    lastName = it.familyName,
-                )
-            }
+        // A healthcare professional in the sub-organization is more specific than the
+        // sub-organization itself
+        val candidates =
+            listOfNotNull(
+                organisation?.let { it.healthcareProfessional?.toParty(it) },
+                subOrganisation,
+                healthcareProfessional?.toParty(this),
+            )
         // The one with a HER-id, as the message is addressed to it. An organisation addressed at
         // one level only is its
         // own child.
-        return listOfNotNull(subOrganisation, professional).firstOrNull { it.hasHerIdent() }
+        return candidates.firstOrNull { it.hasHerIdent() }
             ?: subOrganisation
-            ?: professional
+            ?: candidates.firstOrNull()
             ?: getParent()
     }
+
+    /** The schema lets the names be left out, but they are not needed to deliver the message. */
+    private fun HealthcareProfessional.toParty(organisation: Organisation) =
+        PersonCommunicationParty(
+            ids = ident.getPersonId(),
+            address = organisation.convertAddress(),
+            firstName = givenName.orEmpty(),
+            middleName = middleName,
+            lastName = familyName.orEmpty(),
+        )
 
     private fun Organisation.convertAddress() =
         address?.let { address ->
@@ -205,9 +215,10 @@ object BusinessDocumentDeserializer {
                             FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR,
                             "Found no ids for patient",
                         ),
-                firstName = givenName,
+                // The schema lets the names be left out; the id identifies the patient
+                firstName = givenName.orEmpty(),
                 middleName = middleName,
-                lastName = familyName,
+                lastName = familyName.orEmpty(),
             )
         }
 

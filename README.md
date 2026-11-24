@@ -253,9 +253,16 @@ Ei innkomen melding vert avvist med `422` (`E7782`) og denne feilkoden når ho i
 | Gyldig etter skjemaet. Eit ekstra dokument i eit namnerom adapteren ikkje kjenner, gjer meldinga ugyldig | `T02` validerer ikkje |
 | Ein pasient med fødselsnummer eller D-nummer. Andre id-ar, til dømes H-nummer, er ikkje nok | `E36` utan pasient, `E30` utan id |
 | Avsendar og mottakar med HER-id, hos underavdelinga eller helsepersonellet, elles hos verksemda | `T99` anna feil i formatet |
+| Ein mottakar som finst i Adresseregisteret. Finst ikkje HER-id-en til mottakaren der, vert meldinga levert til verksemda | `E21` mottakar finst ikkje |
 | Vedlegg (`A`) i ein `Base64Container` med gyldig MIME-type | `T10` / `T99` |
 
-Id-ar av typar adapteren ikkje kjenner, vert ignorerte. Dokument som ikkje er vedlegg, til dømes referansar, vert òg ignorerte.
+Id-ar av typar adapteren ikkje kjenner, vert ignorerte. Dokument som ikkje er vedlegg, til dømes referansar, vert òg
+ignorerte. Namn på pasient og helsepersonell kan mangle.
+
+Ein innkomen applikasjonskvittering vert avvist med `422` (`E7783`) på same måte. HER-id-en til ein part er id-en til
+personen, elles avdelinga, elles institusjonen. Berre ein id med `TypeId` `HER`, eller utan `TypeId`, eller ein
+`AdditionalId` av typen `HER` vert brukt. Manglar HER-id-en eller er han ugyldig, er feilkoden `T99`. Finst ikkje
+mottakaren i Adresseregisteret, vert nivåa over prøvde før kvitteringa vert avvist med `E21`.
 
 ### Timeout og grenser
 

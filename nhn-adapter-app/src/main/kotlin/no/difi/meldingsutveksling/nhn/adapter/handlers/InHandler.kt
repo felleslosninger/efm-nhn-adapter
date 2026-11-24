@@ -14,6 +14,7 @@ import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toJWEToken
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentResponse
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
 import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
@@ -103,19 +104,10 @@ class InHandler(
             auditEntry
                 .attribute("senderHerId", document.sbd.senderHerId)
                 .attribute("receiverHerId", document.sbd.receiverHerId)
-            try {
-                securityService.assertAccessToHerId(clientContext, document.sbd.receiverHerId)
-            } catch (e: HerIdNotFoundException) {
-                // The client only gave the message id: the receiver in the message is the sender's
-                // fault
-                throw InvalidIncomingDocumentException(
-                    ApplicationReceiptException(
-                        FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE,
-                        "The receiver of the message is not in Adresseregisteret",
-                        e,
-                    ),
-                    isAppRec = document.sbd.type == BusinessMessageType.DIALOGMELDING_KVITTERING.type,
-                )
+            val receiverHerId = assertAccessToReceiver(clientContext, document)
+            if (receiverHerId != document.sbd.receiverHerId) {
+                auditEntry.attribute("fallbackReceiverHerId", receiverHerId)
+                document.sbd.receiverHerId = receiverHerId
             }
 
             val forretningsmelding =
@@ -157,6 +149,35 @@ class InHandler(
             mshService.markMessageDownloaded(messageId, receiverHerId, clientContext)
             return ServerResponse.ok().textPlain().bodyValueAndAwait("Message marked as downloaded")
         }
+    }
+
+    /**
+     * Checks access to the receiver of the business document and returns its HER-id. When the receiver's own HER-id is
+     * not in Adresseregisteret, e.g. a department that no longer has one, the levels above it in the document are
+     * tried in turn: the message is delivered to the first of them that is.
+     *
+     * @throws InvalidIncomingDocumentException with [FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE] if
+     *   none of them is in Adresseregisteret: the client only gave the message id, so the receiver is the sender's
+     *   fault
+     */
+    private suspend fun assertAccessToReceiver(clientContext: ClientContext, document: BusinessDocumentResponse): Int {
+        var notFound: HerIdNotFoundException? = null
+        for (herId in (listOf(document.sbd.receiverHerId) + document.receiverHerIdFallbacks).distinct()) {
+            try {
+                securityService.assertAccessToHerId(clientContext, herId)
+                return herId
+            } catch (e: HerIdNotFoundException) {
+                notFound = e
+            }
+        }
+        throw InvalidIncomingDocumentException(
+            ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE,
+                "The receiver of the message is not in Adresseregisteret",
+                notFound,
+            ),
+            isAppRec = document.sbd.type == BusinessMessageType.DIALOGMELDING_KVITTERING.type,
+        )
     }
 
     private fun MultipartBodyBuilder.forretningsmelding(resource: Resource) {

@@ -18,7 +18,7 @@ enum class BusinessMessageType(
 ) : StandardBusinessDocumentType {
     DIALOGMELDING(
         "dialogmelding",
-        "urn:no:difi:helse:xsd:schema::dialogmelding",
+        "urn:no:difi:helse:xsd::dialogmelding",
         "2.0",
         "urn:no:difi:profile:helse:helse:ver1.0",
         DialogmeldingMessage::class.java,

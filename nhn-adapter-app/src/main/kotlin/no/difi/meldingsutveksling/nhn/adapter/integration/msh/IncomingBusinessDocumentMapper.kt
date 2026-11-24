@@ -34,10 +34,12 @@ import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationRec
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.XMLUtils
 import no.kith.xmlstds.CS
 import no.kith.xmlstds.CV
+import no.kith.xmlstds.apprec._2012_02_15.AdditionalId
 import no.kith.xmlstds.apprec._2012_02_15.HCP
 import no.kith.xmlstds.dialog._2013_01_23.Dialogmelding
 import no.kith.xmlstds.msghead._2006_05_24.MsgHead
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
+import no.ks.fiks.hdir.OrganizationIdType
 import no.ks.fiks.hdir.StatusForMottakAvMelding
 import no.ks.fiks.nhn.msh.CommunicationParty
 import org.springframework.core.io.ByteArrayResource
@@ -50,11 +52,22 @@ private val NORWEGIAN_TIME_ZONE = ZoneId.of("Europe/Oslo")
 /** The version of the Standard Business Document Header, which is 1.0. */
 private const val HEADER_VERSION = "1.0"
 
-data class BusinessDocumentResponse(val sbd: StandardBusinessDocument, val attachments: List<Attachment>)
+/**
+ * @property receiverHerIdFallbacks HER-ids of the levels above the receiver in the business document, the nearest
+ *   first. The message is delivered to one of them when the receiver's own HER-id is not in Adresseregisteret.
+ */
+data class BusinessDocumentResponse(
+    val sbd: StandardBusinessDocument,
+    val attachments: List<Attachment>,
+    val receiverHerIdFallbacks: List<Int> = emptyList(),
+)
 
 /** Maps a business document received from MSH (a MsgHead or an AppRec) to a [StandardBusinessDocument]. */
 object IncomingBusinessDocumentMapper {
     private val FILE_REFERENCE = Regex("<FileReference>[^<]+</FileReference>")
+
+    /** The type of a HER-id, in kodeverk 9051 (organisations) and 8116 (persons) alike. */
+    private val HER_ID_TYPE = OrganizationIdType.HER_ID.verdi
 
     /** @throws ApplicationReceiptException if the business document is invalid, e.g. not well-formed XML */
     fun toBusinessDocumentResponse(xml: String): BusinessDocumentResponse =
@@ -80,6 +93,9 @@ object IncomingBusinessDocumentMapper {
     private fun fromMsgHead(xml: String): BusinessDocumentResponse {
         val msgHead = BusinessDocumentDeserializer.deserializeMsgHead(xml.replace(FILE_REFERENCE, ""))
         val receiver = msgHead.getReceiver()
+        val receiverHerId = requireHerId(receiver.child, receiver.parent, "receiver")
+        // A parent with an invalid HER-id is ignored when the child has a valid one
+        val parentHerId = runCatching { receiver.parent.herIdOrNull("receiver") }.getOrNull()
         val vedlegg = msgHead.getAttachments()
 
         val sbd =
@@ -91,7 +107,7 @@ object IncomingBusinessDocumentMapper {
                 )
                 .apply {
                     senderHerId = msgHead.getSender().let { requireHerId(it.child, it.parent, "sender") }
-                    receiverHerId = requireHerId(receiver.child, receiver.parent, "receiver")
+                    this.receiverHerId = receiverHerId
                     dialogmelding =
                         DialogmeldingMessage(
                             hoveddokument = AttachmentNames.DIALOGMELDING,
@@ -112,7 +128,11 @@ object IncomingBusinessDocumentMapper {
                     Attachment(it.filename(index), InputStreamResource(it.data), MimeType.valueOf(it.mimeType))
                 }
 
-        return BusinessDocumentResponse(sbd, attachments)
+        return BusinessDocumentResponse(
+            sbd,
+            attachments,
+            receiverHerIdFallbacks = listOfNotNull(parentHerId).filter { it != receiverHerId },
+        )
     }
 
     /**
@@ -145,6 +165,7 @@ object IncomingBusinessDocumentMapper {
     private fun fromApplicationReceipt(xml: String): BusinessDocumentResponse {
         val appRec = ApplicationReceiptDeserializer.deserializeAppRec(xml)
         val appRecId = requireId(appRec.id, "Id of the AppRec")
+        val receiverHerIds = appRec.receiver.hcp.requireHerIds("receiver")
 
         val sbd =
             standardBusinessDocument(
@@ -161,8 +182,8 @@ object IncomingBusinessDocumentMapper {
                         ),
                 )
                 .apply {
-                    senderHerId = appRec.sender.hcp.toHerId()
-                    receiverHerId = appRec.receiver.hcp.toHerId()
+                    senderHerId = appRec.sender.hcp.requireHerIds("sender").first()
+                    receiverHerId = receiverHerIds.first()
                     dialogmeldingKvittering =
                         DialogmeldingKvitteringMessage(
                             relatedToMessageId = requireId(appRec.originalMsgId?.id, "OriginalMsgId of the AppRec"),
@@ -172,7 +193,7 @@ object IncomingBusinessDocumentMapper {
                         )
                 }
 
-        return BusinessDocumentResponse(sbd, emptyList())
+        return BusinessDocumentResponse(sbd, emptyList(), receiverHerIdFallbacks = receiverHerIds.drop(1))
     }
 
     private fun standardBusinessDocument(
@@ -213,7 +234,6 @@ object IncomingBusinessDocumentMapper {
 
     private fun IncomingAttachment.filename(index: Int) = AttachmentNames.vedlegg(index, mimeType)
 
-    /** The HER-id of the child, else of the parent, as messages are addressed when sent too. */
     /**
      * The HER-id of the child, else of the parent, as messages are addressed when sent too. Only a child without a
      * HER-id falls back: one with a HER-id that cannot be read is invalid, as the message is addressed to it.
@@ -226,17 +246,40 @@ object IncomingBusinessDocumentMapper {
                 "Missing HER-id for the $role in MsgHead",
             )
 
-    /** The most specific party wins: a person, then a department/service, then the institution itself. */
-    private fun HCP.toHerId(): Int {
-        val id =
+    /**
+     * The HER-ids of the party, the most specific first: a person, then a department/service, then the institution
+     * itself. The first is the party's HER-id, which must be valid; the others are the levels above it.
+     */
+    private fun HCP.requireHerIds(role: String): List<Int> {
+        val ids =
             if (inst != null) {
-                inst.hcPerson?.firstOrNull()?.id ?: inst.dept?.firstOrNull()?.id ?: inst.id
+                listOfNotNull(
+                    inst.hcPerson?.firstOrNull()?.let { herIdOf(it.id, it.typeId, it.additionalId) },
+                    inst.dept?.firstOrNull()?.let { herIdOf(it.id, it.typeId, it.additionalId) },
+                    herIdOf(inst.id, inst.typeId, inst.additionalId),
+                )
             } else {
-                hcProf?.id
+                listOfNotNull(hcProf?.let { herIdOf(it.id, it.typeId, it.additionalId) })
             }
-        return id?.trim()?.toIntOrNull()?.takeIf { it > 0 }
-            ?: throw invalidMessage(FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT, "Missing HER-id in AppRec")
+        val herId =
+            ids.firstOrNull()?.toHerIdOrNull()
+                ?: throw invalidMessage(
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT,
+                    if (ids.isEmpty()) "Missing HER-id for the $role in AppRec"
+                    else "Invalid HER-id for the $role in AppRec",
+                )
+        return (listOf(herId) + ids.drop(1).mapNotNull { it.toHerIdOrNull() }).distinct()
     }
+
+    /**
+     * The HER-id of a party in an AppRec: its id if that is typed as a HER-id, else an additional id that is. An id
+     * without a type is taken to be a HER-id, as an AppRec identifies its parties by HER-id.
+     */
+    private fun herIdOf(id: String?, typeId: CS?, additionalIds: List<AdditionalId>?): String? =
+        id?.takeIf { typeId == null || typeId.v == HER_ID_TYPE }
+            ?: additionalIds?.firstOrNull { it.type?.v == HER_ID_TYPE }?.id
+
+    private fun String.toHerIdOrNull(): Int? = trim().toIntOrNull()?.takeIf { it > 0 }
 
     /** The status is coded in kodeverk 8222. Only the code (V) is reliable, the display name (DN) is e.g. "Avvist". */
     private fun CS.toKvitteringStatus(): DialogmeldingKvitteringStatus =

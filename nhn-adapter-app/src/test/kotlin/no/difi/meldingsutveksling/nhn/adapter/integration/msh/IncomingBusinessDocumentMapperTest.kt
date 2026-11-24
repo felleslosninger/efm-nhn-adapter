@@ -398,6 +398,71 @@ class IncomingBusinessDocumentMapperTest :
                 }
             }
 
+            val professional = elementPattern("HealthcareProfessional").find(msgHeadXml)!!.value
+
+            /**
+             * The XML with [element] added to the receiver's organisation, or with [inner] to its sub-organisation.
+             */
+            fun String.withReceiverProfessional(element: String = professional, inner: Boolean = false) =
+                inElement("Receiver") { receiver ->
+                    val ends = Regex("</(\\w+:)?Organisation>").findAll(receiver).toList()
+                    val end = (if (inner) ends.first() else ends.last()).range.first
+                    receiver.substring(0, end) + element + receiver.substring(end)
+                }
+
+            it("accepts a healthcare professional without a given name") {
+                val xml = msgHeadXml.inElement("HealthcareProfessional") { it.withoutElements("GivenName") }
+
+                senderHerId(xml) shouldBe FASTLEGE_HER_ID
+            }
+
+            it("prefers a sub-organisation with a HER-id to a healthcare professional, which needs no name") {
+                val xml = msgHeadXml.withReceiverProfessional(professional.withoutElements("GivenName"))
+
+                receiverHerId(xml) shouldBe KOMMUNE_TJENESTE_HER_ID
+            }
+
+            it("uses the HER-id of a healthcare professional when the sub-organisation has none") {
+                val xml =
+                    msgHeadXml.withReceiverProfessional().inIdent(KOMMUNE_TJENESTE_HER_ID) {
+                        it.replace("V=\"HER\"", "V=\"ENH\"")
+                    }
+
+                receiverHerId(xml) shouldBe FASTLEGE_HER_ID
+            }
+
+            it("uses the HER-id of a healthcare professional in the sub-organisation") {
+                val response =
+                    IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
+                        msgHeadXml.withReceiverProfessional(inner = true)
+                    )
+
+                response.sbd.receiverHerId shouldBe FASTLEGE_HER_ID
+                response.receiverHerIdFallbacks shouldBe listOf(KOMMUNE_HER_ID)
+            }
+
+            it("falls back to the organisation of the receiver") {
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(msgHeadXml).receiverHerIdFallbacks shouldBe
+                    listOf(KOMMUNE_HER_ID)
+            }
+
+            it("has no fallback when the receiver is the organisation itself") {
+                val xml = msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) { it.replace("V=\"HER\"", "V=\"ENH\"") }
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).receiverHerIdFallbacks.shouldBeEmpty()
+            }
+
+            it("accepts a patient without a name") {
+                val xml =
+                    msgHeadXml.inElement("Patient") { it.withoutElements("GivenName").withoutElements("FamilyName") }
+
+                with(IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.dialogmelding.pasient!!) {
+                    fnr shouldBe PASIENT_FNR
+                    fornavn shouldBe ""
+                    etternavn shouldBe ""
+                }
+            }
+
             it("rejects a patient whose fødselsnummer is empty") {
                 val xml = msgHeadXml.replace(">$PASIENT_FNR<", "><")
 
@@ -608,6 +673,98 @@ class IncomingBusinessDocumentMapperTest :
                     .sbd
                     .dialogmeldingKvittering
                     .status shouldBe DialogmeldingKvitteringStatus.REJECTED
+            }
+
+            fun receiverOf(receiverHcp: String) =
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(appRec(receiverHcp = receiverHcp))
+
+            fun rejected(xml: String) =
+                shouldThrow<ApplicationReceiptException> {
+                        IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml)
+                    }
+                    .error
+
+            it("uses only an id typed as a HER-id, falling back to the levels above") {
+                val response =
+                    receiverOf(
+                        """
+                        <Inst>
+                          <Name>Kommune</Name>
+                          <Id>$KOMMUNE_HER_ID</Id>
+                          <TypeId V="HER" DN="HER-id"/>
+                          <Dept><Name>Avdeling</Name><Id>42</Id><TypeId V="LOK" DN="Lokal id"/></Dept>
+                          <HCPerson><Name>Saksbehandler</Name><Id>7654321</Id><TypeId V="HPR" DN="HPR-nummer"/></HCPerson>
+                        </Inst>
+                        """
+                    )
+
+                response.sbd.receiverHerId shouldBe KOMMUNE_HER_ID
+                response.receiverHerIdFallbacks.shouldBeEmpty()
+            }
+
+            it("uses a HER-id given as an additional id") {
+                val response =
+                    receiverOf(
+                        """
+                        <Inst>
+                          <Name>Kommune</Name>
+                          <Id>987654321</Id>
+                          <TypeId V="ENH" DN="Organisasjonsnummeret i Enhetsregisteret"/>
+                          <AdditionalId><Id>$KOMMUNE_HER_ID</Id><Type V="HER" DN="HER-id"/></AdditionalId>
+                        </Inst>
+                        """
+                    )
+
+                response.sbd.receiverHerId shouldBe KOMMUNE_HER_ID
+            }
+
+            it("has the HER-ids of the levels above the receiver as fallbacks") {
+                val response =
+                    receiverOf(
+                        """
+                        <Inst>
+                          <Name>Kommune</Name>
+                          <Id>$KOMMUNE_HER_ID</Id>
+                          <TypeId V="HER" DN="HER-id"/>
+                          <HCPerson><Name>Saksbehandler</Name><Id>$KOMMUNE_TJENESTE_HER_ID</Id><TypeId V="HER" DN="HER-id"/></HCPerson>
+                        </Inst>
+                        """
+                    )
+
+                response.sbd.receiverHerId shouldBe KOMMUNE_TJENESTE_HER_ID
+                response.receiverHerIdFallbacks shouldBe listOf(KOMMUNE_HER_ID)
+            }
+
+            it("rejects a receiver without a HER-id") {
+                val xml =
+                    appRec(
+                        receiverHcp =
+                            """<Inst><Name>Kommune</Name><Id>987654321</Id><TypeId V="ENH" DN="Organisasjonsnummer"/></Inst>"""
+                    )
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            listOf("0", "-7", "abc").forEach { invalid ->
+                it("rejects the invalid HER-id '$invalid'") {
+                    val xml = appRec(receiverHcp = """<Inst><Name>Kommune</Name><Id> $invalid </Id></Inst>""")
+
+                    rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+                }
+            }
+
+            it("rejects a blank id of the AppRec or of the original message") {
+                val xml = appRec()
+
+                rejected(xml.replace("<Id>$appRecId</Id>", "<Id> </Id>")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+                rejected(xml.replace("<Id>$originalMessageId</Id>", "<Id> </Id>")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a MIGversion with an element in it as not valid") {
+                rejected(appRec(migVersion = "v1.1 2012-02-15<x/>")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
             }
 
             it("rejects an unknown status code") {

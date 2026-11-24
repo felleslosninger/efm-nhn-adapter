@@ -1702,6 +1702,98 @@ class NhnAdapterApiIT(
                     .isEqualTo("E7782")
             }
 
+            it("delivers the message to the organisation when the receiver's own HER-id is not in Adresseregisteret") {
+                val messageId = UUID.randomUUID()
+                val avdeling =
+                    ArTestData.service(
+                        UNKNOWN_HER_ID,
+                        "Avdeling som ikkje finst",
+                        ArTestData.parentOrganization(KOMMUNE_HER_ID, "Helse og omsorg", CONSUMER_ORG_NUMBER),
+                    )
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = avdeling.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                val result =
+                    client()
+                        .post()
+                        .uri("/api/messages/in")
+                        .contentType(APPLICATION_JOSE)
+                        .accept(MediaType.MULTIPART_MIXED)
+                        .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                        .exchange()
+                        .expectStatus()
+                        .isOk
+                        .expectBody<ByteArray>()
+                        .returnResult()
+
+                val parts = readMultipart(result.responseHeaders.contentType!!, result.responseBody!!)
+                val jws =
+                    parcelService.decryptAndVerify(
+                        PartUtils.toString(parts.getValue(MultipartNames.FORRETNINGSMELDING))
+                    )
+                jsonMapper
+                    .readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
+                    .receiverHerId shouldBe KOMMUNE_HER_ID
+            }
+
+            it("returns 422 with the technical code of an application receipt when its receiver is unknown") {
+                val messageId = UUID.randomUUID()
+                val appRec =
+                    """
+                    <AppRec xmlns="http://www.kith.no/xmlstds/apprec/2012-02-15">
+                      <MsgType V="APPREC"/>
+                      <MIGversion>v1.1 2012-02-15</MIGversion>
+                      <GenDate>2026-10-14T12:00:00</GenDate>
+                      <Id>$messageId</Id>
+                      <Sender><HCP><Inst><Name>Legekontor</Name><Id>$LEGEKONTOR_HER_ID</Id><TypeId V="HER"/></Inst></HCP></Sender>
+                      <Receiver><HCP><Inst><Name>Ukjend</Name><Id>$UNKNOWN_HER_ID</Id><TypeId V="HER"/></Inst></HCP></Receiver>
+                      <Status V="1" DN="OK"/>
+                      <OriginalMsgId>
+                        <MsgType V="DIALOG_NOTAT"/>
+                        <IssueDate>2026-10-14T11:00:00</IssueDate>
+                        <Id>${UUID.randomUUID()}</Id>
+                      </OriginalMsgId>
+                    </AppRec>
+                    """
+                        .trimIndent()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(appRec.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7783")
+            }
+
             it("returns the incoming dialogmelding as an encrypted forretningsmelding and dokumentpakke") {
                 val messageId = UUID.randomUUID()
                 val msgHead =
