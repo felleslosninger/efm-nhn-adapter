@@ -90,7 +90,7 @@ class MshConfigurationServiceTest :
             coEvery { repository.delete(any()) } returns true
             coEvery { repository.deleteIfUpdatedAt(any(), any()) } returns true
             coEvery { repository.restore(any(), any()) } returns true
-            coEvery { repository.updateTenant(any(), any(), any(), any()) } just Runs
+            coEvery { repository.updateTenant(any(), any(), any()) } just Runs
             coEvery { repository.updateLastUsed(any(), any()) } returns true
             coEvery { adresseregisteretService.lookupByHerId(HER_ID) } returns
                 ArTestData.organization(HER_ID, "Kommune", ORG_NUMBER)
@@ -336,10 +336,14 @@ class MshConfigurationServiceTest :
             it("restores the stored configuration, as MSH may not have got it") {
                 coEvery { repository.find(HER_ID) } returns null
                 coEvery { mshService.setConfigurations(any(), any<String>(), any()) } coAnswers { awaitCancellation() }
-                // Suspends, as the real one does, and so fails in a cancelled coroutine
+                // Suspends, as the real one does, and so fails in a cancelled coroutine: only a
+                // restore that is not
+                // cancelled gets past it
+                var restored = false
                 coEvery { repository.deleteIfUpdatedAt(any(), any()) } coAnswers
                     {
                         yield()
+                        restored = true
                         true
                     }
 
@@ -348,7 +352,83 @@ class MshConfigurationServiceTest :
                 registration.cancelAndJoin()
 
                 coVerify { repository.save(HER_ID, ORG_NUMBER, false, true, NOW) }
-                coVerify { repository.deleteIfUpdatedAt(HER_ID, NOW) }
+                restored shouldBe true
+            }
+        }
+
+        describe("register, and the restore when it fails") {
+            it("stores the time as the database does, to the microsecond, so that the restore can find it") {
+                val service =
+                    service(clock = Clock.fixed(Instant.parse("2026-11-24T12:00:00.123456789Z"), ZoneOffset.UTC))
+                val storedAt = Instant.parse("2026-11-24T12:00:00.123456Z")
+                coEvery { repository.find(HER_ID) } returns stored()
+                coEvery { mshService.setConfigurations(any(), any<String>(), any()) } throws IOException("Timeout")
+
+                shouldThrow<IOException> { service.register(HER_ID, clientLocked = true) }
+
+                coVerify { repository.save(HER_ID, ORG_NUMBER, false, true, storedAt) }
+                coVerify { repository.restore(stored(), storedAt) }
+            }
+
+            it("registers the HER-id again on use, also when a client registered it during the restore") {
+                coEvery { repository.find(HER_ID) } returns stored(clientLocked = true)
+                coEvery { mshService.setConfigurations(any(), any<String>(), any()) } throws IOException("Timeout")
+                coEvery { repository.restore(any(), any()) } coAnswers
+                    {
+                        // A client's use takes the stored lock as registered, before it is put back
+                        service.ensureRegistered(HER_ID, clientContext())
+                        coEvery { repository.find(HER_ID) } returns stored(clientLocked = false)
+                        true
+                    }
+
+                shouldThrow<IOException> { service.register(HER_ID, clientLocked = true) }
+                service.ensureRegistered(HER_ID, clientContext())
+
+                coVerify {
+                    mshService.setConfigurations(listOf(MshConfiguration(HER_ID, false)), any<ClientContext>())
+                }
+            }
+
+            it("registers the stored lock until it holds, and gives up after three rounds") {
+                coEvery { repository.find(HER_ID) } returnsMany
+                    listOf(
+                        null,
+                        stored(clientLocked = true),
+                        stored(clientLocked = false),
+                        stored(clientLocked = true),
+                        stored(clientLocked = false),
+                    )
+
+                service.ensureRegistered(HER_ID, clientContext())
+
+                coVerify(exactly = 3) { mshService.setConfigurations(any(), ORG_NUMBER, false) }
+                // Not settled, so registered again on the next use
+                coEvery { repository.find(HER_ID) } returns stored()
+                service.ensureRegistered(HER_ID, clientContext())
+                coVerify(exactly = 2) { mshService.setConfigurations(any(), any<ClientContext>()) }
+            }
+        }
+
+        describe("recordUse while a registration is in progress") {
+            it("waits for it, rather than starting one of its own") {
+                val scope = CoroutineScope(Dispatchers.Default)
+                val service = service(scope = scope)
+                coEvery { repository.find(HER_ID) } returns null
+                coEvery { repository.updateLastUsed(HER_ID, NOW) } returnsMany listOf(false, true)
+                coEvery { mshService.setConfigurations(any(), any<ClientContext>()) } coAnswers
+                    {
+                        delay(500.milliseconds)
+                    }
+                try {
+                    launch { service.ensureRegistered(HER_ID, clientContext()) }
+                    delay(100.milliseconds)
+                    service.recordUse(HER_ID, clientContext())
+
+                    eventually(5.seconds) { coVerify(exactly = 2) { repository.updateLastUsed(HER_ID, NOW) } }
+                    coVerify(exactly = 1) { mshService.setConfigurations(any(), any<ClientContext>()) }
+                } finally {
+                    scope.cancel()
+                }
             }
         }
 
@@ -395,7 +475,31 @@ class MshConfigurationServiceTest :
                 }
             }
 
-            it("does not try each HER-id on its own when MSH is busy") {
+            it("registers them, also when the stored locks cannot be checked afterwards") {
+                coEvery { repository.findAll() } returnsMany
+                    listOf(listOf(stored(HER_ID))) andThenThrows
+                    CannotGetJdbcConnectionException("Database down")
+
+                service.registerAllInMsh()
+                service.ensureRegistered(HER_ID, clientContext())
+
+                coVerify(exactly = 1) { mshService.setConfigurations(any(), ORG_NUMBER, false) }
+                coVerify(exactly = 0) { repository.find(any()) }
+            }
+
+            listOf(408 to "Request timeout", 429 to "Too many requests").forEach { (status, reason) ->
+                it("does not try each HER-id on its own when MSH answers $status") {
+                    coEvery { repository.findAll() } returns listOf(stored(HER_ID), stored(OTHER_HER_ID))
+                    coEvery { mshService.setConfigurations(any(), any<String>(), any()) } throws
+                        HttpClientException(status, null, reason)
+
+                    service.registerAllInMsh()
+
+                    coVerify(exactly = 1) { mshService.setConfigurations(any(), any<String>(), any()) }
+                }
+            }
+
+            it("does not try each HER-id on its own when MSH is busy, and leaves the rest for their use") {
                 coEvery { repository.findAll() } returns listOf(stored(HER_ID), stored(OTHER_HER_ID))
                 coEvery { mshService.setConfigurations(any(), any<String>(), any()) } throws
                     HttpClientException(429, null, "Too many requests")
@@ -429,7 +533,7 @@ class MshConfigurationServiceTest :
                 coVerify {
                     mshService.setConfigurations(listOf(MshConfiguration(HER_ID, false)), any<ClientContext>())
                 }
-                coVerify { repository.updateTenant(HER_ID, ORG_NUMBER, true, NOW) }
+                coVerify { repository.updateTenant(HER_ID, ORG_NUMBER, true) }
             }
 
             it("does not fail when the database is down") {

@@ -17,7 +17,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -209,13 +208,10 @@ class MshConfigurationService(
         val job =
             inProgress.computeIfAbsent(herId) {
                 // Started once it is in the map, so that it cannot remove itself before it is there
-                backgroundScope.launch(start = CoroutineStart.LAZY) {
-                    try {
-                        bestEffort(herId, block)
-                    } finally {
-                        inProgress.remove(herId, coroutineContext.job)
-                    }
-                }
+                backgroundScope
+                    .launch(start = CoroutineStart.LAZY) { bestEffort(herId, block) }
+                    // Also when it never runs, as the scope is cancelled
+                    .also { job -> job.invokeOnCompletion { inProgress.remove(herId, job) } }
             }
         job.start()
         return job
@@ -303,7 +299,7 @@ class MshConfigurationService(
         } else if (stored.organizationNumber != organizationNumber || stored.multiTenant != multiTenant) {
             // The registration at startup failed with the stored tenant: the client's is the one
             // that works
-            repository.updateTenant(herId, organizationNumber, multiTenant, clock.instant())
+            repository.updateTenant(herId, organizationNumber, multiTenant)
         }
         markRegistered(herId)
         logger.info { "Registered the MSH configuration of HER-id $herId on its use" }
@@ -339,7 +335,6 @@ class MshConfigurationService(
      * as stored.
      */
     private suspend fun restore(herId: Int, previous: StoredMshConfiguration?, storedAt: Instant) {
-        markUnregistered(herId)
         try {
             val restored =
                 if (previous == null) {
@@ -350,6 +345,10 @@ class MshConfigurationService(
             if (!restored) logger.info { "Kept the MSH configuration of HER-id $herId another one stored meanwhile" }
         } catch (e: Exception) {
             logger.warn(e) { "Could not restore the stored MSH configuration of HER-id $herId" }
+        } finally {
+            // After the write: a client that registered the HER-id meanwhile may have cleared a
+            // mark made before it
+            markUnregistered(herId)
         }
     }
 

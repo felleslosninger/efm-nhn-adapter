@@ -25,8 +25,8 @@ enum class NotificationType(val value: String) {
     MESSAGE_APPREC_INFO_UPDATED("MessageApprecInfoUpdated"),
     MESSAGE_DELIVERY_STATE_UPDATED("MessageDeliveryStateUpdated"),
     /**
-     * A kind this version of the model does not know, e.g. one MSH or a newer adapter added later. A client that reads
-     * it can skip or delete the notification, and still read the others in the list.
+     * A kind this version of the model does not know, e.g. one a newer adapter added later. A client that reads it can
+     * skip or delete the notification, and still read the others in the list.
      */
     UNKNOWN(""),
 }
