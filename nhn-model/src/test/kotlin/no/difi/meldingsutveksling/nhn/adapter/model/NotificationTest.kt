@@ -5,6 +5,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.KxJson
@@ -92,6 +93,24 @@ class NotificationTest :
                 json shouldContain """"relatedMessageId":null"""
                 json shouldContain """"createdAt":null"""
                 KxJson.decode(json, Notification.serializer()) shouldBe refused
+            }
+
+            it("reads a type it does not know as UNKNOWN, and the rest of the list as it is") {
+                val json =
+                    KxJson.encode(listOf(notification), ListSerializer(Notification.serializer()))
+                        .replace("]", ",${KxJson.encode(notification, Notification.serializer())}]")
+                        .replaceFirst("NEW_MESSAGE", "SOME_NEW_TYPE")
+
+                KxJson.decode(json, ListSerializer(Notification.serializer())).map { it.type } shouldBe
+                    listOf(NotificationType.UNKNOWN, NotificationType.NEW_MESSAGE)
+            }
+
+            it("round trips every type") {
+                NotificationType.entries.forEach { type ->
+                    val typed = notification.copy(type = type)
+                    KxJson.decode(KxJson.encode(typed, Notification.serializer()), Notification.serializer()) shouldBe
+                        typed
+                }
             }
 
             it("round trips the input to delete notifications") {
