@@ -7,6 +7,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
@@ -28,6 +29,9 @@ import org.springframework.web.reactive.function.server.json
 
 /** The MSH configuration input is a few bytes; a larger body is rejected before it is held in memory. */
 private const val MAX_INPUT_BYTES = 1024
+
+/** Unlike [jsonParser], unknown keys are rejected: a misspelt clientLocked would otherwise register without a lock. */
+private val strictJsonParser = Json
 
 /**
  * The administration of the MSH configurations of the HER-ids, e.g. from MoveAdmin. Only a client with the admin scope
@@ -88,7 +92,7 @@ class MshConfigurationHandler(
             }
         if (json.isBlank()) return MshConfigurationInput()
         return try {
-            jsonParser.decodeFromString<MshConfigurationInput>(json)
+            strictJsonParser.decodeFromString<MshConfigurationInput>(json)
         } catch (e: SerializationException) {
             throw ClientInputException("Invalid input", e)
         } catch (e: IllegalArgumentException) {

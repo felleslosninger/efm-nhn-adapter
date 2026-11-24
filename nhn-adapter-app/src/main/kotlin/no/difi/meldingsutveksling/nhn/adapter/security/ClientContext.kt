@@ -55,3 +55,6 @@ private fun Jwt.getIso6523(claim: String): Iso6523? =
     (getClaimAsMap(claim)?.get("ID") as? String)?.let { Iso6523.parse(it) }
 
 fun SecurityContext.getJwt(): Jwt? = (authentication as? JwtAuthenticationToken)?.token
+
+/** A client acting through a supplier (e.g. a system vendor) needs a multi-tenant HelseID token. */
+fun ClientContext.isMultiTenant(): Boolean = supplier != null

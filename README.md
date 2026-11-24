@@ -231,17 +231,30 @@ MSH krev ein konfigurasjon for kvar HER-id det handterer meldingar for. Utan han
 HER-id-en, og notifikasjonane hans vert sletta etter 4 dagar. Adapteren registrerer konfigurasjonen:
 
 - første gong ein klient brukar HER-id-en: poller notifikasjonar, sender ei melding eller hentar ei innkomen melding.
-  Konfigurasjonen vert registrert med HelseID-tenanten til klienten, utan lås. Går registreringa gale, vert det logga, og
-  førespurnaden går som vanleg. Adapteren prøver på nytt neste gong.
-- når ein administrator legg han inn med `PUT /api/admin/msh-configurations/{herId}`, med HelseID-tenanten til
-  organisasjonen som eig HER-id-en i AR. `clientLocked` gjer at berre adapteren sin HelseID-klient kan handle for
-  HER-id-en. Andre klientar får `423 Locked` frå MSH.
-- på nytt for alle lagra konfigurasjonar kvar gong adapteren startar, slik NHN tilrår.
+  Konfigurasjonen vert registrert med HelseID-tenanten til klienten (multi-tenant for ein leverandør), utan lås. Går
+  registreringa gale, vert det logga, og førespurnaden går som vanleg. Adapteren prøver på nytt etter 5 minutt.
+- når ein administrator legg han inn med `PUT /api/admin/msh-configurations/{herId}`. Organisasjonen er den som eig
+  HER-id-en i AR, og tenanten den HER-id-en alt er registrert med (elles single-tenant). `clientLocked` gjer at berre
+  adapteren sin HelseID-klient kan handle for HER-id-en. Andre klientar får `423 Locked` frå MSH. Skriv ein administrator
+  og ein klient samstundes, vinn det administratoren lagra.
+- på nytt for alle lagra konfigurasjonar kvar gong adapteren startar, slik NHN tilrår, med tenanten kvar av dei er
+  registrert med. Avviser MSH ein førespurnad, vert HER-id-ane i han prøvde éin og éin, og dei som framleis feilar, vert
+  registrerte på nytt neste gong ein klient brukar dei.
 
-Konfigurasjonane ligg i tabellen `msh_configuration` i MariaDB. Flyway lagar og migrerer tabellen ved oppstart
-([`db/migration`](nhn-adapter-app/src/main/resources/db/migration)). `last_used` vert oppdatert kvar gong adapteren
-sender ei melding eller ein kvittering for HER-id-en, eller tek imot ei melding til han. Ein konfigurasjon som vert
-sletta medan HER-id-en framleis er i bruk, vert registrert på nytt neste gong klienten brukar HER-id-en.
+Ved sletting fjernar adapteren konfigurasjonen i MSH og i databasen. Har MSH han ikkje (`404`), vert han berre sletta i
+databasen.
+
+Konfigurasjonane ligg i tabellen `msh_configuration` i MariaDB, med tidspunkt i UTC. Flyway lagar og migrerer tabellen
+ved oppstart ([`db/migration`](nhn-adapter-app/src/main/resources/db/migration)), så adapteren startar ikkje utan
+databasen. Når han køyrer, er meldingsflyten ikkje avhengig av databasen:
+
+- Ein HER-id som er kjend som registrert, treng ingen databasekall på ei time.
+- `last_used` vert oppdatert i bakgrunnen, høgst éin gong i minuttet per HER-id. Det skjer når adapteren sender ei
+  melding eller ein kvittering for HER-id-en, eller tek imot ei melding til han.
+- Er databasen nede, gir Hikari opp etter 2 sekund, og databasekalla har ein eigen trådpool.
+
+Ein konfigurasjon som vert sletta medan HER-id-en framleis er i bruk, vert registrert på nytt neste gong klienten brukar
+HER-id-en. Har ein annan instans sletta han, kan det ta opptil ei time.
 
 ### Feil
 

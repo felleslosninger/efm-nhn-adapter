@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.ninjasquad.springmockk.MockkBean
+import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -29,11 +30,14 @@ import io.mockk.slot
 import io.mockk.verify
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.Base64
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -78,6 +82,8 @@ import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationRepository
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.JsonWebEncryption
 import no.difi.move.common.dokumentpakking.PartUtils
@@ -94,6 +100,7 @@ import no.ks.fiks.nhn.msh.AppRecStatus
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DeliveryState
 import no.ks.fiks.nhn.msh.GetStatusResponse
+import no.ks.fiks.nhn.msh.HttpClientException
 import no.ks.fiks.nhn.msh.HttpServerException
 import no.ks.fiks.nhn.msh.MessageWithMetadata
 import no.ks.fiks.nhn.msh.MshConfiguration
@@ -207,6 +214,8 @@ class NhnAdapterApiIT(
     private val applicationContext: ApplicationContext,
     private val serverCodecConfigurer: ServerCodecConfigurer,
     private val jdbcClient: JdbcClient,
+    private val mshConfigurationService: MshConfigurationService,
+    private val mshConfigurationRepository: MshConfigurationRepository,
 ) :
     DescribeSpec({
         val anonymousClient by lazy {
@@ -550,6 +559,7 @@ class NhnAdapterApiIT(
 
             beforeEach {
                 jdbcClient.sql("DELETE FROM msh_configuration").update()
+                mshConfigurationService.clearCaches()
                 coEvery { mshClient.setMshConfigurations(any(), any()) } just Runs
                 coEvery { mshClient.deleteMshConfigurations(any(), any()) } just Runs
                 coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
@@ -631,7 +641,11 @@ class NhnAdapterApiIT(
                 pollNotifications()
                 configurations().shouldBeEmpty()
 
+                // Not tried again at once, but after a while, as after a restart
                 coEvery { mshClient.setMshConfigurations(any(), any()) } just Runs
+                pollNotifications()
+                configurations().shouldBeEmpty()
+                mshConfigurationService.clearCaches()
                 pollNotifications()
                 configurations().single().herId shouldBe KOMMUNE_HER_ID
             }
@@ -642,11 +656,115 @@ class NhnAdapterApiIT(
 
                 sendOutgoing(kvitteringSbd(UUID.randomUUID(), UUID.randomUUID())).expectStatus().isOk
 
-                with(configurations().single()) {
-                    lastUsed.shouldNotBeNull()
-                    clientLocked shouldBe true
-                }
+                // Recorded in the background
+                eventually(5.seconds) { configurations().single().lastUsed.shouldNotBeNull() }
+                configurations().single().clientLocked shouldBe true
                 coVerify(exactly = 1) { mshClient.setMshConfigurations(any(), any()) }
+            }
+
+            it("registers a HER-id that receives a message, and records when") {
+                val messageId = UUID.randomUUID()
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = kommune.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                eventually(5.seconds) { configurations().single().lastUsed.shouldNotBeNull() }
+                coVerify {
+                    mshClient.setMshConfigurations(listOf(MshConfiguration(KOMMUNE_HER_ID, false)), consumerTenant())
+                }
+            }
+
+            it("registers a HER-id with the multi-tenant HelseID token of a supplier, and deletes it so") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                coVerify { mshClient.setMshConfigurations(any(), supplierTenant()) }
+
+                mshConfigurationService.registerAllInMsh()
+                coVerify(exactly = 2) { mshClient.setMshConfigurations(any(), supplierTenant()) }
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                coVerify { mshClient.deleteMshConfigurations(listOf(KOMMUNE_HER_ID), supplierTenant()) }
+            }
+
+            it("deletes a configuration that MSH does not have") {
+                register(KOMMUNE_HER_ID).exchange().expectStatus().isOk
+                coEvery { mshClient.deleteMshConfigurations(any(), any()) } throws
+                    HttpClientException(404, null, "Not found")
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                configurations().shouldBeEmpty()
+            }
+
+            it("rejects an unknown key, a body that is not JSON and a HER-id that is not a number") {
+                register(KOMMUNE_HER_ID, """{"clientlocked": true}""").exchange().expectStatus().isBadRequest
+                register(KOMMUNE_HER_ID, "not json").exchange().expectStatus().isBadRequest
+                client(adminScope)
+                    .put()
+                    .uri("/api/admin/msh-configurations/abc")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.setMshConfigurations(any(), any()) }
+            }
+
+            it("stores the times in UTC, whatever the time zone of the JVM") {
+                // The hour daylight saving time ends in Norway, which is ambiguous in local time
+                val now = Instant.parse("2026-10-25T00:30:00.123456Z")
+                val timeZone = TimeZone.getDefault()
+                TimeZone.setDefault(TimeZone.getTimeZone("Europe/Oslo"))
+                try {
+                    mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, false, now)
+                    mshConfigurationRepository.updateLastUsed(KOMMUNE_HER_ID, now)
+
+                    jdbcClient
+                        .sql("SELECT CAST(last_used AS CHAR) FROM msh_configuration")
+                        .query(String::class.java)
+                        .single() shouldBe "2026-10-25 00:30:00.123456"
+                    mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.lastUsed shouldBe now
+                } finally {
+                    TimeZone.setDefault(timeZone)
+                }
             }
 
             it("is only open to the admin scope") {

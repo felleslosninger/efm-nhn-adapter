@@ -13,6 +13,7 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMe
 import no.difi.meldingsutveksling.nhn.adapter.messages.KvitteringStatusMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
+import no.difi.meldingsutveksling.nhn.adapter.security.isMultiTenant
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.msh.ApplicationMetadata
 import no.ks.fiks.nhn.msh.Client
@@ -86,13 +87,24 @@ class MshService(
     suspend fun setConfigurations(configurations: List<MshConfiguration>, clientContext: ClientContext) =
         fromMshResponse(clientContext) { mshClient.setMshConfigurations(configurations, it) }
 
-    /** As [setConfigurations], in the HelseID tenant of the organization that owns the HER-ids. */
-    suspend fun setConfigurations(configurations: List<MshConfiguration>, organizationNumber: String) =
-        fromMshResponse(requestParameters(organizationNumber)) { mshClient.setMshConfigurations(configurations, it) }
+    /**
+     * As [setConfigurations], in the HelseID tenant of the organization that owns the HER-ids: multi-tenant as for a
+     * client acting through a supplier, else single-tenant.
+     */
+    suspend fun setConfigurations(
+        configurations: List<MshConfiguration>,
+        organizationNumber: String,
+        multiTenant: Boolean,
+    ) =
+        fromMshResponse(requestParameters(organizationNumber, multiTenant)) {
+            mshClient.setMshConfigurations(configurations, it)
+        }
 
     /** Deletes the MSH configuration of the HER-id, in the HelseID tenant of the organization that owns it. */
-    suspend fun deleteConfiguration(herId: Int, organizationNumber: String) =
-        fromMshResponse(requestParameters(organizationNumber)) { mshClient.deleteMshConfigurations(listOf(herId), it) }
+    suspend fun deleteConfiguration(herId: Int, organizationNumber: String, multiTenant: Boolean) =
+        fromMshResponse(requestParameters(organizationNumber, multiTenant)) {
+            mshClient.deleteMshConfigurations(listOf(herId), it)
+        }
 
     suspend fun getMessage(id: UUID, clientContext: ClientContext): MessageWithMetadata =
         fromMshResponse(clientContext) { mshClient.getMessage(id.toString(), it) }
@@ -188,21 +200,18 @@ class MshService(
         }
 
     private fun requestParameters(clientContext: ClientContext): RequestParameters =
-        RequestParameters(HelseIdTokenParameters(tenantParameters(clientContext)))
+        requestParameters(clientContext.consumer.organizationIdentifier, clientContext.isMultiTenant())
 
-    /** For a call made by the adapter itself, e.g. for an administrator, in the HelseID tenant of the organization. */
-    private fun requestParameters(organizationNumber: String): RequestParameters =
-        RequestParameters(HelseIdTokenParameters(SingleTenantHelseIdTokenParameters(organizationNumber)))
+    /** Also for a call made by the adapter itself, e.g. for an administrator, in the tenant of the organization. */
+    private fun requestParameters(organizationNumber: String, multiTenant: Boolean): RequestParameters =
+        RequestParameters(HelseIdTokenParameters(tenantParameters(organizationNumber, multiTenant)))
 
-    /** A client acting through a supplier (e.g. a system vendor) needs a multi-tenant HelseID token. */
-    private fun tenantParameters(clientContext: ClientContext): HelseIdTenantParameters {
-        val childOrganization = clientContext.consumer.organizationIdentifier
-        return if (clientContext.supplier != null) {
-            MultiTenantHelseIdTokenParameters(childOrganization)
+    private fun tenantParameters(organizationNumber: String, multiTenant: Boolean): HelseIdTenantParameters =
+        if (multiTenant) {
+            MultiTenantHelseIdTokenParameters(organizationNumber)
         } else {
-            SingleTenantHelseIdTokenParameters(childOrganization)
+            SingleTenantHelseIdTokenParameters(organizationNumber)
         }
-    }
 }
 
 /** The length of [size] bytes Base64 encoded, with padding. */
