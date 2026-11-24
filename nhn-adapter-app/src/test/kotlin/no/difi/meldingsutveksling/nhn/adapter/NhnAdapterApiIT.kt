@@ -772,6 +772,23 @@ class NhnAdapterApiIT(
                 }
             }
 
+            it("restores a configuration only when it was not stored again since") {
+                val before = Instant.parse("2026-11-24T11:00:00Z")
+                val storedAt = Instant.parse("2026-11-24T12:00:00.123456Z")
+                mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, false, before)
+                val previous = mshConfigurationRepository.find(KOMMUNE_HER_ID)!!
+                mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, true, storedAt)
+
+                mshConfigurationRepository.restore(previous, storedAt.plusSeconds(1)) shouldBe false
+                mshConfigurationRepository.deleteIfUpdatedAt(KOMMUNE_HER_ID, before) shouldBe false
+                mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.clientLocked shouldBe true
+
+                mshConfigurationRepository.restore(previous, storedAt) shouldBe true
+                mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.clientLocked shouldBe false
+                mshConfigurationRepository.deleteIfUpdatedAt(KOMMUNE_HER_ID, before) shouldBe true
+                mshConfigurationRepository.find(KOMMUNE_HER_ID).shouldBeNull()
+            }
+
             it("does not store a configuration of a HER-id that has one") {
                 val now = Instant.parse("2026-11-24T12:00:00Z")
 

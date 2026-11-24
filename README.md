@@ -251,11 +251,16 @@ databasen. Når han køyrer, er meldingsflyten ikkje avhengig av databasen:
 
 - Ein HER-id som er kjend som registrert, treng ingen databasekall på om lag ei time (45–75 minutt, så ikkje alle
   går ut samstundes).
-- Ein førespurnad ventar høgst 2 sekund på registreringa av HER-id-en. Resten skjer i bakgrunnen.
+- Ein førespurnad ventar høgst 2 sekund på registreringa av HER-id-en. Resten skjer i bakgrunnen, og det er berre éi
+  registrering i gang per HER-id, same kor mange førespurnader som kjem.
 - `last_used` vert oppdatert i bakgrunnen, høgst éin gong i minuttet per HER-id. Det skjer når adapteren sender ei
   melding eller ein kvittering for HER-id-en, eller tek imot ei melding til han.
-- Feilar databasen, vert han ikkje spurd att på 30 sekund, for nokon HER-id. Hikari gir opp ei tilkopling etter
-  2 sekund, og databasekalla har ein eigen trådpool.
+- Er databasen nede eller oppteken, vert han ikkje spurd att på 30 sekund, for nokon HER-id. Ein feil i data for éin
+  HER-id gjeld berre den HER-id-en. Hikari gir opp ei tilkopling etter 2 sekund, og databasekalla har ein eigen trådpool.
+
+Feilar registreringa frå ein administrator, vert den førre konfigurasjonen lagt tilbake i databasen, med mindre nokon
+har lagra ein ny i mellomtida. Sidan MSH kan ha fått den nye likevel, til dømes ved tidsavbrot, vert HER-id-en
+registrert på nytt ved neste bruk, slik han er lagra.
 
 Ein konfigurasjon som vert sletta medan HER-id-en framleis er i bruk, vert registrert på nytt neste gong klienten brukar
 HER-id-en. Har ein annan instans sletta han, kan det ta opptil ei time.

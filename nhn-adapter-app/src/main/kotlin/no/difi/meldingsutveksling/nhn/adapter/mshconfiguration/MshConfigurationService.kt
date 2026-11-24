@@ -6,14 +6,18 @@ import com.github.benmanes.caffeine.cache.Expiry
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.toKotlinDuration
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -27,11 +31,17 @@ import no.difi.meldingsutveksling.nhn.adapter.security.isMultiTenant
 import no.difi.meldingsutveksling.nhn.adapter.security.parentOrganizationNumber
 import no.ks.fiks.nhn.msh.HttpException
 import no.ks.fiks.nhn.msh.MshConfiguration
-import org.springframework.dao.DataAccessException
+import org.springframework.dao.DataAccessResourceFailureException
+import org.springframework.dao.TransientDataAccessException
 
 private val logger = KotlinLogging.logger {}
 
 private const val NOT_FOUND = 404
+private const val REQUEST_TIMEOUT = 408
+private const val TOO_MANY_REQUESTS = 429
+
+/** How often the stored lock is registered again while an administrator keeps changing it, before giving up. */
+private const val MAX_RECONCILE_ROUNDS = 3
 
 /**
  * How long a HER-id is known to be registered before the database is asked again, e.g. after a delete elsewhere: an
@@ -87,6 +97,9 @@ class MshConfigurationService(
     /** HER-ids whose registration may not have reached MSH, which are registered again on their next use. */
     private val unregistered: MutableSet<Int> = ConcurrentHashMap.newKeySet()
 
+    /** The registrations in progress in the background, at most one per HER-id. */
+    private val inProgress = ConcurrentHashMap<Int, Job>()
+
     @Volatile private var databaseDownUntil: Instant = Instant.EPOCH
 
     suspend fun list(): List<StoredMshConfiguration> = repository.findAll()
@@ -102,7 +115,8 @@ class MshConfigurationService(
         val organizationNumber = adresseregisteretService.lookupByHerId(herId).parentOrganizationNumber
         val previous = repository.find(herId)
         val multiTenant = previous?.multiTenant ?: false
-        val now = clock.instant()
+        // As stored, so that the restore below can tell whether the row is still this one
+        val now = clock.instant().truncatedTo(ChronoUnit.MICROS)
         // Stored before it is registered, so that a client's use at the same time registers the
         // same
         repository.save(herId, organizationNumber, multiTenant, clientLocked, now)
@@ -114,7 +128,7 @@ class MshConfigurationService(
             )
         } catch (e: Exception) {
             // Also when the administrator gave up, which cancels this
-            withContext(NonCancellable) { restore(herId, previous) }
+            withContext(NonCancellable) { restore(herId, previous, now) }
             throw e
         }
         markRegistered(herId)
@@ -159,14 +173,12 @@ class MshConfigurationService(
     suspend fun ensureRegistered(herId: Int, clientContext: ClientContext) {
         if (isKnown(herId) || isDatabaseDown()) return
         val registration =
-            backgroundScope.launch {
-                bestEffort(herId) {
-                    val configuration = repository.find(herId)
-                    if (configuration != null && herId !in unregistered) {
-                        registered.put(herId, Unit)
-                    } else {
-                        registerForClient(herId, clientContext, configuration)
-                    }
+            registration(herId) {
+                val configuration = repository.find(herId)
+                if (configuration != null && herId !in unregistered) {
+                    registered.put(herId, Unit)
+                } else {
+                    registerForClient(herId, clientContext, configuration)
                 }
             }
         withTimeoutOrNull(MAX_WAIT.toKotlinDuration()) { registration.join() }
@@ -181,14 +193,32 @@ class MshConfigurationService(
         backgroundScope.launch {
             bestEffort(herId) {
                 val updated = repository.updateLastUsed(herId, clock.instant())
-                if (herId in unregistered) {
-                    registerForClient(herId, clientContext, repository.find(herId))
-                } else if (!updated && failed.getIfPresent(herId) == null) {
-                    registerForClient(herId, clientContext, null)
-                    repository.updateLastUsed(herId, clock.instant())
+                if ((herId in unregistered || !updated) && failed.getIfPresent(herId) == null) {
+                    registration(herId) { registerForClient(herId, clientContext, repository.find(herId)) }.join()
+                    if (!updated) repository.updateLastUsed(herId, clock.instant())
                 }
             }
         }
+    }
+
+    /**
+     * The registration of the HER-id in the background: the one in progress, if any, so that many requests for a
+     * HER-id at once, or while MSH is slow, register it only once.
+     */
+    private fun registration(herId: Int, block: suspend () -> Unit): Job {
+        val job =
+            inProgress.computeIfAbsent(herId) {
+                // Started once it is in the map, so that it cannot remove itself before it is there
+                backgroundScope.launch(start = CoroutineStart.LAZY) {
+                    try {
+                        bestEffort(herId, block)
+                    } finally {
+                        inProgress.remove(herId, coroutineContext.job)
+                    }
+                }
+            }
+        job.start()
+        return job
     }
 
     /**
@@ -202,16 +232,28 @@ class MshConfigurationService(
             configurations
                 .groupBy { it.organizationNumber to it.multiTenant }
                 .forEach { (tenant, group) -> registerAgain(group, tenant.first, tenant.second) }
-            // An administrator may have stored another lock meanwhile, also on another instance
-            val stored = repository.findAll().associateBy { it.herId }
-            configurations
-                .filter { stored[it.herId]?.clientLocked.let { lock -> lock != null && lock != it.clientLocked } }
-                .forEach { reconcile(it.herId, it.clientLocked) }
+            reconcileAll(configurations)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logger.warn(e) { "Could not register the MSH configurations again" }
         }
+    }
+
+    /** An administrator may have stored another lock while they were registered, also on another instance. */
+    private suspend fun reconcileAll(configurations: List<StoredMshConfiguration>) {
+        val stored =
+            try {
+                repository.findAll().associateBy { it.herId }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Registered the MSH configurations again, but could not check the stored locks" }
+                return
+            }
+        configurations
+            .filter { stored[it.herId]?.clientLocked.let { lock -> lock != null && lock != it.clientLocked } }
+            .forEach { reconcile(it.herId, it.clientLocked) }
     }
 
     private suspend fun registerAgain(
@@ -269,15 +311,20 @@ class MshConfigurationService(
     }
 
     /**
-     * Registers the stored configuration again if its lock is not the one just registered, as an administrator stored
-     * another meanwhile. Never fails: a HER-id it fails for is registered again on its next use.
+     * Registers the stored configuration again as long as its lock is not the one last registered, as an administrator
+     * stored another meanwhile. Never fails: a HER-id it fails for, or whose lock keeps changing, is registered again
+     * on its next use.
      */
     private suspend fun reconcile(herId: Int, registeredLock: Boolean) {
         try {
-            repository
-                .find(herId)
-                ?.takeIf { it.clientLocked != registeredLock }
-                ?.let { setInMsh(listOf(it), it.organizationNumber, it.multiTenant) }
+            var lock = registeredLock
+            repeat(MAX_RECONCILE_ROUNDS) {
+                val stored = repository.find(herId) ?: return
+                if (stored.clientLocked == lock) return
+                setInMsh(listOf(stored), stored.organizationNumber, stored.multiTenant)
+                lock = stored.clientLocked
+            }
+            markUnregistered(herId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -286,15 +333,21 @@ class MshConfigurationService(
         }
     }
 
-    private suspend fun restore(herId: Int, previous: StoredMshConfiguration?) {
-        // A client may have taken the stored configuration as registered
-        registered.invalidate(herId)
+    /**
+     * Puts back the configuration stored before [storedAt], unless another one was stored since. MSH may have got the
+     * configuration although the request failed, e.g. on a timeout, so the HER-id is registered again on its next use,
+     * as stored.
+     */
+    private suspend fun restore(herId: Int, previous: StoredMshConfiguration?, storedAt: Instant) {
+        markUnregistered(herId)
         try {
-            if (previous == null) {
-                repository.delete(herId)
-            } else {
-                with(previous) { repository.save(herId, organizationNumber, multiTenant, clientLocked, updatedAt) }
-            }
+            val restored =
+                if (previous == null) {
+                    repository.deleteIfUpdatedAt(herId, storedAt)
+                } else {
+                    repository.restore(previous, storedAt)
+                }
+            if (!restored) logger.info { "Kept the MSH configuration of HER-id $herId another one stored meanwhile" }
         } catch (e: Exception) {
             logger.warn(e) { "Could not restore the stored MSH configuration of HER-id $herId" }
         }
@@ -306,6 +359,7 @@ class MshConfigurationService(
     internal fun clearCaches() {
         listOf(registered, failed, recorded).forEach { it.invalidateAll() }
         unregistered.clear()
+        inProgress.clear()
         databaseDownUntil = Instant.EPOCH
     }
 
@@ -331,7 +385,7 @@ class MshConfigurationService(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (e is DataAccessException) {
+            if (e.isDatabaseOutage()) {
                 databaseDownUntil = clock.instant() + DATABASE_DOWN_FOR
             } else {
                 failed.put(herId, Unit)
@@ -350,7 +404,16 @@ class MshConfigurationService(
     }
 }
 
-private fun Exception.isRejection(): Boolean = this is HttpException && status in 400..499
+/** MSH rejecting the request, as opposed to MSH being busy (408, 429), which another try may get through. */
+private fun Exception.isRejection(): Boolean =
+    this is HttpException && status in 400..499 && status != REQUEST_TIMEOUT && status != TOO_MANY_REQUESTS
+
+/**
+ * The database is down or busy, which is the same for every HER-id. An error in the data of one HER-id, e.g. one that
+ * does not fit, is not.
+ */
+private fun Exception.isDatabaseOutage(): Boolean =
+    this is DataAccessResourceFailureException || this is TransientDataAccessException
 
 private fun randomSpread(): Duration =
     Duration.ofSeconds(ThreadLocalRandom.current().nextLong(REGISTERED_SPREAD.toSeconds() + 1))

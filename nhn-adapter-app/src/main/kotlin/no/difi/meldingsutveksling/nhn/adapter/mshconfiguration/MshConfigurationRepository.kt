@@ -136,6 +136,45 @@ class MshConfigurationRepository(
                 .update() > 0
         }
 
+    /**
+     * Puts back [previous], unless the configuration was stored again after [storedAt].
+     *
+     * @return whether it was put back
+     */
+    suspend fun restore(previous: StoredMshConfiguration, storedAt: Instant): Boolean =
+        withContext(dispatcher) {
+            jdbcClient
+                .sql(
+                    """
+                    UPDATE msh_configuration
+                    SET organization_number = :organizationNumber, multi_tenant = :multiTenant,
+                        client_locked = :clientLocked, updated_at = :updatedAt
+                    WHERE her_id = :herId AND updated_at = :storedAt
+                    """
+                )
+                .param("organizationNumber", previous.organizationNumber)
+                .param("multiTenant", previous.multiTenant)
+                .param("clientLocked", previous.clientLocked)
+                .param("updatedAt", previous.updatedAt.toUtc())
+                .param("herId", previous.herId)
+                .param("storedAt", storedAt.toUtc())
+                .update() > 0
+        }
+
+    /**
+     * Deletes the configuration of the HER-id, unless it was stored again after [storedAt].
+     *
+     * @return whether it was deleted
+     */
+    suspend fun deleteIfUpdatedAt(herId: Int, storedAt: Instant): Boolean =
+        withContext(dispatcher) {
+            jdbcClient
+                .sql("DELETE FROM msh_configuration WHERE her_id = :herId AND updated_at = :storedAt")
+                .param("herId", herId)
+                .param("storedAt", storedAt.toUtc())
+                .update() > 0
+        }
+
     /** @return whether there was a configuration of the HER-id to delete */
     suspend fun delete(herId: Int): Boolean =
         withContext(dispatcher) {

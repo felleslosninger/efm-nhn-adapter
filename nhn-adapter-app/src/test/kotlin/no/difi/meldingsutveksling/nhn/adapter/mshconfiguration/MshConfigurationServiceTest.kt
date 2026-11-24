@@ -1,11 +1,12 @@
 package no.difi.meldingsutveksling.nhn.adapter.mshconfiguration
 
+import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
-import io.mockk.clearAllMocks
+import io.mockk.clearMocks
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -14,6 +15,7 @@ import io.mockk.mockk
 import java.io.IOException
 import java.time.Clock
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -21,9 +23,12 @@ import kotlin.time.measureTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.ArTestData
 import no.difi.meldingsutveksling.nhn.adapter.errors.MshConfigurationNotFoundException
@@ -34,6 +39,8 @@ import no.ks.fiks.nhn.msh.HttpClientException
 import no.ks.fiks.nhn.msh.HttpServerException
 import no.ks.fiks.nhn.msh.MshConfiguration
 import org.springframework.dao.DataAccessResourceFailureException
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.jdbc.CannotGetJdbcConnectionException
 
 private const val HER_ID = 8144796
 private const val OTHER_HER_ID = 8144797
@@ -43,20 +50,26 @@ private val NOW = Instant.parse("2026-11-24T12:00:00Z")
 private fun stored(herId: Int = HER_ID, clientLocked: Boolean = false, multiTenant: Boolean = false) =
     StoredMshConfiguration(herId, ORG_NUMBER, multiTenant, clientLocked, NOW, NOW, null)
 
+private class MutableClock(var instant: Instant) : Clock() {
+    override fun instant(): Instant = instant
+
+    override fun getZone(): ZoneId = ZoneOffset.UTC
+
+    override fun withZone(zone: ZoneId): Clock = this
+}
+
 class MshConfigurationServiceTest :
     DescribeSpec({
         val repository = mockk<MshConfigurationRepository>()
         val mshService = mockk<MshService>()
         val adresseregisteretService = mockk<AdresseregisteretService>()
-        // Unconfined: what recordUse does in the background is done when it returns
-        val service =
-            MshConfigurationService(
-                repository,
-                mshService,
-                adresseregisteretService,
-                Clock.fixed(NOW, ZoneOffset.UTC),
-                CoroutineScope(Dispatchers.Unconfined),
-            )
+        // Unconfined: what is done in the background is done when the call returns
+        fun service(
+            clock: Clock = Clock.fixed(NOW, ZoneOffset.UTC),
+            scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined),
+        ) = MshConfigurationService(repository, mshService, adresseregisteretService, clock, scope)
+
+        val service = service()
 
         fun clientContext(supplier: Boolean = false) =
             mockk<ClientContext>().also {
@@ -66,7 +79,8 @@ class MshConfigurationServiceTest :
             }
 
         beforeEach {
-            clearAllMocks()
+            // Not clearAllMocks: the unit test specs run in parallel
+            clearMocks(repository, mshService, adresseregisteretService)
             service.clearCaches()
             coEvery { mshService.setConfigurations(any(), any<ClientContext>()) } just Runs
             coEvery { mshService.setConfigurations(any(), any<String>(), any()) } just Runs
@@ -74,6 +88,8 @@ class MshConfigurationServiceTest :
             coEvery { repository.saveIfAbsent(any(), any(), any(), any()) } returns true
             coEvery { repository.save(any(), any(), any(), any(), any()) } just Runs
             coEvery { repository.delete(any()) } returns true
+            coEvery { repository.deleteIfUpdatedAt(any(), any()) } returns true
+            coEvery { repository.restore(any(), any()) } returns true
             coEvery { repository.updateTenant(any(), any(), any(), any()) } just Runs
             coEvery { repository.updateLastUsed(any(), any()) } returns true
             coEvery { adresseregisteretService.lookupByHerId(HER_ID) } returns
@@ -142,6 +158,7 @@ class MshConfigurationServiceTest :
 
             it("registers a HER-id that is not stored, and records its use") {
                 coEvery { repository.updateLastUsed(HER_ID, NOW) } returnsMany listOf(false, true)
+                coEvery { repository.find(HER_ID) } returnsMany listOf(null, stored())
 
                 service.recordUse(HER_ID, clientContext())
 
@@ -186,7 +203,7 @@ class MshConfigurationServiceTest :
 
                 shouldThrow<HttpServerException> { service.register(HER_ID, clientLocked = false) }
 
-                coVerify { repository.delete(HER_ID) }
+                coVerify { repository.deleteIfUpdatedAt(HER_ID, NOW) }
             }
 
             it("restores the previous configuration when MSH rejects the new one") {
@@ -196,8 +213,20 @@ class MshConfigurationServiceTest :
 
                 shouldThrow<HttpServerException> { service.register(HER_ID, clientLocked = true) }
 
-                coVerify { repository.save(HER_ID, ORG_NUMBER, false, false, NOW) }
-                coVerify(exactly = 0) { repository.delete(any()) }
+                coVerify { repository.restore(stored(clientLocked = false), NOW) }
+                coVerify(exactly = 0) { repository.deleteIfUpdatedAt(any(), any()) }
+            }
+
+            it("registers the restored configuration again on use, as MSH may have got the new one") {
+                coEvery { repository.find(HER_ID) } returns stored(clientLocked = false)
+                coEvery { mshService.setConfigurations(any(), any<String>(), any()) } throws IOException("Timeout")
+                shouldThrow<IOException> { service.register(HER_ID, clientLocked = true) }
+
+                service.ensureRegistered(HER_ID, clientContext())
+
+                coVerify {
+                    mshService.setConfigurations(listOf(MshConfiguration(HER_ID, false)), any<ClientContext>())
+                }
             }
         }
 
@@ -241,22 +270,65 @@ class MshConfigurationServiceTest :
                 coVerify(exactly = 0) { repository.updateLastUsed(any(), any()) }
             }
 
-            it("holds up the client's request for at most 2 seconds") {
-                val slowService =
-                    MshConfigurationService(
-                        repository,
-                        mshService,
-                        adresseregisteretService,
-                        Clock.fixed(NOW, ZoneOffset.UTC),
-                        CoroutineScope(Dispatchers.Default),
-                    )
+            it("is not left alone after an error in the data of one HER-id") {
+                coEvery { repository.find(HER_ID) } throws DataIntegrityViolationException("Data too long")
+                coEvery { repository.find(OTHER_HER_ID) } returns stored(OTHER_HER_ID)
+
+                service.ensureRegistered(HER_ID, clientContext())
+                service.ensureRegistered(OTHER_HER_ID, clientContext())
+
+                coVerify(exactly = 1) { repository.find(OTHER_HER_ID) }
+            }
+
+            it("is asked again after 30 seconds") {
+                val clock = MutableClock(NOW)
+                val service = service(clock = clock)
+                coEvery { repository.find(any()) } throws CannotGetJdbcConnectionException("Database down")
+
+                service.ensureRegistered(HER_ID, clientContext())
+                clock.instant = NOW.plusSeconds(29)
+                service.ensureRegistered(OTHER_HER_ID, clientContext())
+                clock.instant = NOW.plusSeconds(31)
+                service.ensureRegistered(OTHER_HER_ID, clientContext())
+
+                coVerify(exactly = 1) { repository.find(HER_ID) }
+                coVerify(exactly = 1) { repository.find(OTHER_HER_ID) }
+            }
+
+            it("holds up the client's request for at most 2 seconds, and registers in the background") {
+                val scope = CoroutineScope(Dispatchers.Default)
+                val service = service(scope = scope)
                 coEvery { repository.find(HER_ID) } coAnswers
                     {
-                        delay(10.seconds)
+                        delay(3.seconds)
                         null
                     }
+                try {
+                    measureTime { service.ensureRegistered(HER_ID, clientContext()) } shouldBeLessThan 2.5.seconds
 
-                measureTime { slowService.ensureRegistered(HER_ID, clientContext()) } shouldBeLessThan 5.seconds
+                    eventually(5.seconds) { coVerify { mshService.setConfigurations(any(), any<ClientContext>()) } }
+                } finally {
+                    scope.cancel()
+                }
+            }
+        }
+
+        describe("many requests for a HER-id at once") {
+            it("register it once") {
+                val scope = CoroutineScope(Dispatchers.Default)
+                val service = service(scope = scope)
+                coEvery { repository.find(HER_ID) } returns null
+                coEvery { mshService.setConfigurations(any(), any<ClientContext>()) } coAnswers
+                    {
+                        delay(500.milliseconds)
+                    }
+                try {
+                    coroutineScope { repeat(20) { launch { service.ensureRegistered(HER_ID, clientContext()) } } }
+
+                    coVerify(exactly = 1) { mshService.setConfigurations(any(), any<ClientContext>()) }
+                } finally {
+                    scope.cancel()
+                }
             }
         }
 
@@ -264,13 +336,19 @@ class MshConfigurationServiceTest :
             it("restores the stored configuration, as MSH may not have got it") {
                 coEvery { repository.find(HER_ID) } returns null
                 coEvery { mshService.setConfigurations(any(), any<String>(), any()) } coAnswers { awaitCancellation() }
+                // Suspends, as the real one does, and so fails in a cancelled coroutine
+                coEvery { repository.deleteIfUpdatedAt(any(), any()) } coAnswers
+                    {
+                        yield()
+                        true
+                    }
 
                 val registration = launch { service.register(HER_ID, clientLocked = true) }
                 delay(200.milliseconds)
                 registration.cancelAndJoin()
 
                 coVerify { repository.save(HER_ID, ORG_NUMBER, false, true, NOW) }
-                coVerify { repository.delete(HER_ID) }
+                coVerify { repository.deleteIfUpdatedAt(HER_ID, NOW) }
             }
         }
 
@@ -315,6 +393,16 @@ class MshConfigurationServiceTest :
                 coVerify {
                     mshService.setConfigurations(listOf(MshConfiguration(OTHER_HER_ID, true)), ORG_NUMBER, true)
                 }
+            }
+
+            it("does not try each HER-id on its own when MSH is busy") {
+                coEvery { repository.findAll() } returns listOf(stored(HER_ID), stored(OTHER_HER_ID))
+                coEvery { mshService.setConfigurations(any(), any<String>(), any()) } throws
+                    HttpClientException(429, null, "Too many requests")
+
+                service.registerAllInMsh()
+
+                coVerify(exactly = 1) { mshService.setConfigurations(any(), any<String>(), any()) }
             }
 
             it("tries each HER-id on its own when MSH rejects the request, and the failed one again on use") {
