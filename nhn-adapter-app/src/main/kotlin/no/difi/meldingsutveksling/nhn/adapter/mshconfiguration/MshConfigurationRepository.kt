@@ -107,6 +107,25 @@ class MshConfigurationRepository(
             }
         }
 
+    /** Changes the HelseID tenant of the configuration, and nothing else. */
+    suspend fun updateTenant(herId: Int, organizationNumber: String, multiTenant: Boolean, now: Instant) {
+        withContext(dispatcher) {
+            jdbcClient
+                .sql(
+                    """
+                    UPDATE msh_configuration
+                    SET organization_number = :organizationNumber, multi_tenant = :multiTenant, updated_at = :now
+                    WHERE her_id = :herId
+                    """
+                )
+                .param("organizationNumber", organizationNumber)
+                .param("multiTenant", multiTenant)
+                .param("now", now.toUtc())
+                .param("herId", herId)
+                .update()
+        }
+    }
+
     /** @return whether there was a configuration of the HER-id to update */
     suspend fun updateLastUsed(herId: Int, now: Instant): Boolean =
         withContext(dispatcher) {

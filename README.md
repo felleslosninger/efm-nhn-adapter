@@ -238,8 +238,9 @@ HER-id-en, og notifikasjonane hans vert sletta etter 4 dagar. Adapteren registre
   adapteren sin HelseID-klient kan handle for HER-id-en. Andre klientar får `423 Locked` frå MSH. Skriv ein administrator
   og ein klient samstundes, vinn det administratoren lagra.
 - på nytt for alle lagra konfigurasjonar kvar gong adapteren startar, slik NHN tilrår, med tenanten kvar av dei er
-  registrert med. Avviser MSH ein førespurnad, vert HER-id-ane i han prøvde éin og éin, og dei som framleis feilar, vert
-  registrerte på nytt neste gong ein klient brukar dei.
+  registrert med. Avviser MSH ein førespurnad (4xx), vert HER-id-ane i han prøvde éin og éin. Svarar ikkje MSH, vert
+  ingen prøvde éin og éin. HER-id-ar som ikkje vart registrerte, vert registrerte på nytt neste gong ein klient brukar
+  dei. Har ein administrator lagra ein annan lås medan registreringa køyrde, vert den registrert etterpå.
 
 Ved sletting fjernar adapteren konfigurasjonen i MSH og i databasen. Har MSH han ikkje (`404`), vert han berre sletta i
 databasen.
@@ -248,10 +249,13 @@ Konfigurasjonane ligg i tabellen `msh_configuration` i MariaDB, med tidspunkt i 
 ved oppstart ([`db/migration`](nhn-adapter-app/src/main/resources/db/migration)), så adapteren startar ikkje utan
 databasen. Når han køyrer, er meldingsflyten ikkje avhengig av databasen:
 
-- Ein HER-id som er kjend som registrert, treng ingen databasekall på ei time.
+- Ein HER-id som er kjend som registrert, treng ingen databasekall på om lag ei time (45–75 minutt, så ikkje alle
+  går ut samstundes).
+- Ein førespurnad ventar høgst 2 sekund på registreringa av HER-id-en. Resten skjer i bakgrunnen.
 - `last_used` vert oppdatert i bakgrunnen, høgst éin gong i minuttet per HER-id. Det skjer når adapteren sender ei
   melding eller ein kvittering for HER-id-en, eller tek imot ei melding til han.
-- Er databasen nede, gir Hikari opp etter 2 sekund, og databasekalla har ein eigen trådpool.
+- Feilar databasen, vert han ikkje spurd att på 30 sekund, for nokon HER-id. Hikari gir opp ei tilkopling etter
+  2 sekund, og databasekalla har ein eigen trådpool.
 
 Ein konfigurasjon som vert sletta medan HER-id-en framleis er i bruk, vert registrert på nytt neste gong klienten brukar
 HER-id-en. Har ein annan instans sletta han, kan det ta opptil ei time.

@@ -748,23 +748,37 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshClient.setMshConfigurations(any(), any()) }
             }
 
-            it("stores the times in UTC, whatever the time zone of the JVM") {
-                // The hour daylight saving time ends in Norway, which is ambiguous in local time
-                val now = Instant.parse("2026-10-25T00:30:00.123456Z")
-                val timeZone = TimeZone.getDefault()
-                TimeZone.setDefault(TimeZone.getTimeZone("Europe/Oslo"))
-                try {
-                    mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, false, now)
-                    mshConfigurationRepository.updateLastUsed(KOMMUNE_HER_ID, now)
+            // As UTC wall time, the first does not exist in Norway (daylight saving time starts),
+            // and the second is
+            // ambiguous there (it ends). A conversion through the time zone of the JVM breaks
+            // either.
+            listOf("2026-03-29T02:30:00.123456Z", "2026-10-25T02:30:00.123456Z").forEach { time ->
+                it("stores $time in UTC, whatever the time zone of the JVM") {
+                    val now = Instant.parse(time)
+                    val timeZone = TimeZone.getDefault()
+                    TimeZone.setDefault(TimeZone.getTimeZone("Europe/Oslo"))
+                    try {
+                        mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, false, now)
+                        mshConfigurationRepository.updateLastUsed(KOMMUNE_HER_ID, now)
 
-                    jdbcClient
-                        .sql("SELECT CAST(last_used AS CHAR) FROM msh_configuration")
-                        .query(String::class.java)
-                        .single() shouldBe "2026-10-25 00:30:00.123456"
-                    mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.lastUsed shouldBe now
-                } finally {
-                    TimeZone.setDefault(timeZone)
+                        jdbcClient
+                            .sql("SELECT CAST(last_used AS CHAR) FROM msh_configuration")
+                            .query(String::class.java)
+                            .single() shouldBe time.removeSuffix("Z").replace('T', ' ')
+                        mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.lastUsed shouldBe now
+                    } finally {
+                        TimeZone.setDefault(timeZone)
+                    }
                 }
+            }
+
+            it("does not store a configuration of a HER-id that has one") {
+                val now = Instant.parse("2026-11-24T12:00:00Z")
+
+                mshConfigurationRepository.saveIfAbsent(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, now) shouldBe true
+                mshConfigurationRepository.saveIfAbsent(KOMMUNE_HER_ID, "987654321", true, now) shouldBe false
+
+                mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.organizationNumber shouldBe CONSUMER_ORG_NUMBER
             }
 
             it("is only open to the admin scope") {

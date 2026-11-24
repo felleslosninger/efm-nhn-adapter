@@ -29,6 +29,8 @@ spring:
     hikari:
       # Give up soon on a database that is down, rather than after the default 30 s
       connection-timeout: 2000
+      # Below connection-timeout, so that a database that does not answer does not wait for the default 5 s
+      validation-timeout: 1000
       data-source-properties:
         connectTimeout: 2000
         socketTimeout: 10000
