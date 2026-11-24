@@ -205,14 +205,16 @@ class MshConfigurationService(
      * HER-id at once, or while MSH is slow, register it only once.
      */
     private fun registration(herId: Int, block: suspend () -> Unit): Job {
+        var created: Job? = null
         val job =
             inProgress.computeIfAbsent(herId) {
                 // Started once it is in the map, so that it cannot remove itself before it is there
-                backgroundScope
-                    .launch(start = CoroutineStart.LAZY) { bestEffort(herId, block) }
-                    // Also when it never runs, as the scope is cancelled
-                    .also { job -> job.invokeOnCompletion { inProgress.remove(herId, job) } }
+                backgroundScope.launch(start = CoroutineStart.LAZY) { bestEffort(herId, block) }.also { created = it }
             }
+        // Once it is in the map: a job that never runs, as the scope is cancelled, is complete
+        // already, and runs the
+        // handler at once. Also then it is removed.
+        created?.let { new -> new.invokeOnCompletion { inProgress.remove(herId, new) } }
         job.start()
         return job
     }
@@ -355,6 +357,9 @@ class MshConfigurationService(
     /**
      * Forgets what is known of the HER-ids and the database, as after a restart. For tests that share one instance.
      */
+    /** For tests. */
+    internal fun registrationsInProgress(): Int = inProgress.size
+
     internal fun clearCaches() {
         listOf(registered, failed, recorded).forEach { it.invalidateAll() }
         unregistered.clear()

@@ -313,6 +313,21 @@ class MshConfigurationServiceTest :
             }
         }
 
+        describe("a background scope that is cancelled, as on shutdown") {
+            it("does not fail the client's request, and keeps no registration in progress") {
+                val scope = CoroutineScope(Dispatchers.Default).apply { cancel() }
+                val service = service(scope = scope)
+                coEvery { repository.find(any()) } returns null
+
+                // 17 is in the same bin of the map as 1
+                service.ensureRegistered(1, clientContext())
+                service.ensureRegistered(17, clientContext())
+                service.recordUse(33, clientContext())
+
+                service.registrationsInProgress() shouldBe 0
+            }
+        }
+
         describe("many requests for a HER-id at once") {
             it("register it once") {
                 val scope = CoroutineScope(Dispatchers.Default)
