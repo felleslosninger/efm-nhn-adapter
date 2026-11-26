@@ -1,7 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.model.serialization
 
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.nulls.shouldBeNull
@@ -214,11 +213,12 @@ class ApplicationReceiptDeserializerTest :
             }
 
             it("rejects a receipt that is not valid according to the schema") {
-                shouldThrowAny {
-                    ApplicationReceiptDeserializer.deserializeAppRec(
-                        appRec(APPREC_1_1_NAMESPACE, "v1.1 2012-02-15", institution, professional, "<Unknown/>")
-                    )
-                }
+                shouldThrow<ApplicationReceiptException> {
+                        ApplicationReceiptDeserializer.deserializeAppRec(
+                            appRec(APPREC_1_1_NAMESPACE, "v1.1 2012-02-15", institution, professional, "<Unknown/>")
+                        )
+                    }
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
             }
         }
     })

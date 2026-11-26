@@ -5,19 +5,29 @@ import kotlin.time.Instant
 import no.difi.meldingsutveksling.domain.BusinessMessage
 import no.difi.meldingsutveksling.jackson.StandardBusinessDocumentType
 
-const val PROCESS = "urn:no:difi:profile:helse:helse:ver1.0"
-
+/**
+ * The business messages of DPH, with the [standard] and [process] that Integrasjonspunktet and Service Registry use
+ * for them: the receiving fagsystem finds a message by its process.
+ */
 enum class BusinessMessageType(
     val type: String,
     val standard: String,
     val version: String,
+    val process: String,
     private val valueType: Class<out BusinessMessage>,
 ) : StandardBusinessDocumentType {
-    DIALOGMELDING("dialogmelding", "urn:no:difi:helse:xsd::dialogmelding", "2.0", DialogmeldingMessage::class.java),
+    DIALOGMELDING(
+        "dialogmelding",
+        "urn:no:difi:helse:xsd::dialogmelding",
+        "2.0",
+        "urn:no:difi:profile:helse:helse:ver1.0",
+        DialogmeldingMessage::class.java,
+    ),
     DIALOGMELDING_KVITTERING(
         "dialogmelding_kvittering",
         "urn:no:difi:helse:xsd::dialogmelding_kvittering",
         "2.0",
+        "urn:no:difi:profile:helse:response:ver1.0",
         DialogmeldingKvitteringMessage::class.java,
     );
 

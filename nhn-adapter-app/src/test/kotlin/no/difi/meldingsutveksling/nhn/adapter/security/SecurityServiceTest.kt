@@ -105,4 +105,30 @@ class SecurityServiceTest :
                 }
             }
         }
+
+        describe("assertAccessToConsumer") {
+            it("grants access to an organization acting on its own behalf") {
+                securityService.assertAccessToConsumer(clientContext(OWNER_ORG_NUMBER, OWNER_ORG_NUMBER))
+            }
+
+            it("grants access to a supplier delegated through the trusted delegation source") {
+                securityService.assertAccessToConsumer(
+                    clientContext(SUPPLIER_ORG_NUMBER, OWNER_ORG_NUMBER, TRUSTED_DELEGATION_SOURCE)
+                )
+            }
+
+            it("denies a supplier delegated through another delegation source") {
+                shouldThrow<AccessDeniedException> {
+                    securityService.assertAccessToConsumer(
+                        clientContext(SUPPLIER_ORG_NUMBER, OWNER_ORG_NUMBER, "other")
+                    )
+                }
+            }
+
+            it("denies a supplier without delegation source") {
+                shouldThrow<AccessDeniedException> {
+                    securityService.assertAccessToConsumer(clientContext(SUPPLIER_ORG_NUMBER, OWNER_ORG_NUMBER))
+                }
+            }
+        }
     })

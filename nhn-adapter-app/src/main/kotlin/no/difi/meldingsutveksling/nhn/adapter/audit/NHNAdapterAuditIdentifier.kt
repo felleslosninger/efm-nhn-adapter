@@ -8,9 +8,14 @@ enum class NHNAdapterAuditIdentifier(val message: String) : AuditIdentifier {
     AR_LOOKUP("Lookup of identifier"),
     GET_STATUS("Get status"),
     SEND_MESSAGE("Sending message"),
-    GET_MESSAGES_WITH_METADATA("Get messages with metadata"),
+    GET_UNREAD_NOTIFICATIONS("Get unread notifications"),
+    DELETE_NOTIFICATIONS("Delete notifications"),
+    GET_MESSAGE("Get message metadata"),
     GET_BUSINESS_DOCUMENT("Get business document"),
-    MARK_MESSAGE_AS_READ("Mark message as read");
+    MARK_MESSAGE_AS_DOWNLOADED("Mark message as downloaded"),
+    LIST_MSH_CONFIGURATIONS("List MSH configurations"),
+    REGISTER_MSH_CONFIGURATION("Register MSH configuration"),
+    DELETE_MSH_CONFIGURATION("Delete MSH configuration");
 
     override fun auditId(): String = "NHN-ADAPTER-$name"
 

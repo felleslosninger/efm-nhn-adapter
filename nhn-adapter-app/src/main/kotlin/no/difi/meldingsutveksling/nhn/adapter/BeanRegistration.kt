@@ -21,12 +21,18 @@ import no.difi.meldingsutveksling.nhn.adapter.config.TempFileConfig
 import no.difi.meldingsutveksling.nhn.adapter.handlers.InHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LargeSendLimiter
 import no.difi.meldingsutveksling.nhn.adapter.handlers.LookupHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.MshConfigurationHandler
+import no.difi.meldingsutveksling.nhn.adapter.handlers.NotificationHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.OutHandler
 import no.difi.meldingsutveksling.nhn.adapter.handlers.ParcelService
 import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
 import no.difi.meldingsutveksling.nhn.adapter.logging.SpanUrlMasking
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.DatabaseMigration
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationRepository
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationStartupRegistration
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityBeans
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.cert.KeystoreHelper
@@ -36,6 +42,7 @@ import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.beans.factory.BeanRegistrarDsl
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.boot.info.BuildProperties
 import org.springframework.boot.io.ApplicationResourceLoader
 import org.springframework.core.env.Environment
 import org.springframework.core.io.ResourceLoader
@@ -60,6 +67,7 @@ private object PropertyPrefixes {
 
 private const val SERVICES_AR_URL = "nhn.services.ar.url"
 private const val SERVICES_MSH_URL = "nhn.services.msh.url"
+private const val SERVICES_MSH_NOTIFICATIONS_TO_FETCH = "nhn.services.msh.notifications-to-fetch"
 private const val MULTIPART_FILE_STORAGE_DIRECTORY = "spring.webflux.multipart.file-storage-directory"
 
 private const val OPENAPI_SECURITY_SCHEME = "maskinporten"
@@ -95,16 +103,18 @@ private fun integrations() = BeanRegistrarDsl {
     }
     registerBean<FastlegeregisteretClient> { IntegrationBeans.flrClient(bean(BeanNames.FLR_CONFIG)) }
     registerBean { AdresseregisteretService(bean(), bean()) }
-    registerBean { IntegrationBeans.mshClient(bean()) }
+    registerBean { IntegrationBeans.applicationMetadata(beanProvider<BuildProperties>().ifAvailable?.version) }
+    registerBean { IntegrationBeans.mshClient(bean(), bean()) }
     registerBean {
         IntegrationBeans.mshInternalClient(
+            bean(),
             bean(),
             bean(),
             env.getRequiredProperty(SERVICES_MSH_URL),
             env.bindRequired(PropertyPrefixes.NHN_SERVICE_MSH_TIMEOUT),
         )
     }
-    registerBean { IntegrationBeans.mshService(bean(), bean()) }
+    registerBean { IntegrationBeans.mshService(bean(), bean(), bean()) }
 }
 
 private fun services() = BeanRegistrarDsl {
@@ -127,6 +137,14 @@ private fun services() = BeanRegistrarDsl {
         )
     }
     registerBean { LargeSendLimiter(bean()) }
+    registerBean { MshConfigurationRepository(bean()) }
+    // Picked up by Spring Boot's Flyway auto-configuration, which migrates with it at startup
+    registerBean { DatabaseMigration() }
+    registerBean {
+        val databaseMigration = bean<DatabaseMigration>()
+        MshConfigurationService(bean(), bean(), bean(), isDatabaseMigrated = { databaseMigration.isMigrated })
+    }
+    registerBean { MshConfigurationStartupRegistration(bean(), bean()) }
     // Picked up by Spring's WebHttpHandlerBuilder, which wraps the server's HttpHandler with it
     registerBean { RequestBodyLimit(bean<LimitsConfig>().maxRequestSize) }
     // Applied to the Netty server by Spring Boot: masks the fødselsnummer in traces
@@ -140,11 +158,21 @@ private fun services() = BeanRegistrarDsl {
 }
 
 private fun handlers() = BeanRegistrarDsl {
-    registerBean { InHandler(bean(), bean(), bean(), bean(), bean()) }
+    registerBean { InHandler(bean(), bean(), bean(), bean(), bean(), bean()) }
     registerBean {
-        OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean<LimitsConfig>().maxUploadTime)
+        OutHandler(bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean(), bean<LimitsConfig>().maxUploadTime)
     }
     registerBean { LookupHandler(bean(), bean(), bean(), bean()) }
+    registerBean { MshConfigurationHandler(bean(), bean()) }
+    registerBean {
+        NotificationHandler(
+            bean(),
+            bean(),
+            bean(),
+            bean(),
+            env.getRequiredProperty(SERVICES_MSH_NOTIFICATIONS_TO_FETCH, Int::class.java),
+        )
+    }
 }
 
 private fun openApi() = BeanRegistrarDsl {

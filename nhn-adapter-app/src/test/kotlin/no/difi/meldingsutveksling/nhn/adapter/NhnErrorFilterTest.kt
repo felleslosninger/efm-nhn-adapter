@@ -18,8 +18,10 @@ import java.net.SocketTimeoutException
 import java.net.http.HttpTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.DatabaseUnavailableException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
 import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
@@ -37,6 +39,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.core.codec.DecodingException
 import org.springframework.core.io.buffer.DataBufferLimitException
 import org.springframework.http.HttpStatus
+import org.springframework.jdbc.CannotGetJdbcConnectionException
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.web.reactive.function.server.HandlerFilterFunction
@@ -47,6 +50,8 @@ import reactor.core.publisher.Mono
 
 private const val LOOKUP_PATH = "/api/lookup/123"
 private const val OUTGOING_PATH = ApiPaths.OUTGOING_MESSAGES
+private const val INCOMING_PATH = ApiPaths.INCOMING_MESSAGES
+private const val MSH_CONFIGURATIONS_PATH = ApiPaths.MSH_CONFIGURATIONS
 private const val TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 private const val ISO_8601_INSTANT = """\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z"""
 
@@ -59,6 +64,8 @@ class NhnErrorFilterTest :
                     RouterFunctions.route()
                         .GET(ApiPaths.LOOKUP) { Mono.error(error) }
                         .GET(ApiPaths.OUTGOING_MESSAGES) { Mono.error(error) }
+                        .GET(ApiPaths.INCOMING_MESSAGES) { Mono.error(error) }
+                        .GET(ApiPaths.MSH_CONFIGURATIONS) { Mono.error(error) }
                         .filter(nhnErrorFilter())
                         .build()
                 )
@@ -205,6 +212,40 @@ class NhnErrorFilterTest :
                 )
             }
 
+            it("maps an invalid incoming message to 422 with its error code, without the message") {
+                expectApiError(
+                    INCOMING_PATH,
+                    InvalidIncomingDocumentException(
+                        ApplicationReceiptException(
+                            FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                            "Unsupported root element = Foo.",
+                        ),
+                        isAppRec = false,
+                    ),
+                    HttpStatus.UNPROCESSABLE_CONTENT,
+                    null,
+                    FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT,
+                    technicalCode = "E7782",
+                )
+            }
+
+            it("maps an invalid incoming application receipt to 422 with a technical code of its own") {
+                expectApiError(
+                    INCOMING_PATH,
+                    InvalidIncomingDocumentException(
+                        ApplicationReceiptException(
+                            FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                            "The AppRec is not valid",
+                        ),
+                        isAppRec = true,
+                    ),
+                    HttpStatus.UNPROCESSABLE_CONTENT,
+                    null,
+                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML,
+                    technicalCode = "E7783",
+                )
+            }
+
             it("maps Adresseregisteret API errors to 502") {
                 expectTechnicalError(
                     LOOKUP_PATH,
@@ -289,6 +330,33 @@ class NhnErrorFilterTest :
                 )
             }
 
+            it("maps a database that is not migrated to 503") {
+                expectTechnicalError(
+                    MSH_CONFIGURATIONS_PATH,
+                    DatabaseUnavailableException("The database is not migrated yet"),
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "E7784",
+                )
+            }
+
+            it("maps a database that is down to 503") {
+                expectTechnicalError(
+                    MSH_CONFIGURATIONS_PATH,
+                    CannotGetJdbcConnectionException("Connection is not available"),
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "E7784",
+                )
+            }
+
+            it("does not map a failed connection elsewhere than to the database to 503") {
+                expectTechnicalError(
+                    MSH_CONFIGURATIONS_PATH,
+                    RuntimeException("Boom", ConnectException("Connection refused")),
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "E7777",
+                )
+            }
+
             it("maps a busy adapter to 503") {
                 expectTechnicalError(
                     OUTGOING_PATH,
@@ -328,6 +396,7 @@ class NhnErrorFilterTest :
             listOf(
                     HttpClientException(401, body = "Invalid token"),
                     HttpClientException(403, body = "Not allowed"),
+                    HttpClientException(423, body = "Client locked"),
                     HttpServerException(500, body = "Internal error"),
                     HttpException(499, 200, "Unknown status"),
                 )

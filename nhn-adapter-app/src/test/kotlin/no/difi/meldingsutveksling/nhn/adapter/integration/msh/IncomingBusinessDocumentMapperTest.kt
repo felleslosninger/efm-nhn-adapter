@@ -223,10 +223,16 @@ class IncomingBusinessDocumentMapperTest :
                     )
             }
 
-            it("has no conversation scopes without a conversation reference") {
-                val xml = BusinessDocumentSerializer.serializeNhnMessage(sendMessageInput())
+            // The receiver cannot process a message without a process, i.e. a conversation
+            it("starts a conversation of its own without a conversation reference") {
+                val id = UUID.randomUUID()
+                val xml = BusinessDocumentSerializer.serializeNhnMessage(sendMessageInput(id = id))
 
-                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.scopes.shouldBeEmpty()
+                with(IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd) {
+                    conversationId shouldBe id.toString()
+                    parentId.shouldBeNull()
+                    process.shouldNotBeNull()
+                }
             }
 
             it("rejects another MIGversion") {
@@ -240,7 +246,7 @@ class IncomingBusinessDocumentMapperTest :
                 val xml = msgHeadXml.replace(Regex("<([a-zA-Z0-9]+:)?MsgId>"), "<$1Unknown/><$1MsgId>")
 
                 shouldThrow<ApplicationReceiptException> { BusinessDocumentDeserializer.deserializeMsgHead(xml) }
-                    .error shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+                    .error shouldBe FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
             }
 
             it("does not quote the invalid value in the message, only in the cause") {
@@ -261,11 +267,280 @@ class IncomingBusinessDocumentMapperTest :
                     }
                     .error shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
             }
+
+            fun rejected(xml: String) =
+                shouldThrow<ApplicationReceiptException> {
+                        IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml)
+                    }
+                    .error
+
+            it("rejects a message without a patient") {
+                rejected(msgHeadXml.withoutElements("Patient")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.UTILSTREKKELIG_PASIENTOPPLYSNING
+            }
+
+            it("rejects a message without an id of the patient") {
+                rejected(msgHeadXml.inElement("Patient") { it.withoutElements("Ident") }) shouldBe
+                    FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR
+            }
+
+            it("accepts a patient with a D-nummer, which is not a known id type") {
+                val xml = msgHeadXml.inElement("Patient") { it.replace("V=\"FNR\"", "V=\"DNR\"") }
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.dialogmelding.pasient?.fnr shouldBe
+                    receiver.patient.fnr
+            }
+
+            fun senderHerId(xml: String) =
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.senderHerId
+
+            it("uses the HER-id of the organisation for a sender addressed at one level only") {
+                senderHerId(msgHeadXml.withoutElements("HealthcareProfessional")) shouldBe LEGEKONTOR_HER_ID
+            }
+
+            it("uses the HER-id of the organisation when the healthcare professional has none") {
+                val xml = msgHeadXml.inElement("HealthcareProfessional") { it.replace("V=\"HER\"", "V=\"HPR\"") }
+
+                senderHerId(xml) shouldBe LEGEKONTOR_HER_ID
+            }
+
+            it("accepts a HER-id given in the kodeverk of organisations") {
+                val xml =
+                    msgHeadXml.inElement("HealthcareProfessional") {
+                        it.replace("2.16.578.1.12.4.1.1.8116", "2.16.578.1.12.4.1.1.9051")
+                    }
+
+                senderHerId(xml) shouldBe FASTLEGE_HER_ID
+            }
+
+            it("rejects a sender without a HER-id at either level") {
+                val xml = msgHeadXml.inElement("Sender") { it.replace("V=\"HER\"", "V=\"ENH\"") }
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a patient identified by another id than a fødselsnummer or D-nummer") {
+                val xml = msgHeadXml.inElement("Patient") { it.replace("V=\"FNR\"", "V=\"HPR\"") }
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR
+            }
+
+            it("accepts a fødselsnummer without a kodeverk") {
+                val xml = msgHeadXml.inElement("Patient") { it.replace(Regex(""" S="[^"]*""""), "") }
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.dialogmelding.pasient?.fnr shouldBe
+                    receiver.patient.fnr
+            }
+
+            it("rejects a MsgHead that is not well-formed XML as such, wherever it breaks") {
+                val xml = msgHeadXml.replaceFirst(Regex("</(\\w+:)?MsgInfo>"), "</Broken>")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("rejects an error in the text of the MIGversion as XML that is not well-formed") {
+                val xml = msgHeadXml.replace(BusinessDocumentDeserializer.MSG_HEAD_VERSION, "v1.2 &bogus; 2006-05-24")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.UGYLDIG_XML
+            }
+
+            it("maps a message in UTF-16 with a byte order mark") {
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
+                        decodeText(msgHeadXml.toByteArray(Charsets.UTF_16))
+                    )
+                    .sbd
+                    .messageId shouldBe msgId.toString()
+            }
+
+            fun receiverHerId(xml: String) =
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.receiverHerId
+
+            /** The XML with the ident of [id] changed by [change]. */
+            fun String.inIdent(id: Int, change: (String) -> String): String {
+                val ident =
+                    Regex(
+                            """<(\w+:)?Ident>\s*<(\w+:)?Id>$id</(\w+:)?Id>.*?</(\w+:)?Ident>""",
+                            RegexOption.DOT_MATCHES_ALL,
+                        )
+                        .find(this) ?: error("Found no ident of $id")
+                return replaceRange(ident.range, change(ident.value))
+            }
+
+            it("uses the HER-id of the organisation for a receiver whose sub-organisation has none") {
+                val xml = msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) { it.replace("V=\"HER\"", "V=\"ENH\"") }
+
+                receiverHerId(xml) shouldBe KOMMUNE_HER_ID
+            }
+
+            it("accepts a HER-id of an organisation given in the kodeverk of persons") {
+                val xml =
+                    msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) {
+                        it.replace("2.16.578.1.12.4.1.1.9051", "2.16.578.1.12.4.1.1.8116")
+                    }
+
+                receiverHerId(xml) shouldBe KOMMUNE_TJENESTE_HER_ID
+            }
+
+            it("reads a HER-id with whitespace around it") {
+                val xml =
+                    msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) {
+                        it.replace(">$KOMMUNE_TJENESTE_HER_ID<", "> $KOMMUNE_TJENESTE_HER_ID <")
+                    }
+
+                receiverHerId(xml) shouldBe KOMMUNE_TJENESTE_HER_ID
+            }
+
+            listOf("HER$FASTLEGE_HER_ID", "0", "-7", "99999999999").forEach { invalid ->
+                it("rejects the invalid HER-id '$invalid' rather than falling back to the organisation") {
+                    val xml = msgHeadXml.inIdent(FASTLEGE_HER_ID) { it.replace(">$FASTLEGE_HER_ID<", ">$invalid<") }
+
+                    rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+                }
+            }
+
+            val professional = elementPattern("HealthcareProfessional").find(msgHeadXml)!!.value
+
+            /**
+             * The XML with [element] added to the receiver's organisation, or with [inner] to its sub-organisation.
+             */
+            fun String.withReceiverProfessional(element: String = professional, inner: Boolean = false) =
+                inElement("Receiver") { receiver ->
+                    val ends = Regex("</(\\w+:)?Organisation>").findAll(receiver).toList()
+                    val end = (if (inner) ends.first() else ends.last()).range.first
+                    receiver.substring(0, end) + element + receiver.substring(end)
+                }
+
+            it("accepts a healthcare professional without a given name") {
+                val xml = msgHeadXml.inElement("HealthcareProfessional") { it.withoutElements("GivenName") }
+
+                senderHerId(xml) shouldBe FASTLEGE_HER_ID
+            }
+
+            it("prefers a sub-organisation with a HER-id to a healthcare professional, which needs no name") {
+                val xml = msgHeadXml.withReceiverProfessional(professional.withoutElements("GivenName"))
+
+                receiverHerId(xml) shouldBe KOMMUNE_TJENESTE_HER_ID
+            }
+
+            it("uses the HER-id of a healthcare professional when the sub-organisation has none") {
+                val xml =
+                    msgHeadXml.withReceiverProfessional().inIdent(KOMMUNE_TJENESTE_HER_ID) {
+                        it.replace("V=\"HER\"", "V=\"ENH\"")
+                    }
+
+                receiverHerId(xml) shouldBe FASTLEGE_HER_ID
+            }
+
+            it("uses the HER-id of a healthcare professional in the sub-organisation") {
+                val response =
+                    IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
+                        msgHeadXml.withReceiverProfessional(inner = true)
+                    )
+
+                response.sbd.receiverHerId shouldBe FASTLEGE_HER_ID
+                response.receiverHerIdFallbacks shouldBe listOf(KOMMUNE_HER_ID)
+            }
+
+            it("falls back to the organisation of the receiver") {
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(msgHeadXml).receiverHerIdFallbacks shouldBe
+                    listOf(KOMMUNE_HER_ID)
+            }
+
+            it("has no fallback when the receiver is the organisation itself") {
+                val xml = msgHeadXml.inIdent(KOMMUNE_TJENESTE_HER_ID) { it.replace("V=\"HER\"", "V=\"ENH\"") }
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).receiverHerIdFallbacks.shouldBeEmpty()
+            }
+
+            it("accepts a patient without a name") {
+                val xml =
+                    msgHeadXml.inElement("Patient") { it.withoutElements("GivenName").withoutElements("FamilyName") }
+
+                with(IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.dialogmelding.pasient!!) {
+                    fnr shouldBe PASIENT_FNR
+                    fornavn shouldBe ""
+                    etternavn shouldBe ""
+                }
+            }
+
+            it("rejects a patient whose fødselsnummer is empty") {
+                val xml = msgHeadXml.replace(">$PASIENT_FNR<", "><")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.PASIENT_MANGLER_FNR
+            }
+
+            it("rejects a message whose MsgId is blank") {
+                rejected(msgHeadXml.replace(">$msgId<", "> <")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("starts a conversation of its own when only the parent is referred to") {
+                val xml = msgHeadXml.replace(">$convId<", "><")
+
+                with(IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd) {
+                    conversationId shouldBe msgId.toString()
+                    parentId shouldBe parentMsgId.toString()
+                }
+            }
+
+            it("trims the conversation references") {
+                val xml = msgHeadXml.replace(">$convId<", "> $convId <")
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml).sbd.conversationId shouldBe
+                    convId.toString()
+            }
+
+            it("rejects a MIGversion with an element in it as not valid") {
+                val xml =
+                    msgHeadXml.replace(
+                        BusinessDocumentDeserializer.MSG_HEAD_VERSION,
+                        "${BusinessDocumentDeserializer.MSG_HEAD_VERSION}<x/>",
+                    )
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
+            }
+
+            it("sets the header version") {
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(msgHeadXml)
+                    .sbd
+                    .standardBusinessDocumentHeader
+                    .headerVersion shouldBe "1.0"
+            }
+
+            it("rejects a vedlegg without a MIME type") {
+                rejected(msgHeadXml.withoutElements("MimeType")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a message that is not a Dialogmelding as a format that is not supported") {
+                val xml = msgHeadXml.replace("http://www.kith.no/xmlstds/dialog/2013-01-23", "urn:example:unknown")
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT
+            }
+
+            it("maps a message with a byte order mark") {
+                val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(decodeText(bom + msgHeadXml.toByteArray()))
+                    .sbd
+                    .messageId shouldBe msgId.toString()
+            }
+
+            it("maps a message that declares another encoding") {
+                msgHeadXml shouldContain "encoding=\"UTF-8\""
+                val latin1 = msgHeadXml.replaceFirst("encoding=\"UTF-8\"", "encoding=\"ISO-8859-1\"")
+
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
+                        decodeText(latin1.toByteArray(Charsets.ISO_8859_1))
+                    )
+                    .sbd
+                    .messageId shouldBe msgId.toString()
+            }
         }
 
         describe("getDialogmelding") {
             it("rejects a MsgHead without documents") {
-                shouldThrow<IllegalArgumentException> { MsgHead().getDialogmelding() }.message shouldBe
+                shouldThrow<ApplicationReceiptException> { MsgHead().getDialogmelding() }.message shouldBe
                     "Found no Dialogmelding in MsgHead"
             }
 
@@ -281,7 +556,7 @@ class IncomingBusinessDocumentMapperTest :
                             )
                     }
 
-                shouldThrow<IllegalArgumentException> { msgHead.getDialogmelding() }.message shouldContain
+                shouldThrow<ApplicationReceiptException> { msgHead.getDialogmelding() }.message shouldContain
                     "Unsupported message type"
             }
         }
@@ -400,6 +675,98 @@ class IncomingBusinessDocumentMapperTest :
                     .status shouldBe DialogmeldingKvitteringStatus.REJECTED
             }
 
+            fun receiverOf(receiverHcp: String) =
+                IncomingBusinessDocumentMapper.toBusinessDocumentResponse(appRec(receiverHcp = receiverHcp))
+
+            fun rejected(xml: String) =
+                shouldThrow<ApplicationReceiptException> {
+                        IncomingBusinessDocumentMapper.toBusinessDocumentResponse(xml)
+                    }
+                    .error
+
+            it("uses only an id typed as a HER-id, falling back to the levels above") {
+                val response =
+                    receiverOf(
+                        """
+                        <Inst>
+                          <Name>Kommune</Name>
+                          <Id>$KOMMUNE_HER_ID</Id>
+                          <TypeId V="HER" DN="HER-id"/>
+                          <Dept><Name>Avdeling</Name><Id>42</Id><TypeId V="LOK" DN="Lokal id"/></Dept>
+                          <HCPerson><Name>Saksbehandler</Name><Id>7654321</Id><TypeId V="HPR" DN="HPR-nummer"/></HCPerson>
+                        </Inst>
+                        """
+                    )
+
+                response.sbd.receiverHerId shouldBe KOMMUNE_HER_ID
+                response.receiverHerIdFallbacks.shouldBeEmpty()
+            }
+
+            it("uses a HER-id given as an additional id") {
+                val response =
+                    receiverOf(
+                        """
+                        <Inst>
+                          <Name>Kommune</Name>
+                          <Id>987654321</Id>
+                          <TypeId V="ENH" DN="Organisasjonsnummeret i Enhetsregisteret"/>
+                          <AdditionalId><Id>$KOMMUNE_HER_ID</Id><Type V="HER" DN="HER-id"/></AdditionalId>
+                        </Inst>
+                        """
+                    )
+
+                response.sbd.receiverHerId shouldBe KOMMUNE_HER_ID
+            }
+
+            it("has the HER-ids of the levels above the receiver as fallbacks") {
+                val response =
+                    receiverOf(
+                        """
+                        <Inst>
+                          <Name>Kommune</Name>
+                          <Id>$KOMMUNE_HER_ID</Id>
+                          <TypeId V="HER" DN="HER-id"/>
+                          <HCPerson><Name>Saksbehandler</Name><Id>$KOMMUNE_TJENESTE_HER_ID</Id><TypeId V="HER" DN="HER-id"/></HCPerson>
+                        </Inst>
+                        """
+                    )
+
+                response.sbd.receiverHerId shouldBe KOMMUNE_TJENESTE_HER_ID
+                response.receiverHerIdFallbacks shouldBe listOf(KOMMUNE_HER_ID)
+            }
+
+            it("rejects a receiver without a HER-id") {
+                val xml =
+                    appRec(
+                        receiverHcp =
+                            """<Inst><Name>Kommune</Name><Id>987654321</Id><TypeId V="ENH" DN="Organisasjonsnummer"/></Inst>"""
+                    )
+
+                rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            listOf("0", "-7", "abc").forEach { invalid ->
+                it("rejects the invalid HER-id '$invalid'") {
+                    val xml = appRec(receiverHcp = """<Inst><Name>Kommune</Name><Id> $invalid </Id></Inst>""")
+
+                    rejected(xml) shouldBe FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+                }
+            }
+
+            it("rejects a blank id of the AppRec or of the original message") {
+                val xml = appRec()
+
+                rejected(xml.replace("<Id>$appRecId</Id>", "<Id> </Id>")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+                rejected(xml.replace("<Id>$originalMessageId</Id>", "<Id> </Id>")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.ANNEN_FEIL_FORMAT
+            }
+
+            it("rejects a MIGversion with an element in it as not valid") {
+                rejected(appRec(migVersion = "v1.1 2012-02-15<x/>")) shouldBe
+                    FeilmeldingForApplikasjonskvittering.VALIDERINGSFEIL_XML
+            }
+
             it("rejects an unknown status code") {
                 shouldThrow<ApplicationReceiptException> {
                         IncomingBusinessDocumentMapper.toBusinessDocumentResponse(
@@ -423,3 +790,15 @@ class IncomingBusinessDocumentMapperTest :
 private fun readResource(path: String): ByteArray =
     checkNotNull(IncomingBusinessDocumentMapperTest::class.java.getResourceAsStream(path)) { "Missing $path" }
         .use { it.readAllBytes() }
+
+private fun elementPattern(name: String) =
+    Regex("""<(\w+:)?$name\b[^>]*>.*?</(\w+:)?$name>""", RegexOption.DOT_MATCHES_ALL)
+
+/** The XML without the elements named [name]. */
+private fun String.withoutElements(name: String) = replace(elementPattern(name), "")
+
+/** The XML with the first element named [name] changed by [change]. */
+private fun String.inElement(name: String, change: (String) -> String): String {
+    val element = elementPattern(name).find(this) ?: error("Found no $name")
+    return replaceRange(element.range, change(element.value))
+}

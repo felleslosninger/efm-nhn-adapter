@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.ninjasquad.springmockk.MockkBean
+import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -11,8 +12,11 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldNotBeIn
 import io.kotest.matchers.longs.shouldBeLessThanOrEqual
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotBeBlank
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.Called
@@ -26,11 +30,14 @@ import io.mockk.slot
 import io.mockk.verify
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.Base64
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -67,35 +74,47 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringMessage
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingKvitteringStatus
 import no.difi.meldingsutveksling.nhn.adapter.messages.DialogmeldingMessage
-import no.difi.meldingsutveksling.nhn.adapter.messages.PROCESS
 import no.difi.meldingsutveksling.nhn.adapter.messages.Pasient
 import no.difi.meldingsutveksling.nhn.adapter.model.AttachmentNames
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
+import no.difi.meldingsutveksling.nhn.adapter.model.MshConfigurationDetails
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationRepository
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.move.common.cert.KeystoreHelper
 import no.difi.move.common.dokumentpakking.JsonWebEncryption
 import no.difi.move.common.dokumentpakking.PartUtils
 import no.difi.move.common.dokumentpakking.domain.Document
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.hdir.HelsepersonellsFunksjoner
 import no.ks.fiks.nhn.ar.rest.AddressNotFoundException
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretApiException
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.PatientGP
+import no.ks.fiks.nhn.msh.AppRecInfo
 import no.ks.fiks.nhn.msh.AppRecStatus
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.DeliveryState
+import no.ks.fiks.nhn.msh.GetStatusResponse
+import no.ks.fiks.nhn.msh.HttpClientException
+import no.ks.fiks.nhn.msh.HttpServerException
 import no.ks.fiks.nhn.msh.MessageWithMetadata
+import no.ks.fiks.nhn.msh.MshConfiguration
 import no.ks.fiks.nhn.msh.MshInternalClient
+import no.ks.fiks.nhn.msh.MultiTenantHelseIdTokenParameters
+import no.ks.fiks.nhn.msh.NotificationType
 import no.ks.fiks.nhn.msh.RequestParameters
 import no.ks.fiks.nhn.msh.SingleTenantHelseIdTokenParameters
 import no.ks.fiks.nhn.msh.StatusInfo
-import no.nhn.msh.v2.model.GetBusinessDocumentResponse
-import no.nhn.msh.v2.model.Message as NhnMessage
-import no.nhn.msh.v2.model.PostAppRecRequest
-import no.nhn.msh.v2.model.PostMessageRequest
+import no.ks.fiks.nhn.msh.UnreadNotification
+import no.nhn.msh.v3.model.GetBusinessDocumentResponse
+import no.nhn.msh.v3.model.GetMessageResponse as NhnMessage
+import no.nhn.msh.v3.model.PostAppRecRequest
+import no.nhn.msh.v3.model.PostMessageRequest
 import org.slf4j.LoggerFactory
 import org.springframework.boot.reactor.netty.NettyServerCustomizer
 import org.springframework.boot.test.context.SpringBootTest
@@ -117,6 +136,7 @@ import org.springframework.http.codec.json.KotlinSerializationJsonDecoder
 import org.springframework.http.codec.multipart.DefaultPartHttpMessageReader
 import org.springframework.http.codec.multipart.MultipartHttpMessageWriter
 import org.springframework.http.codec.multipart.Part
+import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.mock.http.client.reactive.MockClientHttpRequest
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -137,6 +157,9 @@ private const val KOMMUNE_PARENT_HER_ID = 1000001
 private const val KOMMUNE_HER_ID = 1000002
 private const val LEGEKONTOR_HER_ID = 2000001
 private const val LEGEKONTOR_ORG_NUMBER = "987654321"
+
+/** A supplier that acts on behalf of [CONSUMER_ORG_NUMBER]. */
+private const val SUPPLIER_ORG_NUMBER = "912345678"
 private const val FASTLEGE_HER_ID = 2000002
 private const val LEGEKONTOR_TJENESTE_HER_ID = 2000003
 private const val UNKNOWN_HER_ID = 9999999
@@ -190,6 +213,9 @@ class NhnAdapterApiIT(
     private val jsonMapper: JsonMapper,
     private val applicationContext: ApplicationContext,
     private val serverCodecConfigurer: ServerCodecConfigurer,
+    private val jdbcClient: JdbcClient,
+    private val mshConfigurationService: MshConfigurationService,
+    private val mshConfigurationRepository: MshConfigurationRepository,
 ) :
     DescribeSpec({
         val anonymousClient by lazy {
@@ -200,8 +226,11 @@ class NhnAdapterApiIT(
                 .build()
         }
 
-        /** A client authenticated with a Maskinporten token for [CONSUMER_ORG_NUMBER]. */
-        fun client(scope: String = "eformidling:dph") =
+        /**
+         * A client authenticated with a Maskinporten token for [CONSUMER_ORG_NUMBER], issued to [supplier] when it
+         * acts for the consumer through [delegationSource].
+         */
+        fun client(scope: String = "eformidling:dph", supplier: String? = null, delegationSource: String? = null) =
             anonymousClient.mutateWith(
                 mockJwt()
                     .jwt {
@@ -211,9 +240,19 @@ class NhnAdapterApiIT(
                                 "consumer",
                                 mapOf("authority" to "iso6523-actorid-upis", "ID" to "0192:$CONSUMER_ORG_NUMBER"),
                             )
+                        supplier?.let { orgNumber ->
+                            it.claim(
+                                "supplier",
+                                mapOf("authority" to "iso6523-actorid-upis", "ID" to "0192:$orgNumber"),
+                            )
+                        }
+                        delegationSource?.let { source -> it.claim("delegation_source", source) }
                     }
                     .authorities(SimpleGrantedAuthority("SCOPE_$scope"))
             )
+
+        fun trustedDelegationSource(): String =
+            applicationContext.environment.getRequiredProperty("security.delegation-source")
 
         fun signAndEncrypt(payload: String): String =
             parcelService.signAndEncrypt(payload, keystoreHelper.x509Certificate)
@@ -374,10 +413,15 @@ class NhnAdapterApiIT(
                         {
                             outgoingMessageMetadata(firstArg(), KOMMUNE_HER_ID, FASTLEGE_HER_ID)
                         }
-                    coEvery { mshClient.getStatus(any(), any()) } returns emptyList()
-                    coEvery { mshClient.getMessagesWithMetadata(any(), any()) } returns emptyList()
-                    coEvery { mshClient.markMessageRead(any(), any(), any()) } just Runs
-                    coEvery { mshInternalClient.postAppRec(any(), any(), any(), any()) } returns UUID.randomUUID()
+                    coEvery { mshClient.getStatus(any(), any()) } returns GetStatusResponse(emptyList())
+                    coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+                    coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
+                    coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
+                    coEvery { mshClient.getMessage(any(), any()) } answers
+                        {
+                            incomingMessageMetadata(firstArg(), "DIALOG_HELSEFAGLIG")
+                        }
+                    coEvery { mshInternalClient.postAppRec(any(), any(), any()) } returns UUID.randomUUID().toString()
                 }
 
                 val endpoints: Map<String, (WebTestClient) -> WebTestClient.ResponseSpec> =
@@ -393,10 +437,25 @@ class NhnAdapterApiIT(
                                     .accept(MediaType.APPLICATION_JSON)
                                     .exchange()
                             },
-                        "GET /api/messages/in" to
+                        "GET /api/notifications/unread" to
                             { c ->
                                 c.get()
-                                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                                    .accept(MediaType.APPLICATION_JSON)
+                                    .exchange()
+                            },
+                        "POST /api/notifications/delete" to
+                            { c ->
+                                c.post()
+                                    .uri("/api/notifications/delete")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue("""{"notificationIds":["notification-1"]}""")
+                                    .exchange()
+                            },
+                        "GET /api/messages/in/{messageId}" to
+                            { c ->
+                                c.get()
+                                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$KOMMUNE_HER_ID")
                                     .accept(MediaType.APPLICATION_JSON)
                                     .exchange()
                             },
@@ -423,10 +482,12 @@ class NhnAdapterApiIT(
                                     )
                                     .exchange()
                             },
-                        "POST /api/messages/in/{messageId}/read" to
+                        "POST /api/messages/in/{messageId}/downloaded" to
                             { c ->
                                 c.post()
-                                    .uri("/api/messages/in/${UUID.randomUUID()}/read?receiverHerId=$KOMMUNE_HER_ID")
+                                    .uri(
+                                        "/api/messages/in/${UUID.randomUUID()}/downloaded?receiverHerId=$KOMMUNE_HER_ID"
+                                    )
                                     .exchange()
                             },
                     )
@@ -463,6 +524,288 @@ class NhnAdapterApiIT(
                         request(client("some:other-scope")).shouldBeForbidden()
                     }
                 }
+            }
+        }
+
+        describe("MSH configurations") {
+            val adminScope = "eformidling:dph.admin"
+
+            fun configurations() =
+                client(adminScope)
+                    .get()
+                    .uri("/api/admin/msh-configurations")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody<String>()
+                    .returnResult()
+                    .responseBody!!
+                    .let { jsonParser.decodeFromString<List<MshConfigurationDetails>>(it) }
+
+            fun register(herId: Int, body: String? = null) =
+                client(adminScope).put().uri("/api/admin/msh-configurations/$herId").let { request ->
+                    body?.let { request.contentType(MediaType.APPLICATION_JSON).bodyValue(it) } ?: request
+                }
+
+            fun pollNotifications() =
+                client()
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+            beforeEach {
+                jdbcClient.sql("DELETE FROM msh_configuration").update()
+                mshConfigurationService.clearCaches()
+                coEvery { mshClient.setMshConfigurations(any(), any()) } just Runs
+                coEvery { mshClient.deleteMshConfigurations(any(), any()) } just Runs
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+            }
+
+            it("registers a HER-id in MSH with the HelseID tenant of its organization, and lists it") {
+                register(KOMMUNE_HER_ID, """{"clientLocked": true}""")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.herId")
+                    .isEqualTo(KOMMUNE_HER_ID)
+                    .jsonPath("$.organizationNumber")
+                    .isEqualTo(CONSUMER_ORG_NUMBER)
+                    .jsonPath("$.clientLocked")
+                    .isEqualTo(true)
+
+                coVerify {
+                    mshClient.setMshConfigurations(listOf(MshConfiguration(KOMMUNE_HER_ID, true)), consumerTenant())
+                }
+                with(configurations().single()) {
+                    herId shouldBe KOMMUNE_HER_ID
+                    clientLocked shouldBe true
+                    lastUsed.shouldBeNull()
+                }
+            }
+
+            it("registers a HER-id without a lock when there is no body") {
+                register(KOMMUNE_HER_ID).exchange().expectStatus().isOk
+
+                configurations().single().clientLocked shouldBe false
+            }
+
+            it("returns 404 for a HER-id that is not in Adresseregisteret, and registers nothing") {
+                register(UNKNOWN_HER_ID).exchange().expectStatus().isNotFound
+
+                coVerify(exactly = 0) { mshClient.setMshConfigurations(any(), any()) }
+                configurations().shouldBeEmpty()
+            }
+
+            it("deletes a configuration from MSH, and 404 when there is none") {
+                register(KOMMUNE_HER_ID).exchange().expectStatus().isOk
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                coVerify { mshClient.deleteMshConfigurations(listOf(KOMMUNE_HER_ID), consumerTenant()) }
+                configurations().shouldBeEmpty()
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isNotFound
+            }
+
+            it("registers a HER-id the first time a client polls for it") {
+                pollNotifications()
+                pollNotifications()
+
+                coVerify(exactly = 1) {
+                    mshClient.setMshConfigurations(listOf(MshConfiguration(KOMMUNE_HER_ID, false)), consumerTenant())
+                }
+                with(configurations().single()) {
+                    herId shouldBe KOMMUNE_HER_ID
+                    organizationNumber shouldBe CONSUMER_ORG_NUMBER
+                    lastUsed.shouldBeNull()
+                }
+            }
+
+            it("answers the poll when the registration fails, and tries again the next time") {
+                coEvery { mshClient.setMshConfigurations(any(), any()) } throws RuntimeException("MSH is down")
+
+                pollNotifications()
+                configurations().shouldBeEmpty()
+
+                // Not tried again at once, but after a while, as after a restart
+                coEvery { mshClient.setMshConfigurations(any(), any()) } just Runs
+                pollNotifications()
+                configurations().shouldBeEmpty()
+                mshConfigurationService.clearCaches()
+                pollNotifications()
+                configurations().single().herId shouldBe KOMMUNE_HER_ID
+            }
+
+            it("records when a message was last sent, and keeps the lock") {
+                register(KOMMUNE_HER_ID, """{"clientLocked": true}""").exchange().expectStatus().isOk
+                coEvery { mshInternalClient.postAppRec(any(), any(), any()) } returns UUID.randomUUID().toString()
+
+                sendOutgoing(kvitteringSbd(UUID.randomUUID(), UUID.randomUUID())).expectStatus().isOk
+
+                // Recorded in the background
+                eventually(5.seconds) { configurations().single().lastUsed.shouldNotBeNull() }
+                configurations().single().clientLocked shouldBe true
+                coVerify(exactly = 1) { mshClient.setMshConfigurations(any(), any()) }
+            }
+
+            it("registers a HER-id that receives a message, and records when") {
+                val messageId = UUID.randomUUID()
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = kommune.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                eventually(5.seconds) { configurations().single().lastUsed.shouldNotBeNull() }
+                coVerify {
+                    mshClient.setMshConfigurations(listOf(MshConfiguration(KOMMUNE_HER_ID, false)), consumerTenant())
+                }
+            }
+
+            it("registers a HER-id with the multi-tenant HelseID token of a supplier, and deletes it so") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                coVerify { mshClient.setMshConfigurations(any(), supplierTenant()) }
+
+                mshConfigurationService.registerAllInMsh()
+                coVerify(exactly = 2) { mshClient.setMshConfigurations(any(), supplierTenant()) }
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                coVerify { mshClient.deleteMshConfigurations(listOf(KOMMUNE_HER_ID), supplierTenant()) }
+            }
+
+            it("deletes a configuration that MSH does not have") {
+                register(KOMMUNE_HER_ID).exchange().expectStatus().isOk
+                coEvery { mshClient.deleteMshConfigurations(any(), any()) } throws
+                    HttpClientException(404, null, "Not found")
+
+                client(adminScope)
+                    .delete()
+                    .uri("/api/admin/msh-configurations/$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                configurations().shouldBeEmpty()
+            }
+
+            it("rejects an unknown key, a body that is not JSON and a HER-id that is not a number") {
+                register(KOMMUNE_HER_ID, """{"clientlocked": true}""").exchange().expectStatus().isBadRequest
+                register(KOMMUNE_HER_ID, "not json").exchange().expectStatus().isBadRequest
+                client(adminScope)
+                    .put()
+                    .uri("/api/admin/msh-configurations/abc")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.setMshConfigurations(any(), any()) }
+            }
+
+            // As UTC wall time, the first does not exist in Norway (daylight saving time starts),
+            // and the second is
+            // ambiguous there (it ends). A conversion through the time zone of the JVM breaks
+            // either.
+            listOf("2026-03-29T02:30:00.123456Z", "2026-10-25T02:30:00.123456Z").forEach { time ->
+                it("stores $time in UTC, whatever the time zone of the JVM") {
+                    val now = Instant.parse(time)
+                    val timeZone = TimeZone.getDefault()
+                    TimeZone.setDefault(TimeZone.getTimeZone("Europe/Oslo"))
+                    try {
+                        mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, false, now)
+                        mshConfigurationRepository.updateLastUsed(KOMMUNE_HER_ID, now)
+
+                        jdbcClient
+                            .sql("SELECT CAST(last_used AS CHAR) FROM msh_configuration")
+                            .query(String::class.java)
+                            .single() shouldBe time.removeSuffix("Z").replace('T', ' ')
+                        mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.lastUsed shouldBe now
+                    } finally {
+                        TimeZone.setDefault(timeZone)
+                    }
+                }
+            }
+
+            it("restores a configuration only when it was not stored again since") {
+                val before = Instant.parse("2026-11-24T11:00:00Z")
+                val storedAt = Instant.parse("2026-11-24T12:00:00.123456Z")
+                mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, false, before)
+                val previous = mshConfigurationRepository.find(KOMMUNE_HER_ID)!!
+                mshConfigurationRepository.save(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, true, storedAt)
+
+                mshConfigurationRepository.restore(previous, storedAt.plusSeconds(1)) shouldBe false
+                mshConfigurationRepository.deleteIfUpdatedAt(KOMMUNE_HER_ID, before) shouldBe false
+                mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.clientLocked shouldBe true
+
+                mshConfigurationRepository.restore(previous, storedAt) shouldBe true
+                mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.clientLocked shouldBe false
+                mshConfigurationRepository.deleteIfUpdatedAt(KOMMUNE_HER_ID, before) shouldBe true
+                mshConfigurationRepository.find(KOMMUNE_HER_ID).shouldBeNull()
+            }
+
+            it("does not store a configuration of a HER-id that has one") {
+                val now = Instant.parse("2026-11-24T12:00:00Z")
+
+                mshConfigurationRepository.saveIfAbsent(KOMMUNE_HER_ID, CONSUMER_ORG_NUMBER, false, now) shouldBe true
+                mshConfigurationRepository.saveIfAbsent(KOMMUNE_HER_ID, "987654321", true, now) shouldBe false
+
+                mshConfigurationRepository.find(KOMMUNE_HER_ID)!!.organizationNumber shouldBe CONSUMER_ORG_NUMBER
+            }
+
+            it("is only open to the admin scope") {
+                client().get().uri("/api/admin/msh-configurations").exchange().expectStatus().isForbidden
+                client(adminScope)
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
             }
         }
 
@@ -643,7 +986,7 @@ class NhnAdapterApiIT(
                 val mshMessageId = UUID.randomUUID()
                 val postMessageRequest = slot<PostMessageRequest>()
                 coEvery { mshInternalClient.postMessage(capture(postMessageRequest), consumerTenant()) } returns
-                    mshMessageId
+                    mshMessageId.toString()
 
                 sendOutgoing(dialogmeldingSbd(messageId, conversationId), dokumentpakke())
                     .expectStatus()
@@ -653,6 +996,11 @@ class NhnAdapterApiIT(
 
                 postMessageRequest.captured.contentType shouldBe "application/xml"
                 postMessageRequest.captured.contentTransferEncoding shouldBe "base64"
+                postMessageRequest.captured.senderHerId shouldBe KOMMUNE_HER_ID
+                postMessageRequest.captured.receiverHerIds shouldBe listOf(FASTLEGE_HER_ID)
+                postMessageRequest.captured.messageTypeIdentificator shouldBe "DIALOG_HELSEFAGLIG"
+                postMessageRequest.captured.applicationName shouldBe "efm-nhn-adapter"
+                postMessageRequest.captured.applicationVersion.shouldNotBeBlank()
 
                 val msgHead =
                     BusinessDocumentDeserializer.deserializeMsgHead(
@@ -692,7 +1040,7 @@ class NhnAdapterApiIT(
                 every { adresseregisteretClient.lookupHerId(KOMMUNE_HER_ID) } returns kommuneTjeneste
                 val postMessageRequest = slot<PostMessageRequest>()
                 coEvery { mshInternalClient.postMessage(capture(postMessageRequest), consumerTenant()) } returns
-                    UUID.randomUUID()
+                    UUID.randomUUID().toString()
 
                 sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()), dokumentpakke())
                     .expectStatus()
@@ -707,13 +1055,15 @@ class NhnAdapterApiIT(
                 sender.child.shouldBeInstanceOf<no.ks.fiks.nhn.msh.OrganizationCommunicationParty>()
                 sender.child.herId shouldBe KOMMUNE_HER_ID
                 sender.child.fullName shouldBe "Helsetjenesten"
+                // MSH is told the HER-id of the service, not of its parent
+                postMessageRequest.captured.senderHerId shouldBe KOMMUNE_HER_ID
             }
 
             it("sends the dialogmelding to MSH when the receiver is a service") {
                 every { adresseregisteretClient.lookupHerId(LEGEKONTOR_TJENESTE_HER_ID) } returns legekontorTjeneste
                 val postMessageRequest = slot<PostMessageRequest>()
                 coEvery { mshInternalClient.postMessage(capture(postMessageRequest), consumerTenant()) } returns
-                    UUID.randomUUID()
+                    UUID.randomUUID().toString()
 
                 sendOutgoing(
                         dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()).apply {
@@ -732,6 +1082,7 @@ class NhnAdapterApiIT(
                 receiver.parent.herId shouldBe LEGEKONTOR_HER_ID
                 receiver.child.shouldBeInstanceOf<no.ks.fiks.nhn.msh.OrganizationCommunicationParty>()
                 receiver.child.herId shouldBe LEGEKONTOR_TJENESTE_HER_ID
+                postMessageRequest.captured.receiverHerIds shouldBe listOf(LEGEKONTOR_TJENESTE_HER_ID)
 
                 // Only "kontakt hos mottaker" is added, since there is no fastlege to refer to
                 val roller = msgHead.getDialogmelding().notat.single().rollerRelatertNotat
@@ -744,7 +1095,7 @@ class NhnAdapterApiIT(
                 val parentId = UUID.randomUUID()
                 val postMessageRequest = slot<PostMessageRequest>()
                 coEvery { mshInternalClient.postMessage(capture(postMessageRequest), consumerTenant()) } returns
-                    UUID.randomUUID()
+                    UUID.randomUUID().toString()
 
                 sendOutgoing(dialogmeldingSbd(UUID.randomUUID(), conversationId, parentId), dokumentpakke())
                     .expectStatus()
@@ -765,12 +1116,11 @@ class NhnAdapterApiIT(
                 val postAppRecRequest = slot<PostAppRecRequest>()
                 coEvery {
                     mshInternalClient.postAppRec(
-                        relatedToMessageId,
-                        KOMMUNE_HER_ID,
+                        relatedToMessageId.toString(),
                         capture(postAppRecRequest),
                         consumerTenant(),
                     )
-                } returns appRecId
+                } returns appRecId.toString()
 
                 sendOutgoing(kvitteringSbd(UUID.randomUUID(), relatedToMessageId))
                     .expectStatus()
@@ -778,7 +1128,9 @@ class NhnAdapterApiIT(
                     .expectBody<String>()
                     .isEqualTo(appRecId.toString())
 
-                postAppRecRequest.captured.appRecStatus shouldBe no.nhn.msh.v2.model.AppRecStatus.OK
+                postAppRecRequest.captured.appRecStatus shouldBe no.nhn.msh.v3.model.AppRecStatus.OK
+                postAppRecRequest.captured.appRecSenderHerId shouldBe KOMMUNE_HER_ID
+                postAppRecRequest.captured.applicationName shouldBe "efm-nhn-adapter"
             }
 
             it("returns 400 and sends nothing when the hoveddokument is missing from the dokumentpakke") {
@@ -837,7 +1189,7 @@ class NhnAdapterApiIT(
 
                 it("sends a dokumentpakke that unpacks to more than the threshold") {
                     val mshMessageId = UUID.randomUUID()
-                    coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns mshMessageId
+                    coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns mshMessageId.toString()
 
                     sendOutgoingWithContentLength(
                             dialogmeldingSbd(UUID.randomUUID(), UUID.randomUUID()),
@@ -865,7 +1217,8 @@ class NhnAdapterApiIT(
                 }
 
                 it("never holds back a dokumentpakke that unpacks to less than the threshold") {
-                    coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns UUID.randomUUID()
+                    coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } returns
+                        UUID.randomUUID().toString()
                     val dokumentpakke = dokumentpakke()
 
                     withAllPermitsHeld {
@@ -964,7 +1317,7 @@ class NhnAdapterApiIT(
                 coEvery { mshInternalClient.postMessage(any(), consumerTenant()) } answers
                     {
                         filesWhileSending = multipartTempFiles()
-                        UUID.randomUUID()
+                        UUID.randomUUID().toString()
                     }
                 // Above spring.webflux.multipart.max-in-memory-size in the test configuration, so
                 // that
@@ -1033,17 +1386,26 @@ class NhnAdapterApiIT(
 
                 sendOutgoing(sbd).expectStatus().isForbidden
 
-                coVerify(exactly = 0) { mshInternalClient.postAppRec(any(), any(), any(), any()) }
+                coVerify(exactly = 0) { mshInternalClient.postAppRec(any(), any(), any()) }
             }
         }
 
         describe("GET /api/messages/out/{messageId}/statuses") {
             it("returns the delivery and application receipt status from MSH") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getMessage(messageId.toString(), consumerTenant()) } returns
                     outgoingMessageMetadata(messageId, KOMMUNE_HER_ID, FASTLEGE_HER_ID)
-                coEvery { mshClient.getStatus(messageId, consumerTenant()) } returns
-                    listOf(StatusInfo(FASTLEGE_HER_ID, DeliveryState.ACKNOWLEDGED, AppRecStatus.OK))
+                coEvery { mshClient.getStatus(messageId.toString(), consumerTenant()) } returns
+                    GetStatusResponse(
+                        listOf(
+                            StatusInfo(
+                                FASTLEGE_HER_ID,
+                                true,
+                                DeliveryState.ACKNOWLEDGED,
+                                AppRecInfo(AppRecStatus.OK, null, null),
+                            )
+                        )
+                    )
 
                 client()
                     .get()
@@ -1065,7 +1427,7 @@ class NhnAdapterApiIT(
 
             it("returns 403 and no status when the sender belongs to another organization") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getMessage(messageId.toString(), consumerTenant()) } returns
                     outgoingMessageMetadata(messageId, FASTLEGE_HER_ID, KOMMUNE_HER_ID)
 
                 client()
@@ -1081,12 +1443,21 @@ class NhnAdapterApiIT(
 
             it("returns the status when MSH leaves out metadata the access check does not need") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getMessage(messageId.toString(), consumerTenant()) } returns
                     outgoingMessageMetadata(messageId, KOMMUNE_HER_ID, FASTLEGE_HER_ID)
                         .businessDocumentId(null)
-                        .isAppRec(null)
-                coEvery { mshClient.getStatus(messageId, consumerTenant()) } returns
-                    listOf(StatusInfo(FASTLEGE_HER_ID, DeliveryState.ACKNOWLEDGED, AppRecStatus.OK))
+                        .businessDocumentMsgType(null)
+                coEvery { mshClient.getStatus(messageId.toString(), consumerTenant()) } returns
+                    GetStatusResponse(
+                        listOf(
+                            StatusInfo(
+                                FASTLEGE_HER_ID,
+                                true,
+                                DeliveryState.ACKNOWLEDGED,
+                                AppRecInfo(AppRecStatus.OK, null, null),
+                            )
+                        )
+                    )
 
                 client()
                     .get()
@@ -1102,7 +1473,7 @@ class NhnAdapterApiIT(
 
             it("returns 502 and no status when MSH leaves out the sender") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshInternalClient.getMessage(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getMessage(messageId.toString(), consumerTenant()) } returns
                     outgoingMessageMetadata(messageId, null, FASTLEGE_HER_ID)
 
                 client()
@@ -1119,6 +1490,19 @@ class NhnAdapterApiIT(
                 coVerify(exactly = 0) { mshClient.getStatus(any(), any()) }
             }
 
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .get()
+                    .uri("/api/messages/out/${UUID.randomUUID()}/statuses")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshInternalClient.getMessage(any(), any()) }
+                coVerify(exactly = 0) { mshClient.getStatus(any(), any()) }
+            }
+
             it("returns 400 when the message id is not a UUID") {
                 client()
                     .get()
@@ -1130,49 +1514,90 @@ class NhnAdapterApiIT(
             }
         }
 
-        describe("GET /api/messages/in") {
-            it("returns the incoming messages for the receiver") {
+        describe("GET /api/notifications/unread") {
+            it("returns every unread notification from MSH, as MSH gives it, and deletes none") {
                 val messageId = UUID.randomUUID()
-                val businessDocumentId = UUID.randomUUID()
-                coEvery { mshClient.getMessagesWithMetadata(KOMMUNE_HER_ID, consumerTenant()) } returns
-                    listOf(
-                        MessageWithMetadata(
-                            messageId,
-                            "application/xml",
-                            KOMMUNE_HER_ID,
-                            FASTLEGE_HER_ID,
-                            businessDocumentId.toString(),
-                            OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
-                            false,
-                        )
-                    )
+                val newMessage = notification(NotificationType.NEW_MESSAGE, messageId)
+                val deliveryState = notification(NotificationType.MESSAGE_DELIVERY_STATE_UPDATED, UUID.randomUUID())
+                coEvery { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 50, consumerTenant()) } returns
+                    listOf(newMessage, deliveryState)
 
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
                     .isOk
                     .expectBody()
                     .jsonPath("$.length()")
-                    .isEqualTo(1)
-                    .jsonPath("$[0].id")
+                    .isEqualTo(2)
+                    .jsonPath("$[0].notificationId")
+                    .isEqualTo(newMessage.notificationId)
+                    .jsonPath("$[0].relatedMessageId")
                     .isEqualTo(messageId.toString())
-                    .jsonPath("$[0].receiverHerId")
+                    .jsonPath("$[0].type")
+                    .isEqualTo("NEW_MESSAGE")
+                    .jsonPath("$[0].notificationReceiverHerId")
                     .isEqualTo(KOMMUNE_HER_ID)
-                    .jsonPath("$[0].senderHerId")
+                    .jsonPath("$[0].notificationTriggeredByHerId")
                     .isEqualTo(FASTLEGE_HER_ID)
-                    .jsonPath("$[0].businessDocumentId")
-                    .isEqualTo(businessDocumentId.toString())
-                    .jsonPath("$[0].isAppRec")
-                    .isEqualTo(false)
+                    .jsonPath("$[0].createdAt")
+                    .isEqualTo("2026-08-21T08:00:00+02:00")
+                    .jsonPath("$[1].type")
+                    .isEqualTo("MESSAGE_DELIVERY_STATE_UPDATED")
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
             }
 
-            it("returns 400 when receiverHerId is missing") {
+            it("gets as many notifications as the client asks for") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+
                 client()
                     .get()
-                    .uri("/api/messages/in")
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID&notificationsToFetch=1000")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .json("[]")
+
+                coVerify { mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 1000, consumerTenant()) }
+            }
+
+            // msh-client throws a NullPointerException when MSH leaves out a field it requires
+            it("returns 502 when MSH leaves out a required field") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } throws NullPointerException()
+
+                client()
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
+            }
+
+            it("returns 400 when the client asks for more notifications than MSH gives") {
+                client()
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID&notificationsToFetch=1001")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
+            }
+
+            it("returns 400 when herId is missing") {
+                client()
+                    .get()
+                    .uri("/api/notifications/unread")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
@@ -1180,33 +1605,493 @@ class NhnAdapterApiIT(
             }
 
             // HerIdNotFoundException is only a 404 on the lookup route.
-            it("returns 400 when receiverHerId is unknown") {
+            it("returns 400 when herId is unknown") {
                 client()
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$UNKNOWN_HER_ID")
+                    .uri("/api/notifications/unread?herId=$UNKNOWN_HER_ID")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
                     .isBadRequest
 
-                coVerify(exactly = 0) { mshClient.getMessagesWithMetadata(any(), any()) }
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
             }
 
-            // AccessDeniedException from SecurityService.assertAccessToHerId maps to 403.
-            it("denies access to messages for a HER-id belonging to another organization") {
-                client()
+            it("returns the notifications for a supplier delegated through the trusted delegation source") {
+                coEvery { mshClient.getUnreadNotifications(any(), any(), any()) } returns emptyList()
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
                     .get()
-                    .uri("/api/messages/in?receiverHerId=$FASTLEGE_HER_ID")
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) {
+                    mshClient.getUnreadNotifications(listOf(KOMMUNE_HER_ID), 50, supplierTenant())
+                }
+            }
+
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .get()
+                    .uri("/api/notifications/unread?herId=$KOMMUNE_HER_ID")
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange()
                     .expectStatus()
                     .isForbidden
 
-                coVerify(exactly = 0) { mshClient.getMessagesWithMetadata(any(), any()) }
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
+            }
+
+            // AccessDeniedException from SecurityService.assertAccessToHerId maps to 403.
+            it("denies access to the notifications of a HER-id belonging to another organization") {
+                client()
+                    .get()
+                    .uri("/api/notifications/unread?herId=$FASTLEGE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getUnreadNotifications(any(), any(), any()) }
+            }
+        }
+
+        describe("POST /api/notifications/delete") {
+            it("deletes the notifications in MSH") {
+                coEvery { mshClient.deleteNotifications(any(), consumerTenant()) } just Runs
+
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["notification-1","notification-2","notification-1"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) {
+                    mshClient.deleteNotifications(listOf("notification-1", "notification-2"), consumerTenant())
+                }
+            }
+
+            it("deletes the notifications for a supplier delegated through the trusted delegation source") {
+                coEvery { mshClient.deleteNotifications(any(), any()) } just Runs
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["notification-1"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) { mshClient.deleteNotifications(listOf("notification-1"), supplierTenant()) }
+            }
+
+            it("denies a supplier delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["notification-1"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when there are no notifications to delete") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":[]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when there are more notifications than MSH deletes at a time") {
+                val ids = (0..1000).joinToString(",") { "\"notification-$it\"" }
+
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":[$ids]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 413 and reads no further when the body is larger than a list of notification ids can be") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["${"x".repeat(200 * 1024)}"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when a notification id is too long") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"notificationIds":["${"x".repeat(101)}"]}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 400 when the input is not valid") {
+                client()
+                    .post()
+                    .uri("/api/notifications/delete")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue("""{"ids":"notification-1"}""")
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+        }
+
+        describe("GET /api/messages/in/{messageId}") {
+            it("returns the metadata of the message for the receiver") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.id")
+                    .isEqualTo(messageId.toString())
+                    .jsonPath("$.receiverHerId")
+                    .isEqualTo(KOMMUNE_HER_ID)
+                    .jsonPath("$.senderHerId")
+                    .isEqualTo(FASTLEGE_HER_ID)
+                    .jsonPath("$.businessDocumentId")
+                    .isEqualTo(BUSINESS_DOCUMENT_ID)
+                    .jsonPath("$.isAppRec")
+                    .isEqualTo(false)
+            }
+
+            it("returns the metadata for a supplier delegated through the trusted delegation source") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), supplierTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.id")
+                    .isEqualTo(messageId.toString())
+            }
+
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .get()
+                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getMessage(any(), any()) }
+            }
+
+            it("returns an application receipt as such") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "APPREC")
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+                    .expectBody()
+                    .jsonPath("$.isAppRec")
+                    .isEqualTo(true)
+            }
+
+            it("returns 403 when the message is not to the receiver") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG")
+                        .copy(receiverHerIds = listOf(LEGEKONTOR_HER_ID))
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+            }
+
+            // msh-client throws a NullPointerException when MSH leaves out a field it requires
+            it("returns 502 when MSH leaves out a required field") {
+                coEvery { mshClient.getMessage(any(), any()) } throws NullPointerException()
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
+            }
+
+            it("returns 502 when MSH does not list the receivers of the message") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.getMessage(messageId.toString(), consumerTenant()) } returns
+                    incomingMessageMetadata(messageId.toString(), "DIALOG_HELSEFAGLIG").copy(receiverHerIds = null)
+
+                client()
+                    .get()
+                    .uri("/api/messages/in/$messageId?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+            }
+
+            it("returns 400 when the message id is not a UUID") {
+                client()
+                    .get()
+                    .uri("/api/messages/in/not-a-uuid?receiverHerId=$KOMMUNE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isBadRequest
+            }
+
+            it("denies access to a message for a HER-id belonging to another organization") {
+                client()
+                    .get()
+                    .uri("/api/messages/in/${UUID.randomUUID()}?receiverHerId=$FASTLEGE_HER_ID")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.getMessage(any(), any()) }
             }
         }
 
         describe("POST /api/messages/in") {
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"${UUID.randomUUID()}"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshInternalClient.getBusinessDocument(any(), any()) }
+            }
+
+            // Copy receivers are not supported: the business document names the main receiver
+            it("returns 403 when the receiver in the business document belongs to another organization") {
+                every { adresseregisteretClient.lookupHerId(LEGEKONTOR_TJENESTE_HER_ID) } returns legekontorTjeneste
+                val messageId = UUID.randomUUID()
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = legekontorTjeneste.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+            }
+
+            it("returns 422 when the receiver in the business document is not in Adresseregisteret") {
+                // Adresseregisteret does not know LEGEKONTOR_TJENESTE_HER_ID here
+                val messageId = UUID.randomUUID()
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = legekontorTjeneste.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7782")
+            }
+
+            it("delivers the message to the organisation when the receiver's own HER-id is not in Adresseregisteret") {
+                val messageId = UUID.randomUUID()
+                val avdeling =
+                    ArTestData.service(
+                        UNKNOWN_HER_ID,
+                        "Avdeling som ikkje finst",
+                        ArTestData.parentOrganization(KOMMUNE_HER_ID, "Helse og omsorg", CONSUMER_ORG_NUMBER),
+                    )
+                val msgHead =
+                    BusinessDocumentSerializer.serializeNhnMessage(
+                        SendMessageInput(
+                            id = messageId,
+                            sender = fastlege.toSender(),
+                            receiver = avdeling.toReceiver(pasient),
+                            dialogmelding =
+                                DialogmeldingDeserializer.deserializeDialogmelding(String(dialogmeldingXml)),
+                            vedlegg = emptyList(),
+                            metadataFiler = null,
+                            conversationRef = null,
+                        )
+                    )
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(msgHead.toByteArray()))
+
+                val result =
+                    client()
+                        .post()
+                        .uri("/api/messages/in")
+                        .contentType(APPLICATION_JOSE)
+                        .accept(MediaType.MULTIPART_MIXED)
+                        .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                        .exchange()
+                        .expectStatus()
+                        .isOk
+                        .expectBody<ByteArray>()
+                        .returnResult()
+
+                val parts = readMultipart(result.responseHeaders.contentType!!, result.responseBody!!)
+                val jws =
+                    parcelService.decryptAndVerify(
+                        PartUtils.toString(parts.getValue(MultipartNames.FORRETNINGSMELDING))
+                    )
+                jsonMapper
+                    .readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
+                    .receiverHerId shouldBe KOMMUNE_HER_ID
+            }
+
+            it("returns 422 with the technical code of an application receipt when its receiver is unknown") {
+                val messageId = UUID.randomUUID()
+                val appRec =
+                    """
+                    <AppRec xmlns="http://www.kith.no/xmlstds/apprec/2012-02-15">
+                      <MsgType V="APPREC"/>
+                      <MIGversion>v1.1 2012-02-15</MIGversion>
+                      <GenDate>2026-10-14T12:00:00</GenDate>
+                      <Id>$messageId</Id>
+                      <Sender><HCP><Inst><Name>Legekontor</Name><Id>$LEGEKONTOR_HER_ID</Id><TypeId V="HER"/></Inst></HCP></Sender>
+                      <Receiver><HCP><Inst><Name>Ukjend</Name><Id>$UNKNOWN_HER_ID</Id><TypeId V="HER"/></Inst></HCP></Receiver>
+                      <Status V="1" DN="OK"/>
+                      <OriginalMsgId>
+                        <MsgType V="DIALOG_NOTAT"/>
+                        <IssueDate>2026-10-14T11:00:00</IssueDate>
+                        <Id>${UUID.randomUUID()}</Id>
+                      </OriginalMsgId>
+                    </AppRec>
+                    """
+                        .trimIndent()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString(appRec.toByteArray()))
+
+                client()
+                    .post()
+                    .uri("/api/messages/in")
+                    .contentType(APPLICATION_JOSE)
+                    .accept(MediaType.MULTIPART_MIXED)
+                    .bodyValue(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7783")
+            }
+
             it("returns the incoming dialogmelding as an encrypted forretningsmelding and dokumentpakke") {
                 val messageId = UUID.randomUUID()
                 val msgHead =
@@ -1229,7 +2114,7 @@ class NhnAdapterApiIT(
                             conversationRef = null,
                         )
                     )
-                coEvery { mshInternalClient.getBusinessDocument(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
                     GetBusinessDocumentResponse()
                         .contentType("application/xml")
                         .contentTransferEncoding("base64")
@@ -1261,6 +2146,13 @@ class NhnAdapterApiIT(
                 val sbd = jsonMapper.readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
                 sbd.type shouldBe BusinessMessageType.DIALOGMELDING.type
                 sbd.messageId shouldBe messageId.toString()
+                // A dialogmelding without a conversation reference starts a conversation of its
+                // own, which the
+                // receiver needs to process it
+                sbd.conversationId shouldBe messageId.toString()
+                sbd.process shouldBe BusinessMessageType.DIALOGMELDING.process
+                sbd.standardBusinessDocumentHeader.documentIdentification.standard shouldBe
+                    BusinessMessageType.DIALOGMELDING.standard
                 sbd.senderHerId shouldBe FASTLEGE_HER_ID
                 sbd.receiverHerId shouldBe KOMMUNE_HER_ID
                 sbd.dialogmelding.hoveddokument shouldBe AttachmentNames.DIALOGMELDING
@@ -1328,7 +2220,7 @@ class NhnAdapterApiIT(
                     </AppRec>
                     """
                         .trimIndent()
-                coEvery { mshInternalClient.getBusinessDocument(messageId, consumerTenant()) } returns
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
                     GetBusinessDocumentResponse()
                         .contentType("application/xml")
                         .contentTransferEncoding("base64")
@@ -1354,6 +2246,7 @@ class NhnAdapterApiIT(
                     )
                 val sbd = jsonMapper.readValue(jws.payload.toString(), StandardBusinessDocument::class.java)
                 sbd.type shouldBe BusinessMessageType.DIALOGMELDING_KVITTERING.type
+                sbd.process shouldBe BusinessMessageType.DIALOGMELDING_KVITTERING.process
                 sbd.senderHerId shouldBe LEGEKONTOR_TJENESTE_HER_ID
                 sbd.receiverHerId shouldBe KOMMUNE_HER_ID
                 sbd.dialogmeldingKvittering.relatedToMessageId shouldBe originalMessageId.toString()
@@ -1386,26 +2279,163 @@ class NhnAdapterApiIT(
                     .jsonPath("$.details")
                     .isEqualTo("JWS verification failed")
             }
+
+            it("returns 422 with the error code for an application receipt when the message is invalid") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(Base64.getEncoder().encodeToString("<Unknown/>".toByteArray()))
+
+                getIncoming(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7782")
+            }
+
+            it("returns 422 with a technical code of its own when an application receipt is invalid") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument(
+                            Base64.getEncoder()
+                                .encodeToString("<AppRec><MIGversion>9</MIGversion></AppRec>".toByteArray())
+                        )
+
+                getIncoming(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .expectBody()
+                    .jsonPath("$.errorCode")
+                    .isEqualTo(FeilmeldingForApplikasjonskvittering.IKKE_STOTTET_FORMAT.verdi)
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7783")
+            }
+
+            it("returns 502 when the business document from MSH cannot be decoded") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshInternalClient.getBusinessDocument(messageId.toString(), consumerTenant()) } returns
+                    GetBusinessDocumentResponse()
+                        .contentType("application/xml")
+                        .contentTransferEncoding("base64")
+                        .businessDocument("not base64!")
+
+                getIncoming(signAndEncrypt("""{"id":"$messageId"}"""))
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+                    .expectBody()
+                    .jsonPath("$.technicalCode")
+                    .isEqualTo("E7780")
+            }
         }
 
-        describe("POST /api/messages/in/{messageId}/read") {
-            it("marks the message as read in MSH") {
+        describe("POST /api/messages/in/{messageId}/downloaded") {
+            it("marks the message as downloaded in MSH and leaves its notification") {
                 val messageId = UUID.randomUUID()
-                coEvery { mshClient.markMessageRead(messageId, KOMMUNE_HER_ID, consumerTenant()) } just Runs
+                coEvery {
+                    mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, consumerTenant())
+                } just Runs
 
                 client()
                     .post()
-                    .uri("/api/messages/in/$messageId/read?receiverHerId=$KOMMUNE_HER_ID")
+                    .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
                     .exchange()
                     .expectStatus()
                     .isOk
                     .expectBody<String>()
-                    .isEqualTo("Message marked as read")
+                    .isEqualTo("Message marked as downloaded")
 
-                coVerify(exactly = 1) { mshClient.markMessageRead(messageId, KOMMUNE_HER_ID, consumerTenant()) }
+                coVerify(exactly = 1) {
+                    mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, consumerTenant())
+                }
+                coVerify(exactly = 0) { mshClient.deleteNotifications(any(), any()) }
+            }
+
+            it("returns 502 when MSH fails") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, any()) } throws
+                    HttpServerException(status = 500, body = "Internal Server Error")
+
+                client()
+                    .post()
+                    .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(HttpStatus.BAD_GATEWAY)
+            }
+
+            it("marks the message as downloaded for a supplier delegated through the trusted delegation source") {
+                val messageId = UUID.randomUUID()
+                coEvery { mshClient.markMessageDownloaded(any(), any(), any()) } just Runs
+
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = trustedDelegationSource())
+                    .post()
+                    .uri("/api/messages/in/$messageId/downloaded?receiverHerId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isOk
+
+                coVerify(exactly = 1) {
+                    mshClient.markMessageDownloaded(messageId.toString(), KOMMUNE_HER_ID, supplierTenant())
+                }
+            }
+
+            it("returns 403 without asking MSH when a supplier is delegated through another delegation source") {
+                client(supplier = SUPPLIER_ORG_NUMBER, delegationSource = "not-trusted")
+                    .post()
+                    .uri("/api/messages/in/${UUID.randomUUID()}/downloaded?receiverHerId=$KOMMUNE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.markMessageDownloaded(any(), any(), any()) }
+            }
+
+            it("denies marking a message for a HER-id belonging to another organization") {
+                client()
+                    .post()
+                    .uri("/api/messages/in/${UUID.randomUUID()}/downloaded?receiverHerId=$FASTLEGE_HER_ID")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden
+
+                coVerify(exactly = 0) { mshClient.markMessageDownloaded(any(), any(), any()) }
             }
         }
     })
+
+private const val BUSINESS_DOCUMENT_ID = "9f1c892b-4341-4239-b627-83b7a1eb65ab"
+
+/** MSH metadata for a message from the fastlege to the kommune and the legekontor. */
+private fun incomingMessageMetadata(messageId: String, msgType: String) =
+    MessageWithMetadata(
+        id = messageId,
+        contentType = "application/xml",
+        receiverHerIds = listOf(KOMMUNE_HER_ID, LEGEKONTOR_HER_ID),
+        senderHerId = FASTLEGE_HER_ID,
+        businessDocumentId = BUSINESS_DOCUMENT_ID,
+        businessDocumentDate = OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
+        businessDocumentMsgType = msgType,
+    )
+
+/** An unread MSH notification for [KOMMUNE_HER_ID] about the message [messageId]. */
+private fun notification(type: NotificationType, messageId: UUID) =
+    UnreadNotification(
+        notificationId = UUID.randomUUID().toString(),
+        relatedMessageId = messageId.toString(),
+        type = type,
+        notificationReceiverHerId = KOMMUNE_HER_ID,
+        notificationTriggeredByHerId = FASTLEGE_HER_ID,
+        description = null,
+        createdAt = OffsetDateTime.parse("2026-08-21T08:00:00+02:00"),
+    )
 
 /** Matches MSH requests made with a HelseID token for the Maskinporten consumer. */
 private fun MockKMatcherScope.consumerTenant() =
@@ -1413,16 +2443,22 @@ private fun MockKMatcherScope.consumerTenant() =
         (it.helseId?.tenant as? SingleTenantHelseIdTokenParameters)?.childOrganization == CONSUMER_ORG_NUMBER
     }
 
+/** A HelseID token for the consumer, which a supplier acts on behalf of. */
+private fun MockKMatcherScope.supplierTenant() =
+    match<RequestParameters> {
+        (it.helseId?.tenant as? MultiTenantHelseIdTokenParameters)?.parentOrganization == CONSUMER_ORG_NUMBER
+    }
+
 /** MSH metadata for a dialogmelding sent from [senderHerId] to [receiverHerId]. */
 private fun outgoingMessageMetadata(messageId: UUID, senderHerId: Int?, receiverHerId: Int) =
     NhnMessage()
-        .id(messageId)
+        .id(messageId.toString())
         .contentType("application/xml")
-        .receiverHerId(receiverHerId)
+        .receiverHerIds(setOf(receiverHerId))
         .senderHerId(senderHerId)
         .businessDocumentId(UUID.randomUUID().toString())
-        .businessDocumentGenDate(OffsetDateTime.parse("2026-08-21T08:00:00+02:00"))
-        .isAppRec(false)
+        .businessDocumentGenDate("2026-08-21T08:00:00+02:00")
+        .businessDocumentMsgType("DIALOG_HELSEFAGLIG")
 
 private fun dialogmeldingSbd(messageId: UUID, conversationId: UUID, parentId: UUID? = null) =
     sbd(BusinessMessageType.DIALOGMELDING, messageId, conversationId, parentId).apply {
@@ -1473,7 +2509,7 @@ private fun sbd(type: BusinessMessageType, messageId: UUID, conversationId: UUID
 private fun scope(type: ScopeType, id: UUID) =
     Scope().apply {
         this.type = type.fullname
-        identifier = PROCESS
+        identifier = BusinessMessageType.DIALOGMELDING.process
         instanceIdentifier = id.toString()
     }
 

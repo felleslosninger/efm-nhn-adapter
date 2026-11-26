@@ -14,6 +14,11 @@ spring:
       max-disk-usage-per-part: 50MB
       max-parts: 10
       file-storage-directory: ${java.io.tmpdir}/efm-nhn-adapter-multipart-test
+  # Testcontainers starts MariaDB on the first connection
+  datasource:
+    url: "jdbc:tc:mariadb:11.4.12:///nhn_adapter"
+    username: test
+    password: test
 
 digdir:
   audit:
@@ -37,7 +42,7 @@ audit:
   pseudonymization-key: "test-pseudonymization-key-of-at-least-32-characters"
 
 limits:
-  # 50MB in production, see the comment on spring.webflux.multipart
+  # 35MB in production, see the comment on spring.webflux.multipart
   max-request-size: 2MB
   max-dokumentpakke-files: 100
   # 5MB in production. Below max-request-size, as there, so that a request with a Content-Length can be large enough
@@ -67,6 +72,7 @@ nhn:
         connect: 1s
         read: 1s
         request: 1s
+      notifications-to-fetch: 50
 oauth2:
   helse-id:
     # The private key is generated for each test run by IntegrationTestEnvironment

@@ -5,6 +5,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import javax.xml.stream.XMLStreamException
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 
 class XMLUtilsTest :
@@ -23,7 +24,11 @@ class XMLUtilsTest :
             it("gives up on a prolog that is too long") {
                 val prolog = (1..150).joinToString("") { "<!-- $it -->" }
 
-                shouldThrow<IllegalStateException> { XMLUtils.getRootElement("$prolog<MsgHead/>") }
+                XMLUtils.getRootElement("$prolog<MsgHead/>").shouldBeNull()
+            }
+
+            it("rejects an empty document as not well-formed") {
+                shouldThrow<XMLStreamException> { XMLUtils.getRootElement("") }
             }
 
             // A DOCTYPE only declares entities, which can read external resources (XXE)
@@ -54,6 +59,25 @@ class XMLUtilsTest :
 
             it("returns null when there is no MIGversion") {
                 XMLUtils.getVersion("<AppRec><Id>1</Id></AppRec>").shouldBeNull()
+            }
+
+            it("returns null for an empty MIGversion") {
+                XMLUtils.getVersion("<AppRec><MIGversion/></AppRec>").shouldBeNull()
+            }
+
+            it("reads all the text of the MIGversion, trimmed") {
+                XMLUtils.getVersion("<AppRec><MIGversion>\n  v1.1 2012-02-15\n</MIGversion></AppRec>") shouldBe
+                    "v1.1 2012-02-15"
+                XMLUtils.getVersion("<AppRec><MIGversion><![CDATA[v1.1 2012-02-15]]></MIGversion></AppRec>") shouldBe
+                    "v1.1 2012-02-15"
+                XMLUtils.getVersion("<AppRec><MIGversion><!-- c -->v1.1 2012-02-15</MIGversion></AppRec>") shouldBe
+                    "v1.1 2012-02-15"
+            }
+
+            it("reports an error in the text of the MIGversion as XML that is not well-formed") {
+                shouldThrow<XMLStreamException> {
+                    XMLUtils.getVersion("<AppRec><MIGversion>v1.1 &bogus; 2012-02-15</MIGversion></AppRec>")
+                }
             }
 
             it("rejects a DOCTYPE") {

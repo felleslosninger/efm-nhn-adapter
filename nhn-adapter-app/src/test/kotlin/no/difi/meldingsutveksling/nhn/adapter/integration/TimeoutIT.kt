@@ -72,23 +72,25 @@ class TimeoutIT :
                     IntegrationBeans.mshInternalClient(
                         helseIdConfig(),
                         IntegrationBeans.helseIdClient(helseIdConfig(), helseIdTimeout),
+                        IntegrationBeans.applicationMetadata("1.2.3"),
                         wireMockServer.baseUrl(),
                         timeout,
-                    )
+                    ),
+                    IntegrationBeans.applicationMetadata("1.2.3"),
                 )
 
             it("gives up waiting for data after the read timeout") {
-                stubSlowAnswer("/Messages/.*")
+                stubSlowAnswer("/messages/.*")
                 val client = mshClient(MshTimeoutConfig(LONG, SHORT, LONG))
 
-                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID()) }
+                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID().toString()) }
             }
 
             it("gives up a call after the request timeout") {
-                stubSlowAnswer("/Messages/.*")
+                stubSlowAnswer("/messages/.*")
                 val client = mshClient(MshTimeoutConfig(LONG, LONG, SHORT))
 
-                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID()) }
+                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID().toString()) }
             }
 
             it("gives up waiting for a HelseID token after HelseID's read timeout") {
@@ -96,7 +98,7 @@ class TimeoutIT :
                 wireMockServer.stubHelseIdSts(tokenDelayMillis = SLOW_ANSWER_MILLIS)
                 val client = mshClient(MshTimeoutConfig(LONG, LONG, LONG), helseIdTimeout = TimeoutConfig(LONG, SHORT))
 
-                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID()) }
+                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID().toString()) }
             }
 
             it("gives up waiting for HelseID's OpenID configuration after HelseID's read timeout") {
@@ -107,7 +109,7 @@ class TimeoutIT :
                 )
                 val client = mshClient(MshTimeoutConfig(LONG, LONG, LONG), helseIdTimeout = TimeoutConfig(LONG, SHORT))
 
-                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID()) }
+                shouldTimeOut<MshException> { client.getStatus(UUID.randomUUID().toString()) }
             }
         }
 

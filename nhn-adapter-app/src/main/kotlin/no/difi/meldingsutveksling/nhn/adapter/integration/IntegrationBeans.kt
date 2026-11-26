@@ -14,14 +14,18 @@ import no.ks.fiks.nhn.ar.rest.CacheConfig
 import no.ks.fiks.nhn.flr.Credentials as FlrCredentials
 import no.ks.fiks.nhn.flr.FastlegeregisteretClient
 import no.ks.fiks.nhn.flr.FastlegeregisteretService
+import no.ks.fiks.nhn.msh.ApplicationMetadata
 import no.ks.fiks.nhn.msh.Client
 import no.ks.fiks.nhn.msh.HelseIdConfiguration
 import no.ks.fiks.nhn.msh.MshInternalClient
 
 /** Creates the clients for NHN's services, each with the timeouts from its configuration. */
 object IntegrationBeans {
-    /** Identifies this system towards MSH. */
-    private const val SOURCE_SYSTEM = "digdir"
+    /** Identifies this system towards MSH, together with its version. */
+    private const val APPLICATION_NAME = "efm-nhn-adapter"
+
+    /** Used when the build info is missing, as when running from an IDE. */
+    private const val UNKNOWN_VERSION = "unknown"
 
     private const val AR_CACHE_MAX_ENTRIES = 10_000L
     private val AR_CACHE_TTL = Duration.ofMinutes(15)
@@ -53,17 +57,22 @@ object IntegrationBeans {
         )
 
     /** The high-level client sends its requests through the [MshInternalClient], and so with its timeouts. */
-    fun mshClient(internalClient: MshInternalClient): Client = Client(internalClient)
+    fun mshClient(internalClient: MshInternalClient, applicationMetadata: ApplicationMetadata): Client =
+        Client(internalClient, applicationMetadata)
+
+    fun applicationMetadata(version: String?): ApplicationMetadata =
+        ApplicationMetadata(APPLICATION_NAME, version?.takeIf { it.isNotBlank() } ?: UNKNOWN_VERSION)
 
     fun mshInternalClient(
         helseIdConfig: HelseIdConfiguration,
         helseIdClient: HelseIdClient,
+        applicationMetadata: ApplicationMetadata,
         mshUrl: String,
         timeout: MshTimeoutConfig,
     ): MshInternalClient =
         MshInternalClient(
             baseUrl = mshUrl,
-            sourceSystem = SOURCE_SYSTEM,
+            applicationMetadata = applicationMetadata,
             defaultTokenParams = helseIdConfig.tokenParams,
             client = TimeoutHttpClients.msh(timeout),
             helseIdClient = helseIdClient,
@@ -73,5 +82,6 @@ object IntegrationBeans {
     private fun HelseIdConfiguration.toHelseIdClientConfiguration() =
         HelseIdClientConfiguration(clientId = clientId, jwk = jwk, environment = environment)
 
-    fun mshService(mshClient: Client, internalClient: MshInternalClient) = MshService(mshClient, internalClient)
+    fun mshService(mshClient: Client, internalClient: MshInternalClient, applicationMetadata: ApplicationMetadata) =
+        MshService(mshClient, internalClient, applicationMetadata)
 }

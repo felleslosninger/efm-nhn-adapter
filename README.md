@@ -38,6 +38,7 @@ Integrasjonane mot NHN går gjennom bibliotek frå KS Digital (`no.ks.fiks:msh-c
 - Kotlin 2.4 på Java 25 (`nhn-model` vert kompilert for Java 21 slik at integrasjonspunktet kan bruke det)
 - Spring Boot 4.1 med WebFlux, funksjonelle ruter (`coRouter`) og Kotlin coroutines
 - Spring Security som OAuth2 resource server (Maskinporten-token)
+- MariaDB med Spring JDBC (`JdbcClient`) og Flyway for MSH-konfigurasjonane, Testcontainers i testane
 - kotlinx.serialization for API-modellen, Jackson for `StandardBusinessDocument`
 - [move-common](https://github.com/felleslosninger/efm-common) for JOSE, CMS og ASiC-E (dokumentpakking)
 - Kotest, MockK, springmockk og WireMock for testar
@@ -68,6 +69,7 @@ Alle pakkane ligg under `no.difi.meldingsutveksling.nhn.adapter`.
 | `integration.adresseregisteret`   | `AdresseregisteretService`: oppslag i AR og Fastlegeregisteret, og omsetjing av feil derifrå.                  |
 | `integration.msh`                 | `MshService` mot MSH, og mapping mellom `StandardBusinessDocument` og NHN sine XML-format (MsgHead, AppRec).   |
 | `integration.IntegrationBeans`    | Opprettar klientane frå KS Fiks-biblioteka (AR, FLR, MSH, HelseID).                                            |
+| `mshconfiguration`                | MSH-konfigurasjonane til HER-id-ane: registrering i MSH, lagring i MariaDB og `lastUsed`. Sjå [MSH-konfigurasjon](#msh-konfigurasjon). |
 | `security`                        | Spring Security-oppsett, `ClientContext` (claims frå Maskinporten-tokenet) og tilgangskontroll (`SecurityService`). |
 | `audit`                           | Auditlogging av API-kall og pseudonymisering av fødselsnummer i auditloggen (`IdentifierPseudonymizer`).       |
 | `logging`                         | Maskering av fødselsnummer i applikasjonsloggen (`FnrMaskingLogstashEncoder`) og i spora til OpenTelemetry (`SpanUrlMasking`). |
@@ -171,6 +173,8 @@ i det biblioteket.
 
 - Alle kall til `/api/**` krev eit Maskinporten-token med scope `eformidling:dph`. Tokenet må vere utferda av ein av
   `security.trusted-issuers`.
+- Admin-API-et under `/api/admin/**` krev i staden scope `eformidling:dph.admin`. Det eine scopet gir ikkje tilgang til
+  den andre delen av API-et.
 - `ClientContext` hentar `client_id`, `consumer`, `supplier`, `delegation_source` og `scope` frå tokenet.
 - Før adapteret les eller sender meldingar for ein HER-id, slår `SecurityService` opp HER-id-en i AR og sjekkar at
   `consumer` i tokenet er organisasjonen som eig han (forelderen i AR). Får klienten ikkje tilgang, vert svaret `403`.
@@ -212,9 +216,58 @@ på `/nhn-adapter/v3/api-docs`. Begge er opne utan token.
 | GET    | `/api/lookup/{identifier}`                  | –                                               | `application/json` `ArDetails`  | Slår opp `her-id:<HER-id>` eller `fastlege-for:<fødselsnummer>` i AR. Ukjend HER-id gir `404`. |
 | POST   | `/api/messages/out`                         | `multipart/form-data` (`forretningsmelding`, `dokumentpakke`) | `text/plain` meldingsreferanse | Sender ei dialogmelding eller ein kvittering. `dokumentpakke` trengst berre for dialogmelding. |
 | GET    | `/api/messages/out/{messageId}/statuses`    | –                                               | `application/json` `MessageStatus[]` | Transport- og kvitteringsstatus for ei utgåande melding. Krev tilgang til HER-id-en til avsendaren. |
-| GET    | `/api/messages/in?receiverHerId=<HER-id>`   | –                                               | `application/json` `IncomingMessage[]` | Lister innkomne meldingar for ein HER-id.                                              |
-| POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. |
-| POST   | `/api/messages/in/{messageId}/read?receiverHerId=<HER-id>` | –                                | `text/plain`                    | Markerer ei innkomen melding som lesen i MSH.                                                  |
+| GET    | `/api/notifications/unread?herId=<HER-id>[&notificationsToFetch=<1-1000>]` | – | `application/json` `Notification[]` | Uleste notifikasjonar frå MSH for ein HER-id, slik MSH gir dei. Ei ny melding vert annonsert med `NEW_MESSAGE` og `relatedMessageId`. Ein notifikasjon er ulesen til han vert sletta. Ein klient med nhn-model les ein type modellen ikkje kjenner, til dømes frå ein nyare adapter, som `UNKNOWN`, så resten av lista kan lesast. Ein ny type frå MSH stoppar førebels i msh-client 6.0.1, og gir `502` for heile lista. |
+| POST   | `/api/notifications/delete`                 | `application/json` `{"notificationIds": [...]}` (1–1000) | `text/plain` | Slettar notifikasjonar i MSH. MSH avgrensar slettinga til HER-id-ane til organisasjonen klienten handlar for. Ein leverandør utan godkjend delegering får `403`. |
+| GET    | `/api/messages/in/{messageId}?receiverHerId=<HER-id>` | –                                     | `application/json` `IncomingMessage` | Metadata for ei innkomen melding. `403` om meldinga ikkje er til `receiverHerId`. |
+| POST   | `/api/messages/in`                          | `application/jose` (JWE med `{"id": "<id>"}`)   | `multipart/mixed` (`forretningsmelding`, ev. `dokumentpakke`) | Hentar ei innkomen melding, kryptert til klienten. `403` om mottakaren i meldinga høyrer til ein annan organisasjon. `422` om meldinga er ugyldig, med feilkoden for applikasjonskvitteringa som `errorCode` og `E7782` (melding) eller `E7783` (applikasjonskvittering) som `technicalCode`. Ein 4xx frå MSH har ingen `technicalCode`. Kopimottakarar er ikkje støtta: MSH listar dei som mottakarar, men meldinga namngir hovudmottakaren. |
+| POST   | `/api/messages/in/{messageId}/downloaded?receiverHerId=<HER-id>` | –                          | `text/plain`                    | Markerer meldinga som nedlasta i MSH, som slettar forretningsdokumentet der. Notifikasjonen vert ikkje sletta. |
+| GET    | `/api/admin/msh-configurations`             | –                                               | `application/json` `MshConfigurationDetails[]` | MSH-konfigurasjonane adapteren har registrert, med `lastUsed`: sist adapteren sende eller tok imot ei melding for HER-id-en. Krev `eformidling:dph.admin`. |
+| PUT    | `/api/admin/msh-configurations/{herId}`     | valfri `application/json` `{"clientLocked": false}` | `application/json` `MshConfigurationDetails` | Registrerer MSH-konfigurasjonen til HER-id-en i MSH, eller byter ho ut. `404` om HER-id-en ikkje finst i AR. Krev `eformidling:dph.admin`. |
+| DELETE | `/api/admin/msh-configurations/{herId}`     | –                                               | `text/plain`                    | Slettar MSH-konfigurasjonen til HER-id-en i MSH. `404` om adapteren ikkje har nokon. Krev `eformidling:dph.admin`. |
+
+### MSH-konfigurasjon
+
+MSH krev ein konfigurasjon for kvar HER-id det handterer meldingar for. Utan han kan MSH avvise førespurnader for
+HER-id-en, og notifikasjonane hans vert sletta etter 4 dagar. Adapteren registrerer konfigurasjonen:
+
+- første gong ein klient brukar HER-id-en: poller notifikasjonar, sender ei melding eller hentar ei innkomen melding.
+  Konfigurasjonen vert registrert med HelseID-tenanten til klienten (multi-tenant for ein leverandør), utan lås. Går
+  registreringa gale, vert det logga, og førespurnaden går som vanleg. Adapteren prøver på nytt etter 5 minutt.
+- når ein administrator legg han inn med `PUT /api/admin/msh-configurations/{herId}`. Organisasjonen er den som eig
+  HER-id-en i AR, og tenanten den HER-id-en alt er registrert med (elles single-tenant). `clientLocked` gjer at berre
+  adapteren sin HelseID-klient kan handle for HER-id-en. Andre klientar får `423 Locked` frå MSH. Skriv ein administrator
+  og ein klient samstundes, vinn det administratoren lagra.
+- på nytt for alle lagra konfigurasjonar kvar gong adapteren startar, slik NHN tilrår, med tenanten kvar av dei er
+  registrert med. Avviser MSH ein førespurnad (4xx), vert HER-id-ane i han prøvde éin og éin. Svarar ikkje MSH, vert
+  ingen prøvde éin og éin. HER-id-ar som ikkje vart registrerte, vert registrerte på nytt neste gong ein klient brukar
+  dei. Har ein administrator lagra ein annan lås medan registreringa køyrde, vert den registrert etterpå.
+
+Ved sletting fjernar adapteren konfigurasjonen i MSH og i databasen. Har MSH han ikkje (`404`), vert han berre sletta i
+databasen.
+
+Konfigurasjonane ligg i tabellen `msh_configuration` i MariaDB, med tidspunkt i UTC. Flyway lagar og migrerer tabellen
+ved oppstart ([`db/migration`](nhn-adapter-app/src/main/resources/db/migration)). Meldingsflyten er ikkje avhengig av
+databasen:
+
+- Adapteren startar òg når han ikkje får kontakt med databasen. Då prøver han migreringa att kvar 30. sekund i
+  bakgrunnen, og lèt databasen vere ved sending og mottak til ho har lukkast. Deretter vert dei lagra konfigurasjonane
+  registrerte i MSH. Feilar migreringa av andre grunnar, til dømes eit skript med feil, stoppar oppstarten som før.
+- Ein HER-id som er kjend som registrert, treng ingen databasekall på om lag ei time (45–75 minutt, så ikkje alle
+  går ut samstundes).
+- Ein førespurnad ventar høgst 2 sekund på registreringa av HER-id-en. Resten skjer i bakgrunnen, og det er berre éi
+  registrering i gang per HER-id, same kor mange førespurnader som kjem.
+- `last_used` vert oppdatert i bakgrunnen, høgst éin gong i minuttet per HER-id. Det skjer når adapteren sender ei
+  melding eller ein kvittering for HER-id-en, eller tek imot ei melding til han.
+- Er databasen nede eller oppteken, eller sviktar tilkoplinga, vert han ikkje spurd att på 30 sekund, for nokon
+  HER-id. Ein feil i data for éin HER-id gjeld berre den HER-id-en. Hikari gir opp ei tilkopling etter 2 sekund, eit
+  databasekall gir opp etter 10 sekund, og databasekalla har ein eigen trådpool.
+
+Feilar registreringa frå ein administrator, vert den førre konfigurasjonen lagt tilbake i databasen, med mindre nokon
+har lagra ein ny i mellomtida. Sidan MSH kan ha fått den nye likevel, til dømes ved tidsavbrot, vert HER-id-en
+registrert på nytt ved neste bruk, slik han er lagra.
+
+Ein konfigurasjon som vert sletta medan HER-id-en framleis er i bruk, vert registrert på nytt neste gong klienten brukar
+HER-id-en. Har ein annan instans sletta han, kan det ta opptil ei time.
 
 ### Feil
 
@@ -225,16 +278,43 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | `HerIdNotFoundException` på oppslag                                      | 404            |
 | `HerIdNotFoundException` elles, `IllegalArgumentException`, `DialogmeldingNotFoundException`, `ApplicationReceiptException` | 400 |
 | `ClientInputException`, til dømes fleire filer i dokumentpakken enn `limits.max-dokumentpakke-files` | 400 |
+| Ei innkomen melding er ugyldig (`E7782`), til dømes ikkje velforma XML, ikkje gyldig etter skjemaet, eit format som ikkje er støtta eller utan pasient eller HER-id. `errorCode` er feilkoden klienten avviser meldinga med i ein applikasjonskvittering | 422 |
+| Ein innkomen applikasjonskvittering er ugyldig (`E7783`). Klienten skal ikkje svare på han med ein ny applikasjonskvittering | 422 |
 | `AccessDeniedException`                                                  | 403            |
 | `MessageTooLargeException`: førespurnaden, dei utpakka filene i dokumentpakken eller meldinga til MSH er for stor | 413 |
 | Fleirdelt kropp over grensene i `spring.webflux.multipart`               | 413            |
 | Førespurnaden er ikkje motteken innan `limits.max-upload-time`           | 408            |
 | Feil frå AR (`E7778`) eller FLR (`E7779`)                                | 502            |
-| 4xx frå MSH, unnateke 401 og 403                                         | same status og melding som MSH gav |
-| Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 5xx og nettverksfeil | 502 |
+| 4xx frå MSH, unnateke 401, 403 og 423                                    | same status som MSH gav, med meldinga «The request was rejected by MSH» |
+| Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 423 (klienten er låst i MSH), 5xx og nettverksfeil | 502 |
 | Timeout mot AR (`E7778`), FLR (`E7779`) eller MSH og HelseID (`E7780`)   | 504            |
 | For mange store sendingar samstundes (`E7781`)                           | 503            |
+| Databasen er nede eller ikkje migrert enno, berre for `/api/admin/msh-configurations` (`E7784`) | 503 |
 | Alt anna (`E7777`)                                                       | 500            |
+
+Når MSH har teke imot ei melding eller ein applikasjonskvittering, men svaret frå MSH ikkje kan lesast, svarer
+adapteren `502` (`E7780`) sjølv om meldinga er send. Ein klient som sender på nytt etter `502` eller `504`, kan difor
+sende same melding to gonger.
+
+Ei innkomen melding vert avvist med `422` (`E7782`) og denne feilkoden når ho ikkje oppfyller det adapteren krev:
+
+| Krav | Feilkode |
+|------|----------|
+| Velforma XML i UTF-8, UTF-16 med byte order mark eller kodinga XML-deklarasjonen oppgir | `T01` ugyldig XML |
+| MsgHead `v1.2 2006-05-24` med ein Dialogmelding 1.0 eller 1.1 som første dokument | `T10` støttar ikkje formatet |
+| Gyldig etter skjemaet. Eit ekstra dokument i eit namnerom adapteren ikkje kjenner, gjer meldinga ugyldig | `T02` validerer ikkje |
+| Ein pasient med fødselsnummer eller D-nummer. Andre id-ar, til dømes H-nummer, er ikkje nok | `E36` utan pasient, `E30` utan id |
+| Avsendar og mottakar med HER-id, hos underavdelinga eller helsepersonellet, elles hos verksemda | `T99` anna feil i formatet |
+| Ein mottakar som finst i Adresseregisteret. Finst ikkje HER-id-en til mottakaren der, vert meldinga levert til verksemda | `E21` mottakar finst ikkje |
+| Vedlegg (`A`) i ein `Base64Container` med gyldig MIME-type | `T10` / `T99` |
+
+Id-ar av typar adapteren ikkje kjenner, vert ignorerte. Dokument som ikkje er vedlegg, til dømes referansar, vert òg
+ignorerte. Namn på pasient og helsepersonell kan mangle.
+
+Ein innkomen applikasjonskvittering vert avvist med `422` (`E7783`) på same måte. HER-id-en til ein part er id-en til
+personen, elles avdelinga, elles institusjonen. Berre ein id med `TypeId` `HER`, eller utan `TypeId`, eller ein
+`AdditionalId` av typen `HER` vert brukt. Manglar HER-id-en eller er han ugyldig, er feilkoden `T99`. Finst ikkje
+mottakaren i Adresseregisteret, vert nivåa over prøvde før kvitteringa vert avvist med `E21`.
 
 ### Timeout og grenser
 
@@ -246,7 +326,7 @@ MSH har i tillegg `request`, som avgrensar heile kallet, òg sendinga av ei stor
 
 - `max-request-size`: førespurnader med større `Content-Length` vert avviste før kroppen vert lesen.
 - `max-dokumentpakke-files`: kor mange filer dokumentpakken kan ha. Filene kan til saman vere 3/4 av grensa til MSH på
-  50 MB utpakka, sidan meldinga til MSH er Base64-koda. Storleiken vert målt, òg for `META-INF`, før filene vert lesne.
+  35 MB utpakka, sidan meldinga til MSH er Base64-koda. Storleiken vert målt, òg for `META-INF`, før filene vert lesne.
 - `large-send-threshold`, `max-concurrent-large-sends` og `large-send-max-wait`: kor mange store sendingar som kan
   byggjast samstundes, og kor lenge ei sending ventar på tur før ho får `503`. Ei sending er stor når førespurnaden
   eller den utpakka dokumentpakken er over terskelen.
@@ -257,6 +337,7 @@ MSH har i tillegg `request`, som avgrensar heile kallet, òg sendinga av ei stor
 ### Føresetnader
 
 - JDK 25
+- Docker eller Podman for integrasjonstestane, som startar MariaDB 11.4 med Testcontainers
 - Tilgang til GitHub Packages for `felleslosninger`. Avhengigheiter som move-common vert henta derifrå, så du treng eit
   [personal access token](https://github.com/settings/tokens) med `read:packages` i `~/.m2/settings.xml`:
 
@@ -314,6 +395,10 @@ Lag `nhn-adapter-app/src/main/resources/application-local.yml`. Fila står i `.g
 spring:
   application:
     environment: 'local'
+  datasource:
+    url: "jdbc:mariadb://localhost:3306/nhn_adapter"
+    username: "<brukarnamn>"
+    password: "<passord>"
 
 server:
   port: 8082
@@ -355,6 +440,9 @@ certificate:
   mode: TEST
 ```
 
+Applikasjonen treng òg ein MariaDB-database. Han kan du starte med til dømes `podman run -d -p 3306:3306 -e MARIADB_DATABASE=nhn_adapter
+-e MARIADB_USER=<brukarnamn> -e MARIADB_PASSWORD=<passord> -e MARIADB_RANDOM_ROOT_PASSWORD=1 mariadb:11.4`.
+
 Start så applikasjonen med profilen `local`, anten ved å køyre `main` i
 [`Main.kt`](nhn-adapter-app/src/main/kotlin/no/difi/meldingsutveksling/nhn/adapter/Main.kt) frå IntelliJ med
 `spring.profiles.active=local`, eller frå kommandolinja:
@@ -382,8 +470,10 @@ Felles oppsett ligg i [`application.yml`](nhn-adapter-app/src/main/resources/app
 | `nhn.services.ar.url`                         | –                                           | URL til REST-API-et til Adresseregisteret.                        |
 | `nhn.services.flr.*`                          | `NHN_SERVICES_USERNAME`, `NHN_SERVICES_PASSWORD` | URL og innlogging til Fastlegeregisteret.                    |
 | `nhn.services.msh.url`                        | –                                           | URL til MSH-API-et.                                               |
+| `nhn.services.msh.notifications-to-fetch`    | –                                           | Kor mange uleste notifikasjonar `GET /api/notifications/unread` gir når klienten ikkje ber om eit tal (1–1000, standard 1000). |
 | `oauth2.helse-id.client-id`, `.private-key`   | `NHN_CLIENT_ID`, `NHN_PRIVATE_KEY`          | HelseID-klienten adapteret brukar mot MSH og Adresseregisteret. Nøkkelen er ein JWK. |
 | `oauth2.helse-id.issuer`, `.audience`         | –                                           | HelseID-miljø.                                                    |
+| `spring.datasource.url`, `.username`, `.password` | `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` | MariaDB-databasen med MSH-konfigurasjonane, til dømes `jdbc:mariadb://<vert>:3306/nhn_adapter`. |
 | `keystore.path`, `.alias`, `.password`, `.type` | `KEYSTORE_VALUE`, `KEYSTORE_ALIAS`, `KEYSTORE_PASSWORD`, `KEYSTORE_TYPE` (standard `JKS`) | Nøkkellager med adapteret sitt virksomheitssertifikat. |
 | `audit.pseudonymization-key`                  | `AUDIT_PSEUDONYMIZATION_KEY`                | HMAC-nøkkel for å pseudonymisere fødselsnummer i auditloggen. Minst 32 teikn, ulik per miljø, og må ikkje endrast. |
 | `security.trusted-issuers`                    | –                                           | Maskinporten-issuer(ar) som vert godtekne.                        |
@@ -596,16 +686,21 @@ sequenceDiagram
     participant "NHN Adapter"
     participant Adresseregisteret
     participant MSH
-    Integrasjonspunktet ->> "NHN Adapter": GET /api/messages/in?receiverHerId
+    Integrasjonspunktet ->> "NHN Adapter": GET /api/notifications/unread?herId
     "NHN Adapter" ->> Adresseregisteret: HerId (tilgangskontroll)
-    "NHN Adapter" ->> MSH: Hent meldingar for HerId
-    MSH ->> "NHN Adapter": Meldingar med metadata
-    "NHN Adapter" ->> Integrasjonspunktet: IncomingMessage[]
+    "NHN Adapter" ->> MSH: Hent uleste notifikasjonar for HerId
+    MSH ->> "NHN Adapter": Notifikasjonar
+    "NHN Adapter" ->> Integrasjonspunktet: Notification[] (NEW_MESSAGE med relatedMessageId, m.fl.)
+    Integrasjonspunktet ->> "NHN Adapter": GET /api/messages/in/{id}?receiverHerId
+    "NHN Adapter" ->> MSH: Hent metadata for meldinga
+    "NHN Adapter" ->> Integrasjonspunktet: IncomingMessage
     Integrasjonspunktet ->> "NHN Adapter": POST /api/messages/in (JWE signert med IP-sertifikat + id)
     "NHN Adapter" ->> MSH: Hent business document
     MSH ->> "NHN Adapter": MsgHead/AppRec med vedlegg
     "NHN Adapter" ->> Integrasjonspunktet: SBD (JWE) + ASiCe kryptert til IP-sertifikatet
-    Integrasjonspunktet ->> "NHN Adapter": POST /api/messages/in/{id}/read
-    "NHN Adapter" ->> MSH: Marker som lesen
+    Integrasjonspunktet ->> "NHN Adapter": POST /api/messages/in/{id}/downloaded?receiverHerId
+    "NHN Adapter" ->> MSH: Marker som nedlasta (slettar forretningsdokumentet)
+    Integrasjonspunktet ->> "NHN Adapter": POST /api/notifications/delete
+    "NHN Adapter" ->> MSH: Slett notifikasjonen
     Integrasjonspunktet ->> Fagsystem: SBH + ASiCe
 ```

@@ -45,6 +45,9 @@ import org.springframework.core.io.Resource
 private const val VEDLEGG_MAX_BYTES = 18 * 1000 * 1000
 
 object BusinessDocumentSerializer {
+    /** The MsgType of the messages sent, which are all Dialogmelding 1.1. */
+    val MESSAGE_TYPE: MeldingensFunksjon = messageType(DialogmeldingVersion.V1_1)
+
     fun serializeNhnMessage(businessDocument: SendMessageInput): String {
         try {
             return serialize(
@@ -78,7 +81,7 @@ object BusinessDocumentSerializer {
         MsgHead().apply {
             msgInfo =
                 MsgInfo().apply {
-                    type = buildMsgInfoType(DialogmeldingVersion.V1_1)
+                    type = MESSAGE_TYPE.toMsgHeadCS()
                     miGversion = BusinessDocumentDeserializer.MSG_HEAD_VERSION
                     genDate = currentDateTime()
                     msgId = businessDocument.id.toString()
@@ -141,11 +144,11 @@ object BusinessDocumentSerializer {
             address = person.address?.let { convert(it) }
         }
 
-    private fun buildMsgInfoType(version: DialogmeldingVersion) =
+    private fun messageType(version: DialogmeldingVersion): MeldingensFunksjon =
         when (version) {
             DialogmeldingVersion.V1_0 -> MeldingensFunksjon.DIALOG_FORESPORSEL
             DialogmeldingVersion.V1_1 -> MeldingensFunksjon.DIALOG_HELSEFAGLIG
-        }.toMsgHeadCS()
+        }
 
     private fun currentDateTime() =
         DatatypeFactory.newInstance()

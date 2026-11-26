@@ -9,14 +9,18 @@ import java.time.Instant
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.DatabaseUnavailableException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MessageTooLargeException
+import no.difi.meldingsutveksling.nhn.adapter.errors.MshConfigurationNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.UploadTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.logging.hasDataInCauses
 import no.difi.meldingsutveksling.nhn.adapter.logging.loggableMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.isDatabaseOutage
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
@@ -46,9 +50,19 @@ private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
 private const val MSH_ERROR_CODE = "E7780"
 private const val ADAPTER_BUSY_ERROR_CODE = "E7781"
+private const val DATABASE_ERROR_CODE = "E7784"
 
-/** MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client. */
-private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
+/** An incoming message that is invalid, which the client rejects with an application receipt. */
+private const val INVALID_MESSAGE_CODE = "E7782"
+
+/** An incoming application receipt that is invalid, which the client must not answer with another one. */
+private const val INVALID_APP_REC_CODE = "E7783"
+
+/**
+ * MSH answers these when the adapter itself is not authorized, e.g. a misconfigured HelseID client, or when its client
+ * is locked in MSH (423).
+ */
+private val MSH_AUTHORIZATION_ERRORS = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.LOCKED)
 
 /**
  * Translates exceptions thrown by the handlers into [ApiError] responses.
@@ -64,11 +78,13 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
     when (error) {
         // Unknown HER-id: 404 when it is the looked-up resource, 400 (bad input) elsewhere.
         is HerIdNotFoundException ->
-            if (matchesRoute(ApiPaths.LOOKUP)) {
+            if (matchesRoute(ApiPaths.LOOKUP) || matchesRoute(ApiPaths.MSH_CONFIGURATION)) {
                 toApiError(HttpStatus.NOT_FOUND, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
             } else {
                 clientError(error.message ?: CLIENT_ERROR)
             }
+        is MshConfigurationNotFoundException ->
+            toApiError(HttpStatus.NOT_FOUND, FeilmeldingForApplikasjonskvittering.ANNEN_FEIL, error.message)
         // Without the stack trace: the message of the cause may quote the client's input
         is ClientInputException -> {
             logger.warn("Invalid input for ${route()}: ${error.loggableMessage()}")
@@ -90,6 +106,16 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
         is ApplicationReceiptException -> {
             logger.warn("Invalid message for ${route()}: ${error.loggableMessage()}")
             toApiError(HttpStatus.BAD_REQUEST, error.error)
+        }
+        // The client rejects an invalid message with the error code, but must not answer an invalid
+        // application receipt, which the technical code tells. Without the stack trace, as above.
+        is InvalidIncomingDocumentException -> {
+            logger.warn("Invalid incoming message for ${route()}: ${error.loggableMessage()}")
+            toApiError(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                error.error,
+                technicalCode = if (error.isAppRec) INVALID_APP_REC_CODE else INVALID_MESSAGE_CODE,
+            )
         }
         is AdresseregisteretException -> serviceError("Adresseregisteret", ADRESSEREGISTERET_ERROR_CODE, error)
         is FastlegeregisteretException -> serviceError("Fastlegeregisteret", FASTLEGEREGISTERET_ERROR_CODE, error)
@@ -115,8 +141,22 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
                 ADAPTER_BUSY_ERROR_CODE,
             )
         }
-        else -> multipartError(error) ?: unexpectedError(error)
+        // Only the MSH configurations depend on the database, and messaging never fails on it
+        is DatabaseUnavailableException -> databaseUnavailable(error)
+        else ->
+            if (error.isDatabaseOutage()) databaseUnavailable(error)
+            else multipartError(error) ?: unexpectedError(error)
     }
+
+private fun ServerRequest.databaseUnavailable(error: Throwable): ApiError {
+    logger.error("Database unavailable for ${route()}: ${error.message}", error)
+    return toApiError(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
+        tryLaterMessage(DATABASE_ERROR_CODE),
+        DATABASE_ERROR_CODE,
+    )
+}
 
 /**
  * A request body that breaks the limits in `spring.webflux.multipart`, which Spring reports while reading the parts.

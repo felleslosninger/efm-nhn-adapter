@@ -31,6 +31,7 @@ import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.DialogmeldingDeserializer
 import no.difi.meldingsutveksling.nhn.adapter.model.toMessageStatus
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
 import no.difi.move.common.dokumentpakking.PartUtils
@@ -57,12 +58,16 @@ class OutHandler(
     private val securityService: SecurityService,
     private val adresseregisteretService: AdresseregisteretService,
     private val largeSendLimiter: LargeSendLimiter,
+    private val mshConfigurationService: MshConfigurationService,
     private val maxUploadTime: Duration,
 ) {
     suspend fun getStatus(messageId: UUID, @Parameter(hidden = true) clientContext: ClientContext): ServerResponse {
         val auditEntry = NHNAdapterAuditIdentifier.GET_STATUS.entry(clientContext).attribute("messageId", messageId)
 
         auditLogService.log(auditEntry) {
+            // Checked again for the sender once it is read from MSH, but no MSH call is made
+            // without delegation
+            securityService.assertAccessToConsumer(clientContext)
             // Do not rely on MSH to limit status lookups to the client's own messages
             val senderHerId = mshService.getSenderHerId(messageId, clientContext)
             auditEntry.attribute("senderHerId", senderHerId)
@@ -99,6 +104,7 @@ class OutHandler(
 
                     // Authorize before any further lookups or decryption of the dokumentpakke
                     val sender = securityService.assertAccessToHerId(clientContext, sbd.senderHerId)
+                    mshConfigurationService.ensureRegistered(sbd.senderHerId, clientContext)
 
                     when (sbd.type) {
                         BusinessMessageType.DIALOGMELDING.type ->
@@ -106,7 +112,7 @@ class OutHandler(
                         BusinessMessageType.DIALOGMELDING_KVITTERING.type ->
                             sendApplicationReceipt(sbd, auditEntry, clientContext)
                         else -> throw ClientInputException("Unsupported message type ${sbd.type}")
-                    }
+                    }.also { mshConfigurationService.recordUse(sbd.senderHerId, clientContext) }
                 }
             auditEntry.attribute("messageReference", messageReference)
 
@@ -140,7 +146,7 @@ class OutHandler(
         multipartData: MultiValueMap<String, Part>,
         permitHeld: Boolean,
         clientContext: ClientContext,
-    ): UUID {
+    ): String {
         val message = sbd.dialogmelding
         val pasient = message.pasient ?: throw ClientInputException("Dialogmelding is missing pasient")
         val dokumentpakke = multipartData.requirePart(MultipartNames.DOKUMENTPAKKE)
@@ -148,7 +154,7 @@ class OutHandler(
 
         val received = withContext(Dispatchers.IO) { parcelService.receiveDokumentpakke(dokumentpakke) }
 
-        suspend fun send(): UUID =
+        suspend fun send(): String =
             withContext(Dispatchers.IO) {
                 val documents = parcelService.getAttachments(received)
                 val dialogmelding = readDialogmelding(documents, message.hoveddokument)
@@ -180,7 +186,7 @@ class OutHandler(
         sbd: StandardBusinessDocument,
         auditEntry: AuditEntry.AuditEntryBuilder,
         clientContext: ClientContext,
-    ): UUID {
+    ): String {
         val receipt = sbd.dialogmeldingKvittering
         auditEntry.attribute("status", receipt.status)
         return withContext(Dispatchers.IO) {

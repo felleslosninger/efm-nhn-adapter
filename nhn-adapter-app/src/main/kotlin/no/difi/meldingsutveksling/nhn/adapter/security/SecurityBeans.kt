@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.security
 
+import no.difi.meldingsutveksling.nhn.adapter.ApiPaths
 import no.difi.meldingsutveksling.nhn.adapter.config.HelseId
 import no.difi.meldingsutveksling.nhn.adapter.config.SecurityConfig
 import no.ks.fiks.helseid.Environment
@@ -22,6 +23,10 @@ object SecurityBeans {
 
     private const val API_AUTHORITY = "SCOPE_eformidling:dph"
 
+    /** The scope of the administration API, e.g. for MoveAdmin. The other scope gives no access to it. */
+    const val ADMIN_SCOPE = "eformidling:dph.admin"
+    private const val ADMIN_AUTHORITY = "SCOPE_$ADMIN_SCOPE"
+
     fun securityFilterChain(http: ServerHttpSecurity, config: SecurityConfig): SecurityWebFilterChain =
         http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
@@ -29,6 +34,9 @@ object SecurityBeans {
                 exchange
                     .pathMatchers(*PUBLIC_PATHS)
                     .permitAll()
+                    // Before /api/**, which would otherwise let the API scope in
+                    .pathMatchers(ApiPaths.ADMIN)
+                    .hasAuthority(ADMIN_AUTHORITY)
                     .pathMatchers("/api/**")
                     .hasAuthority(API_AUTHORITY)
                     .anyExchange()

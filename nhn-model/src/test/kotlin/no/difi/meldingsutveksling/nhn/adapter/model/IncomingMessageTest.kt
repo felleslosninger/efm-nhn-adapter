@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.model
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -26,17 +27,54 @@ class IncomingMessageTest :
             )
 
         describe("MessageWithMetadata.toInMessage") {
-            it("maps the message metadata") {
+            fun metadata(
+                receiverHerIds: List<Int>? = listOf(1000002),
+                senderHerId: Int? = 2000002,
+                businessDocumentId: String? = "document-1",
+                businessDocumentMsgType: String? = "APPREC",
+            ) =
                 MessageWithMetadata(
-                        id = messageId,
-                        contentType = "application/xml",
-                        receiverHerId = 1000002,
-                        senderHerId = 2000002,
-                        businessDocumentId = "document-1",
-                        businessDocumentDate = businessDocumentDate,
-                        isAppRec = true,
-                    )
-                    .toInMessage() shouldBe incomingMessage
+                    id = messageId.toString(),
+                    contentType = "application/xml",
+                    receiverHerIds = receiverHerIds,
+                    senderHerId = senderHerId,
+                    businessDocumentId = businessDocumentId,
+                    businessDocumentDate = businessDocumentDate,
+                    businessDocumentMsgType = businessDocumentMsgType,
+                )
+
+            it("maps the message metadata") { metadata().toInMessage(1000002) shouldBe incomingMessage }
+
+            it("is an application receipt only when the MsgType is APPREC") {
+                metadata(businessDocumentMsgType = "apprec").toInMessage(1000002).isAppRec shouldBe true
+                metadata(businessDocumentMsgType = "DIALOG_HELSEFAGLIG").toInMessage(1000002).isAppRec shouldBe false
+            }
+
+            it("gives the message to the requested receiver when there are several receivers") {
+                metadata(receiverHerIds = listOf(1000001, 1000002, 1000003)).toInMessage(1000002) shouldBe
+                    incomingMessage
+            }
+
+            it("rejects a message when MSH does not list the receivers, as the receiver cannot be checked") {
+                shouldThrow<IllegalArgumentException> { metadata(receiverHerIds = null).toInMessage(1000002) }
+            }
+
+            it("rejects a message not received by the requested receiver") {
+                shouldThrow<IllegalArgumentException> {
+                    metadata(receiverHerIds = listOf(1000001)).toInMessage(1000002)
+                }
+            }
+
+            it("rejects a message without sender") {
+                shouldThrow<IllegalArgumentException> { metadata(senderHerId = null).toInMessage(1000002) }
+            }
+
+            it("rejects a message without business document id") {
+                shouldThrow<IllegalArgumentException> { metadata(businessDocumentId = null).toInMessage(1000002) }
+            }
+
+            it("rejects a message without MsgType") {
+                shouldThrow<IllegalArgumentException> { metadata(businessDocumentMsgType = null).toInMessage(1000002) }
             }
         }
 

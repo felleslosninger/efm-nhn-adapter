@@ -3,30 +3,37 @@ package no.difi.meldingsutveksling.nhn.adapter.handlers
 import io.swagger.v3.oas.annotations.Parameter
 import java.util.UUID
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.builtins.ListSerializer
 import no.difi.meldingsutveksling.nhn.adapter.audit.AuditLogService
 import no.difi.meldingsutveksling.nhn.adapter.audit.NHNAdapterAuditIdentifier
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
+import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.fromMshData
 import no.difi.meldingsutveksling.nhn.adapter.extensions.multipartMixed
 import no.difi.meldingsutveksling.nhn.adapter.extensions.receiverHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.senderHerId
 import no.difi.meldingsutveksling.nhn.adapter.extensions.textPlain
 import no.difi.meldingsutveksling.nhn.adapter.extensions.toJWEToken
+import no.difi.meldingsutveksling.nhn.adapter.integration.msh.BusinessDocumentResponse
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
+import no.difi.meldingsutveksling.nhn.adapter.messages.BusinessMessageType
 import no.difi.meldingsutveksling.nhn.adapter.model.ContentTypes
 import no.difi.meldingsutveksling.nhn.adapter.model.GetDocumentInput
 import no.difi.meldingsutveksling.nhn.adapter.model.IncomingMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartFileNames
 import no.difi.meldingsutveksling.nhn.adapter.model.MultipartNames
+import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.jsonParser
 import no.difi.meldingsutveksling.nhn.adapter.model.toInMessage
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.meldingsutveksling.nhn.adapter.security.ClientContext
 import no.difi.meldingsutveksling.nhn.adapter.security.SecurityService
+import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import org.springframework.core.io.ByteArrayResource
 import org.springframework.core.io.Resource
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import org.springframework.web.reactive.function.server.bodyValueAndAwait
@@ -39,29 +46,42 @@ class InHandler(
     private val parcelService: ParcelService,
     private val auditLogService: AuditLogService,
     private val securityService: SecurityService,
+    private val mshConfigurationService: MshConfigurationService,
 ) {
-    suspend fun getMessagesWithMetadata(
+    /** The metadata of a message to [receiverHerId], as referred to by a NewMessage notification. */
+    suspend fun getMessage(
+        messageId: UUID,
         receiverHerId: Int,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
         val auditEntry =
-            NHNAdapterAuditIdentifier.GET_MESSAGES_WITH_METADATA.entry(clientContext)
+            NHNAdapterAuditIdentifier.GET_MESSAGE.entry(clientContext)
+                .attribute("messageId", messageId)
                 .attribute("receiverHerId", receiverHerId)
 
-        // Clients poll this endpoint frequently, so empty results are not audit logged
-        var messageCount = 0
-        auditLogService.log(auditEntry, skipOnSuccess = { messageCount == 0 }) {
+        auditLogService.log(auditEntry) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
-            val messages = mshService.getMessagesWithMetadata(receiverHerId, clientContext)
-            val inMessages = fromMshData { messages.map { it.toInMessage() } }
-            messageCount = inMessages.size
-            auditEntry.attribute("messageCount", messageCount)
+            val message = mshService.getMessage(messageId, clientContext)
+            // MSH lets the client get any message to the HER-ids of its organization, not only
+            // those to [receiverHerId]
+            message.receiverHerIds?.let { receivers ->
+                if (receiverHerId !in receivers) {
+                    throw AccessDeniedException("Message $messageId is not to $receiverHerId")
+                }
+            }
+            val inMessage = fromMshData { message.toInMessage(receiverHerId) }
+            auditEntry.attribute("senderHerId", inMessage.senderHerId)
 
-            val json = jsonParser.encodeToString(ListSerializer(IncomingMessage.serializer()), inMessages)
+            val json = jsonParser.encodeToString(IncomingMessage.serializer(), inMessage)
             return ServerResponse.ok().json().bodyValueAndAwait(json)
         }
     }
 
+    /**
+     * The business document, for the receiver named in it. Copy receivers are not supported: MSH lists them as
+     * receivers of the message, but the business document names the main receiver, so a copy receiver in another
+     * organization is denied access.
+     */
     suspend fun getBusinessDocument(
         request: ServerRequest,
         @Parameter(hidden = true) clientContext: ClientContext,
@@ -69,6 +89,9 @@ class InHandler(
         val auditEntry = NHNAdapterAuditIdentifier.GET_BUSINESS_DOCUMENT.entry(clientContext)
 
         auditLogService.log(auditEntry) {
+            // Checked again for the receiver once the business document is read, but no MSH call is
+            // made without delegation
+            securityService.assertAccessToConsumer(clientContext)
             val jwsObject = parcelService.decryptAndVerify(request.toJWEToken())
             val input =
                 try {
@@ -83,7 +106,12 @@ class InHandler(
             auditEntry
                 .attribute("senderHerId", document.sbd.senderHerId)
                 .attribute("receiverHerId", document.sbd.receiverHerId)
-            securityService.assertAccessToHerId(clientContext, document.sbd.receiverHerId)
+            val receiverHerId = assertAccessToReceiver(clientContext, document)
+            if (receiverHerId != document.sbd.receiverHerId) {
+                auditEntry.attribute("fallbackReceiverHerId", receiverHerId)
+                document.sbd.receiverHerId = receiverHerId
+            }
+            mshConfigurationService.recordUse(receiverHerId, clientContext)
 
             val forretningsmelding =
                 parcelService.signAndEncrypt(jsonMapper.writeValueAsString(document.sbd), clientCertificate)
@@ -105,21 +133,54 @@ class InHandler(
         }
     }
 
-    suspend fun markMessageRead(
+    /**
+     * Marks the message downloaded by [receiverHerId], which deletes its business document from MSH. The client
+     * deletes its NewMessage notification itself.
+     */
+    suspend fun markMessageDownloaded(
         messageId: UUID,
         receiverHerId: Int,
         @Parameter(hidden = true) clientContext: ClientContext,
     ): ServerResponse {
         val auditEntry =
-            NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_READ.entry(clientContext)
+            NHNAdapterAuditIdentifier.MARK_MESSAGE_AS_DOWNLOADED.entry(clientContext)
                 .attribute("messageId", messageId)
                 .attribute("receiverHerId", receiverHerId)
 
         auditLogService.log(auditEntry) {
             securityService.assertAccessToHerId(clientContext, receiverHerId)
-            mshService.markMessageRead(messageId, receiverHerId, clientContext)
-            return ServerResponse.ok().textPlain().bodyValueAndAwait("Message marked as read")
+            mshService.markMessageDownloaded(messageId, receiverHerId, clientContext)
+            return ServerResponse.ok().textPlain().bodyValueAndAwait("Message marked as downloaded")
         }
+    }
+
+    /**
+     * Checks access to the receiver of the business document and returns its HER-id. When the receiver's own HER-id is
+     * not in Adresseregisteret, e.g. a department that no longer has one, the levels above it in the document are
+     * tried in turn: the message is delivered to the first of them that is.
+     *
+     * @throws InvalidIncomingDocumentException with [FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE] if
+     *   none of them is in Adresseregisteret: the client only gave the message id, so the receiver is the sender's
+     *   fault
+     */
+    private suspend fun assertAccessToReceiver(clientContext: ClientContext, document: BusinessDocumentResponse): Int {
+        var notFound: HerIdNotFoundException? = null
+        for (herId in (listOf(document.sbd.receiverHerId) + document.receiverHerIdFallbacks).distinct()) {
+            try {
+                securityService.assertAccessToHerId(clientContext, herId)
+                return herId
+            } catch (e: HerIdNotFoundException) {
+                notFound = e
+            }
+        }
+        throw InvalidIncomingDocumentException(
+            ApplicationReceiptException(
+                FeilmeldingForApplikasjonskvittering.MOTTAKER_FINNES_IKKE,
+                "The receiver of the message is not in Adresseregisteret",
+                notFound,
+            ),
+            isAppRec = document.sbd.type == BusinessMessageType.DIALOGMELDING_KVITTERING.type,
+        )
     }
 
     private fun MultipartBodyBuilder.forretningsmelding(resource: Resource) {
