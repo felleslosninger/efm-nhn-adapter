@@ -13,6 +13,8 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import java.io.IOException
+import java.net.SocketTimeoutException
+import java.sql.SQLException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -40,7 +42,9 @@ import no.ks.fiks.nhn.msh.HttpServerException
 import no.ks.fiks.nhn.msh.MshConfiguration
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.RecoverableDataAccessException
 import org.springframework.jdbc.CannotGetJdbcConnectionException
+import org.springframework.jdbc.UncategorizedSQLException
 
 private const val HER_ID = 8144796
 private const val OTHER_HER_ID = 8144797
@@ -67,7 +71,8 @@ class MshConfigurationServiceTest :
         fun service(
             clock: Clock = Clock.fixed(NOW, ZoneOffset.UTC),
             scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined),
-        ) = MshConfigurationService(repository, mshService, adresseregisteretService, clock, scope)
+            isDatabaseMigrated: () -> Boolean = { true },
+        ) = MshConfigurationService(repository, mshService, adresseregisteretService, clock, scope, isDatabaseMigrated)
 
         val service = service()
 
@@ -268,6 +273,44 @@ class MshConfigurationServiceTest :
 
                 coVerify(exactly = 1) { repository.find(any()) }
                 coVerify(exactly = 0) { repository.updateLastUsed(any(), any()) }
+            }
+
+            listOf(
+                    RecoverableDataAccessException("Connection reset"),
+                    UncategorizedSQLException("find", "SELECT", SQLException("Connection reset", "08S01")),
+                    UncategorizedSQLException(
+                        "find",
+                        "SELECT",
+                        SQLException("Failed", "HY000", SocketTimeoutException()),
+                    ),
+                )
+                .forEach { failure ->
+                    it("is left alone after a failed connection: ${failure::class.simpleName} ${failure.cause}") {
+                        coEvery { repository.find(any()) } throws failure
+
+                        service.ensureRegistered(HER_ID, clientContext())
+                        service.ensureRegistered(OTHER_HER_ID, clientContext())
+
+                        coVerify(exactly = 1) { repository.find(any()) }
+                    }
+                }
+
+            it("is left alone until it is migrated, without holding up the client") {
+                var migrated = false
+                val service = service(isDatabaseMigrated = { migrated })
+                coEvery { repository.find(any()) } returns stored()
+
+                service.ensureRegistered(HER_ID, clientContext())
+                service.recordUse(HER_ID, clientContext())
+
+                coVerify(exactly = 0) { repository.find(any()) }
+                coVerify(exactly = 0) { repository.updateLastUsed(any(), any()) }
+                coVerify(exactly = 0) { mshService.setConfigurations(any(), any<ClientContext>()) }
+
+                migrated = true
+                service.ensureRegistered(HER_ID, clientContext())
+
+                coVerify(exactly = 1) { repository.find(HER_ID) }
             }
 
             it("is not left alone after an error in the data of one HER-id") {

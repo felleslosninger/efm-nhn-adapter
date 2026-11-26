@@ -20,8 +20,8 @@ spring:
   http:
     codecs:
       max-in-memory-size: 35MB
-  # MariaDB with the MSH configurations of the HER-ids. Flyway migrates it at startup (db/migration), so the adapter
-  # does not start without it. Once started, messaging does not depend on it.
+  # MariaDB with the MSH configurations of the HER-ids. Flyway migrates it at startup (db/migration). Messaging does not
+  # depend on it: the adapter also starts when it is down, and migrates it once it answers (DatabaseMigration).
   datasource:
     url: ${DATABASE_URL}
     username: ${DATABASE_USERNAME}

@@ -29,6 +29,7 @@ import no.difi.meldingsutveksling.nhn.adapter.integration.IntegrationBeans
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.DOCUMENTS_MAX_BYTES
 import no.difi.meldingsutveksling.nhn.adapter.logging.SpanUrlMasking
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.DatabaseMigration
 import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationRepository
 import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationService
 import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.MshConfigurationStartupRegistration
@@ -137,8 +138,13 @@ private fun services() = BeanRegistrarDsl {
     }
     registerBean { LargeSendLimiter(bean()) }
     registerBean { MshConfigurationRepository(bean()) }
-    registerBean { MshConfigurationService(bean(), bean(), bean()) }
-    registerBean { MshConfigurationStartupRegistration(bean()) }
+    // Picked up by Spring Boot's Flyway auto-configuration, which migrates with it at startup
+    registerBean { DatabaseMigration() }
+    registerBean {
+        val databaseMigration = bean<DatabaseMigration>()
+        MshConfigurationService(bean(), bean(), bean(), isDatabaseMigrated = { databaseMigration.isMigrated })
+    }
+    registerBean { MshConfigurationStartupRegistration(bean(), bean()) }
     // Picked up by Spring's WebHttpHandlerBuilder, which wraps the server's HttpHandler with it
     registerBean { RequestBodyLimit(bean<LimitsConfig>().maxRequestSize) }
     // Applied to the Netty server by Spring Boot: masks the fødselsnummer in traces
