@@ -249,8 +249,9 @@ Konfigurasjonane ligg i tabellen `msh_configuration` i MariaDB, med tidspunkt i 
 ved oppstart ([`db/migration`](nhn-adapter-app/src/main/resources/db/migration)). Meldingsflyten er ikkje avhengig av
 databasen:
 
-- Adapteren startar òg når databasen er nede. Då prøver han migreringa att kvar 30. sekund i bakgrunnen, og lèt
-  databasen vere ved sending og mottak til ho har lukkast. Deretter vert dei lagra konfigurasjonane registrerte i MSH.
+- Adapteren startar òg når han ikkje får kontakt med databasen. Då prøver han migreringa att kvar 30. sekund i
+  bakgrunnen, og lèt databasen vere ved sending og mottak til ho har lukkast. Deretter vert dei lagra konfigurasjonane
+  registrerte i MSH. Feilar migreringa av andre grunnar, til dømes eit skript med feil, stoppar oppstarten som før.
 - Ein HER-id som er kjend som registrert, treng ingen databasekall på om lag ei time (45–75 minutt, så ikkje alle
   går ut samstundes).
 - Ein førespurnad ventar høgst 2 sekund på registreringa av HER-id-en. Resten skjer i bakgrunnen, og det er berre éi
@@ -288,6 +289,7 @@ Alle feil vert returnerte som `ApiError` (JSON) av `NhnErrorFilter`, med `timest
 | Anna feil frå MSH eller HelseID (`E7780`), til dømes 401, 403, 423 (klienten er låst i MSH), 5xx og nettverksfeil | 502 |
 | Timeout mot AR (`E7778`), FLR (`E7779`) eller MSH og HelseID (`E7780`)   | 504            |
 | For mange store sendingar samstundes (`E7781`)                           | 503            |
+| Databasen er nede eller ikkje migrert enno, berre for `/api/admin/msh-configurations` (`E7784`) | 503 |
 | Alt anna (`E7777`)                                                       | 500            |
 
 Når MSH har teke imot ei melding eller ein applikasjonskvittering, men svaret frå MSH ikkje kan lesast, svarer

@@ -3,12 +3,6 @@ package no.difi.meldingsutveksling.nhn.adapter.mshconfiguration
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.github.benmanes.caffeine.cache.Expiry
-import java.net.SocketException
-import java.net.SocketTimeoutException
-import java.sql.SQLException
-import java.sql.SQLNonTransientConnectionException
-import java.sql.SQLRecoverableException
-import java.sql.SQLTransientException
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -27,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import mu.KotlinLogging
+import no.difi.meldingsutveksling.nhn.adapter.errors.DatabaseUnavailableException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MshConfigurationNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
@@ -36,9 +31,6 @@ import no.difi.meldingsutveksling.nhn.adapter.security.isMultiTenant
 import no.difi.meldingsutveksling.nhn.adapter.security.parentOrganizationNumber
 import no.ks.fiks.nhn.msh.HttpException
 import no.ks.fiks.nhn.msh.MshConfiguration
-import org.springframework.dao.DataAccessResourceFailureException
-import org.springframework.dao.RecoverableDataAccessException
-import org.springframework.dao.TransientDataAccessException
 
 private val logger = KotlinLogging.logger {}
 
@@ -110,7 +102,10 @@ class MshConfigurationService(
 
     @Volatile private var databaseDownUntil: Instant = Instant.EPOCH
 
-    suspend fun list(): List<StoredMshConfiguration> = repository.findAll()
+    suspend fun list(): List<StoredMshConfiguration> {
+        requireMigrated()
+        return repository.findAll()
+    }
 
     /**
      * Registers the configuration of the HER-id in MSH, and stores it. A configuration already registered is replaced,
@@ -120,6 +115,7 @@ class MshConfigurationService(
      *   Adresseregisteret
      */
     suspend fun register(herId: Int, clientLocked: Boolean): StoredMshConfiguration {
+        requireMigrated()
         val organizationNumber = adresseregisteretService.lookupByHerId(herId).parentOrganizationNumber
         val previous = repository.find(herId)
         val multiTenant = previous?.multiTenant ?: false
@@ -161,6 +157,7 @@ class MshConfigurationService(
      * @throws MshConfigurationNotFoundException if the adapter has no configuration of the HER-id
      */
     suspend fun delete(herId: Int) {
+        requireMigrated()
         val configuration = repository.find(herId) ?: throw MshConfigurationNotFoundException(herId)
         try {
             mshService.deleteConfiguration(herId, configuration.organizationNumber, configuration.multiTenant)
@@ -379,6 +376,11 @@ class MshConfigurationService(
     private fun isKnown(herId: Int): Boolean =
         registered.getIfPresent(herId) != null || failed.getIfPresent(herId) != null
 
+    /** The table may not be there yet, which would fail as a bug rather than as a database that is down. */
+    private fun requireMigrated() {
+        if (!isDatabaseMigrated()) throw DatabaseUnavailableException("The database is not migrated yet")
+    }
+
     private fun isDatabaseDown(): Boolean = !isDatabaseMigrated() || clock.instant() < databaseDownUntil
 
     private fun markRegistered(herId: Int) {
@@ -420,28 +422,6 @@ class MshConfigurationService(
 /** MSH rejecting the request, as opposed to MSH being busy (408, 429), which another try may get through. */
 private fun Exception.isRejection(): Boolean =
     this is HttpException && status in 400..499 && status != REQUEST_TIMEOUT && status != TOO_MANY_REQUESTS
-
-/**
- * The database is down or busy, or the connection to it failed, which is the same for every HER-id. An error in the
- * data of one HER-id, e.g. one that does not fit, is not.
- */
-private fun Exception.isDatabaseOutage(): Boolean =
-    this is DataAccessResourceFailureException ||
-        this is TransientDataAccessException ||
-        this is RecoverableDataAccessException ||
-        // Also when the driver's error was not translated as such
-        generateSequence<Throwable>(this) { it.cause }.take(MAX_CAUSES).any { it.isConnectionFailure() }
-
-private const val MAX_CAUSES = 10
-
-/** SQL state class 08 is a connection exception. */
-private fun Throwable.isConnectionFailure(): Boolean =
-    this is SQLTransientException ||
-        this is SQLRecoverableException ||
-        this is SQLNonTransientConnectionException ||
-        (this is SQLException && sqlState?.startsWith("08") == true) ||
-        this is SocketException ||
-        this is SocketTimeoutException
 
 private fun randomSpread(): Duration =
     Duration.ofSeconds(ThreadLocalRandom.current().nextLong(REGISTERED_SPREAD.toSeconds() + 1))

@@ -18,6 +18,7 @@ import java.net.SocketTimeoutException
 import java.net.http.HttpTimeoutException
 import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.DatabaseUnavailableException
 import no.difi.meldingsutveksling.nhn.adapter.errors.DialogmeldingNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
@@ -38,6 +39,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.core.codec.DecodingException
 import org.springframework.core.io.buffer.DataBufferLimitException
 import org.springframework.http.HttpStatus
+import org.springframework.jdbc.CannotGetJdbcConnectionException
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.test.web.reactive.server.WebTestClient
 import org.springframework.web.reactive.function.server.HandlerFilterFunction
@@ -49,6 +51,7 @@ import reactor.core.publisher.Mono
 private const val LOOKUP_PATH = "/api/lookup/123"
 private const val OUTGOING_PATH = ApiPaths.OUTGOING_MESSAGES
 private const val INCOMING_PATH = ApiPaths.INCOMING_MESSAGES
+private const val MSH_CONFIGURATIONS_PATH = ApiPaths.MSH_CONFIGURATIONS
 private const val TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 private const val ISO_8601_INSTANT = """\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z"""
 
@@ -62,6 +65,7 @@ class NhnErrorFilterTest :
                         .GET(ApiPaths.LOOKUP) { Mono.error(error) }
                         .GET(ApiPaths.OUTGOING_MESSAGES) { Mono.error(error) }
                         .GET(ApiPaths.INCOMING_MESSAGES) { Mono.error(error) }
+                        .GET(ApiPaths.MSH_CONFIGURATIONS) { Mono.error(error) }
                         .filter(nhnErrorFilter())
                         .build()
                 )
@@ -323,6 +327,33 @@ class NhnErrorFilterTest :
                     MshException("Unknown error from MSH API", ConnectException("Connection refused")),
                     HttpStatus.BAD_GATEWAY,
                     "E7780",
+                )
+            }
+
+            it("maps a database that is not migrated to 503") {
+                expectTechnicalError(
+                    MSH_CONFIGURATIONS_PATH,
+                    DatabaseUnavailableException("The database is not migrated yet"),
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "E7784",
+                )
+            }
+
+            it("maps a database that is down to 503") {
+                expectTechnicalError(
+                    MSH_CONFIGURATIONS_PATH,
+                    CannotGetJdbcConnectionException("Connection is not available"),
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "E7784",
+                )
+            }
+
+            it("does not map a failed connection elsewhere than to the database to 503") {
+                expectTechnicalError(
+                    MSH_CONFIGURATIONS_PATH,
+                    RuntimeException("Boom", ConnectException("Connection refused")),
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "E7777",
                 )
             }
 

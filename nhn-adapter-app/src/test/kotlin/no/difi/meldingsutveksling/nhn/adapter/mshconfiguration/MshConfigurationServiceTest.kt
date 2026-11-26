@@ -13,6 +13,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import java.io.IOException
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.sql.SQLException
 import java.time.Clock
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import no.difi.meldingsutveksling.domain.Iso6523
 import no.difi.meldingsutveksling.nhn.adapter.ArTestData
+import no.difi.meldingsutveksling.nhn.adapter.errors.DatabaseUnavailableException
 import no.difi.meldingsutveksling.nhn.adapter.errors.MshConfigurationNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.integration.adresseregisteret.AdresseregisteretService
 import no.difi.meldingsutveksling.nhn.adapter.integration.msh.MshService
@@ -294,6 +296,31 @@ class MshConfigurationServiceTest :
                         coVerify(exactly = 1) { repository.find(any()) }
                     }
                 }
+
+            it("is not left alone when MSH cannot be reached, which waits for the HER-id alone") {
+                coEvery { repository.find(any()) } returns null
+                coEvery { mshService.setConfigurations(any(), any<ClientContext>()) } throws
+                    RuntimeException("MSH failed", ConnectException("Connection refused"))
+
+                service.ensureRegistered(HER_ID, clientContext())
+                service.ensureRegistered(HER_ID, clientContext())
+                service.ensureRegistered(OTHER_HER_ID, clientContext())
+
+                coVerify(exactly = 1) { repository.find(HER_ID) }
+                coVerify(exactly = 1) { repository.find(OTHER_HER_ID) }
+            }
+
+            it("is not asked by an administrator until it is migrated") {
+                val service = service(isDatabaseMigrated = { false })
+
+                shouldThrow<DatabaseUnavailableException> { service.list() }
+                shouldThrow<DatabaseUnavailableException> { service.register(HER_ID, true) }
+                shouldThrow<DatabaseUnavailableException> { service.delete(HER_ID) }
+
+                coVerify(exactly = 0) { repository.findAll() }
+                coVerify(exactly = 0) { repository.find(any()) }
+                coVerify(exactly = 0) { mshService.setConfigurations(any(), any<String>(), any()) }
+            }
 
             it("is left alone until it is migrated, without holding up the client") {
                 var migrated = false

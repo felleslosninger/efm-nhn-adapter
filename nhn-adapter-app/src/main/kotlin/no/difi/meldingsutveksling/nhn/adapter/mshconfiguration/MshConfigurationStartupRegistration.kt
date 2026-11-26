@@ -1,5 +1,6 @@
 package no.difi.meldingsutveksling.nhn.adapter.mshconfiguration
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.ApplicationListener
@@ -16,7 +17,12 @@ class MshConfigurationStartupRegistration(
     override fun onApplicationEvent(event: ApplicationReadyEvent) {
         Thread.ofVirtual().name("msh-configuration-registration").start {
             runBlocking {
-                databaseMigration.awaitMigrated()
+                try {
+                    databaseMigration.awaitMigrated()
+                } catch (_: CancellationException) {
+                    // Shut down before the database was migrated
+                    return@runBlocking
+                }
                 mshConfigurationService.registerAllInMsh()
             }
         }

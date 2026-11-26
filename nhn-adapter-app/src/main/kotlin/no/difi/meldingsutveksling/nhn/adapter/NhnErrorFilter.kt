@@ -9,6 +9,7 @@ import java.time.Instant
 import mu.KotlinLogging
 import no.difi.meldingsutveksling.nhn.adapter.errors.AdapterBusyException
 import no.difi.meldingsutveksling.nhn.adapter.errors.ClientInputException
+import no.difi.meldingsutveksling.nhn.adapter.errors.DatabaseUnavailableException
 import no.difi.meldingsutveksling.nhn.adapter.errors.HerIdNotFoundException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidIncomingDocumentException
 import no.difi.meldingsutveksling.nhn.adapter.errors.InvalidMshDataException
@@ -19,6 +20,7 @@ import no.difi.meldingsutveksling.nhn.adapter.logging.hasDataInCauses
 import no.difi.meldingsutveksling.nhn.adapter.logging.loggableMessage
 import no.difi.meldingsutveksling.nhn.adapter.model.ApiError
 import no.difi.meldingsutveksling.nhn.adapter.model.serialization.ApplicationReceiptException
+import no.difi.meldingsutveksling.nhn.adapter.mshconfiguration.isDatabaseOutage
 import no.ks.fiks.hdir.FeilmeldingForApplikasjonskvittering
 import no.ks.fiks.nhn.ar.rest.AdresseregisteretException
 import no.ks.fiks.nhn.flr.FastlegeregisteretException
@@ -48,6 +50,7 @@ private const val ADRESSEREGISTERET_ERROR_CODE = "E7778"
 private const val FASTLEGEREGISTERET_ERROR_CODE = "E7779"
 private const val MSH_ERROR_CODE = "E7780"
 private const val ADAPTER_BUSY_ERROR_CODE = "E7781"
+private const val DATABASE_ERROR_CODE = "E7784"
 
 /** An incoming message that is invalid, which the client rejects with an application receipt. */
 private const val INVALID_MESSAGE_CODE = "E7782"
@@ -138,8 +141,22 @@ private fun ServerRequest.toApiError(error: Throwable): ApiError =
                 ADAPTER_BUSY_ERROR_CODE,
             )
         }
-        else -> multipartError(error) ?: unexpectedError(error)
+        // Only the MSH configurations depend on the database, and messaging never fails on it
+        is DatabaseUnavailableException -> databaseUnavailable(error)
+        else ->
+            if (error.isDatabaseOutage()) databaseUnavailable(error)
+            else multipartError(error) ?: unexpectedError(error)
     }
+
+private fun ServerRequest.databaseUnavailable(error: Throwable): ApiError {
+    logger.error("Database unavailable for ${route()}: ${error.message}", error)
+    return toApiError(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        FeilmeldingForApplikasjonskvittering.ANNEN_FEIL,
+        tryLaterMessage(DATABASE_ERROR_CODE),
+        DATABASE_ERROR_CODE,
+    )
+}
 
 /**
  * A request body that breaks the limits in `spring.webflux.multipart`, which Spring reports while reading the parts.
